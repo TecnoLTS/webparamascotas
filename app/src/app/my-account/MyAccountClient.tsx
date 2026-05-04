@@ -60,6 +60,21 @@ const Icon = {
     X,
 } as const
 
+const PASSIVE_REFRESH_VISIBLE_INTERVAL_MS = 120000
+const PASSIVE_REFRESH_FOCUS_INTERVAL_MS = 60000
+const PASSIVE_REFRESH_RECENT_INTERACTION_BLOCK_MS = 15000
+const PASSIVE_REFRESH_SAFE_TABS = new Set([
+    'dashboard',
+    'reports',
+    'sales-ranking',
+    'alerts',
+    'admin-orders',
+    'shipments',
+    'balances',
+    'billing-rides',
+    'inventory',
+])
+
 import { useRouter, useSearchParams } from 'next/navigation'
 import { requestApi } from '@/lib/apiClient'
 import { clearStoredSession, setStoredSessionUser } from '@/lib/authSession'
@@ -166,6 +181,7 @@ import type {
     AdminLocalQuotation,
     AdminReportSection,
     AdminUserSummary,
+    BillingRidePdf,
     DashboardStats,
     DeepDiveView,
     LocalSaleLineItem,
@@ -563,7 +579,10 @@ const MyAccount = () => {
     const [adminDataLoading, setAdminDataLoading] = useState(false)
     const [adminDataError, setAdminDataError] = useState<string | null>(null)
     const [adminReloadNonce, setAdminReloadNonce] = useState(0)
+    const [passiveRefreshNonce, setPassiveRefreshNonce] = useState(0)
     const [adminOrdersList, setAdminOrdersList] = useState<Order[]>([])
+    const [billingRidePdfs, setBillingRidePdfs] = useState<BillingRidePdf[]>([])
+    const [billingRideLoading, setBillingRideLoading] = useState(false)
     const [adminProductsList, setAdminProductsList] = useState<any[]>([])
     const [adminProductsSearch, setAdminProductsSearch] = useState('')
     const [adminProductsQuickFilter, setAdminProductsQuickFilter] = useState<'all' | 'publishable' | 'blocked' | 'with-stock' | 'no-stock' | 'no-price'>('all')
@@ -791,6 +810,7 @@ const MyAccount = () => {
             if (user?.role === 'admin') {
                 const res = await requestApi<Order[]>('/api/orders');
                 setAdminOrdersList(res.body);
+                invalidateAdminPanelData();
             } else {
                 const res = await requestApi<Order[]>('/api/orders/my-orders');
                 setUserOrders(res.body);
@@ -809,6 +829,35 @@ const MyAccount = () => {
         setMessage({ text, type })
         setTimeout(() => setMessage(null), 5000)
     }, [])
+
+    const invalidateAdminPanelData = React.useCallback(() => {
+        setAdminReloadNonce((prev) => prev + 1)
+    }, [])
+
+    const loadBillingRidePdfs = React.useCallback(async () => {
+        setBillingRideLoading(true)
+        try {
+            const res = await withTransientRetry(() => requestApi<BillingRidePdf[]>('/api/admin/billing/rides?limit=150'))
+            setBillingRidePdfs(Array.isArray(res.body) ? res.body : [])
+        } catch (error) {
+            console.error(error)
+            showNotification('No se pudieron cargar los PDF RIDE del facturador.', 'error')
+        } finally {
+            setBillingRideLoading(false)
+        }
+    }, [showNotification])
+
+    const openBillingRidePdf = React.useCallback((accessKey: string) => {
+        const normalized = String(accessKey || '').replace(/\D/g, '')
+        if (!normalized) {
+            showNotification('La factura no tiene clave de acceso válida.', 'error')
+            return
+        }
+        const openedWindow = window.open(`/api/admin/billing/rides/${encodeURIComponent(normalized)}/pdf`, '_blank')
+        if (!openedWindow) {
+            showNotification('Tu navegador bloqueó la apertura del PDF.', 'error')
+        }
+    }, [showNotification])
 
     const printOrderInvoiceById = async (orderId: string) => {
         let printWindow: Window | null = null
@@ -1045,7 +1094,7 @@ const MyAccount = () => {
     }
 
     const reloadAdminUsers = React.useCallback(async () => {
-        if (!user || user.role !== 'admin') return
+        if (user?.role !== 'admin') return
 
         const res = await requestApi<AdminUserSummary[]>('/api/users')
 
@@ -1857,6 +1906,12 @@ const MyAccount = () => {
     }, [activeTab, adminReloadNonce, loadDiscountData, user])
 
     React.useEffect(() => {
+        if (!user || user.role !== 'admin') return
+        if (activeTab !== 'billing-rides') return
+        loadBillingRidePdfs()
+    }, [activeTab, adminReloadNonce, passiveRefreshNonce, loadBillingRidePdfs, user])
+
+    React.useEffect(() => {
         if (!isPurchaseInvoiceModalOpen) return
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape' && !purchaseInvoiceDetailLoading) {
@@ -1902,6 +1957,7 @@ const MyAccount = () => {
         salesRankingMonth,
         user,
         adminReloadNonce,
+        passiveRefreshNonce,
         handleLogout,
         setAdminDataLoading,
         setAdminDataError,
@@ -1922,6 +1978,149 @@ const MyAccount = () => {
         loadPosSnapshot,
         normalizeAdminProducts,
     })
+
+    const lastPassiveRefreshAtRef = React.useRef(0)
+    const lastPanelInteractionAtRef = React.useRef(0)
+
+    React.useEffect(() => {
+        const markInteraction = () => {
+            lastPanelInteractionAtRef.current = Date.now()
+        }
+
+        document.addEventListener('pointerdown', markInteraction, true)
+        document.addEventListener('keydown', markInteraction, true)
+        document.addEventListener('input', markInteraction, true)
+
+        return () => {
+            document.removeEventListener('pointerdown', markInteraction, true)
+            document.removeEventListener('keydown', markInteraction, true)
+            document.removeEventListener('input', markInteraction, true)
+        }
+    }, [])
+
+    const isPassiveRefreshAllowed = React.useCallback(() => {
+        if (!user || user.role !== 'admin') return false
+        if (!activeTab || !PASSIVE_REFRESH_SAFE_TABS.has(activeTab)) return false
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return false
+
+        const activeElement = typeof document !== 'undefined' ? document.activeElement : null
+        if (activeElement instanceof HTMLElement) {
+            const tagName = activeElement.tagName.toLowerCase()
+            if (['input', 'textarea', 'select'].includes(tagName) || activeElement.isContentEditable) {
+                return false
+            }
+        }
+
+        if (
+            isProductModalOpen ||
+            isPurchaseInvoiceModalOpen ||
+            isProductProcurementModalOpen ||
+            isSalesProductModalOpen ||
+            isOrderModalOpen
+        ) {
+            return false
+        }
+
+        if (
+            adminDataLoading ||
+            billingRideLoading ||
+            posLoading ||
+            Boolean(posActionLoading) ||
+            purchaseInvoicesLoading ||
+            purchaseInvoiceDetailLoading ||
+            productProcurementDetailLoading ||
+            vatLoading ||
+            vatSaving ||
+            shippingLoading ||
+            shippingSaving ||
+            discountCodesLoading ||
+            discountFormSaving ||
+            productReferenceDataLoading ||
+            productReferenceDataSaving ||
+            storeStatusLoading ||
+            storeStatusSaving ||
+            localSaleQuoteLoading ||
+            localSaleSaving ||
+            localSaleQuoteHistoryLoading ||
+            localSaleCustomerLookupLoading ||
+            addressSaving ||
+            addressLoading ||
+            profileSaving ||
+            profileLoading ||
+            userOrdersLoading
+        ) {
+            return false
+        }
+
+        if (Date.now() - lastPanelInteractionAtRef.current < PASSIVE_REFRESH_RECENT_INTERACTION_BLOCK_MS) {
+            return false
+        }
+
+        return true
+    }, [
+        activeTab,
+        addressLoading,
+        addressSaving,
+        adminDataLoading,
+        billingRideLoading,
+        discountCodesLoading,
+        discountFormSaving,
+        isOrderModalOpen,
+        isProductModalOpen,
+        isProductProcurementModalOpen,
+        isPurchaseInvoiceModalOpen,
+        isSalesProductModalOpen,
+        localSaleCustomerLookupLoading,
+        localSaleQuoteHistoryLoading,
+        localSaleQuoteLoading,
+        localSaleSaving,
+        posActionLoading,
+        posLoading,
+        productProcurementDetailLoading,
+        productReferenceDataLoading,
+        productReferenceDataSaving,
+        profileLoading,
+        profileSaving,
+        purchaseInvoiceDetailLoading,
+        purchaseInvoicesLoading,
+        shippingLoading,
+        shippingSaving,
+        storeStatusLoading,
+        storeStatusSaving,
+        user,
+        userOrdersLoading,
+        vatLoading,
+        vatSaving,
+    ])
+
+    const requestPassiveRefresh = React.useCallback((minimumIntervalMs: number) => {
+        if (!isPassiveRefreshAllowed()) return
+        const now = Date.now()
+        if (now - lastPassiveRefreshAtRef.current < minimumIntervalMs) return
+        lastPassiveRefreshAtRef.current = now
+        setPassiveRefreshNonce((prev) => prev + 1)
+    }, [isPassiveRefreshAllowed])
+
+    React.useEffect(() => {
+        if (!user || user.role !== 'admin') return
+
+        const refreshOnFocus = () => {
+            requestPassiveRefresh(PASSIVE_REFRESH_FOCUS_INTERVAL_MS)
+        }
+
+        const intervalId = window.setInterval(() => {
+            requestPassiveRefresh(PASSIVE_REFRESH_VISIBLE_INTERVAL_MS)
+        }, PASSIVE_REFRESH_VISIBLE_INTERVAL_MS)
+
+        window.addEventListener('focus', refreshOnFocus)
+        document.addEventListener('visibilitychange', refreshOnFocus)
+
+        return () => {
+            window.clearInterval(intervalId)
+            window.removeEventListener('focus', refreshOnFocus)
+            document.removeEventListener('visibilitychange', refreshOnFocus)
+        }
+    }, [requestPassiveRefresh, user?.role])
 
     useAuthBootstrap({
         router,
@@ -2075,9 +2274,17 @@ const MyAccount = () => {
     const reportBalanceVat = Number(salesSummary?.vat ?? 0)
     const reportBalanceShipping = Number(salesSummary?.shipping ?? 0)
     const reportBalanceCost = Number(profitStats?.cost ?? 0)
-    const reportBalanceProfit = Number(profitStats?.profit ?? 0)
-    const reportBalanceMargin = Number(profitStats?.margin ?? 0)
+    const reportBalanceGrossProfit = Number(profitStats?.gross_profit ?? profitStats?.profit ?? 0)
+    const reportBalanceGrossMargin = Number(profitStats?.gross_margin ?? profitStats?.margin ?? 0)
+    const reportBalanceOperatingExpenses = Number(profitStats?.operating_expenses ?? 0)
+    const reportBalanceNetProfit = Number(profitStats?.net_profit ?? reportBalanceGrossProfit - reportBalanceOperatingExpenses)
+    const reportBalanceNetMargin = Number(profitStats?.net_margin ?? (reportBalanceNet > 0 ? (reportBalanceNetProfit / reportBalanceNet) * 100 : 0))
     const reportBalanceRoi = Number(profitStats?.roi ?? 0)
+    const reportOrdersCount = Number(salesSummary?.orders_count ?? 0)
+    const reportAverageOrderNet = Number(salesSummary?.average_order_net ?? dashboardStats?.businessMetrics?.averageOrderValue ?? 0)
+    const productWeightedMargin = Number(dashboardStats?.productAnalysis?.weightedMargin ?? dashboardStats?.productAnalysis?.averageMargin ?? 0)
+    const productMarginSampleCount = Number(dashboardStats?.productAnalysis?.pricedCostedProducts ?? 0)
+    const productMissingCostCount = Number(dashboardStats?.productAnalysis?.missingCostCount ?? 0)
     const openSalesProductDetail = (item: SalesRankingRow) => {
         setSelectedSalesProduct(item)
         setIsSalesProductModalOpen(true)
@@ -2936,6 +3143,7 @@ const MyAccount = () => {
                 loadPosSnapshot(),
                 loadLocalSaleQuoteHistory(true),
             ])
+            invalidateAdminPanelData()
             if (localSaleAutoPrint && createdOrderId) {
                 await printOrderInvoiceById(createdOrderId)
             }
@@ -2963,6 +3171,7 @@ const MyAccount = () => {
         }
     }, [
         buildLocalSalePaymentDetails,
+        invalidateAdminPanelData,
         loadLocalSaleQuoteHistory,
         loadPosSnapshot,
         localSaleAutoPrint,
@@ -3095,6 +3304,7 @@ const MyAccount = () => {
                 loadPosSnapshot(),
                 loadLocalSaleQuoteHistory(true),
             ])
+            invalidateAdminPanelData()
         } catch (error: any) {
             console.error(error)
             const message = String(error?.message || 'No se pudo registrar la venta local.')
@@ -3317,9 +3527,9 @@ const MyAccount = () => {
                                                 <h6 className="heading6 text-sm">Resumen Ejecutivo</h6>
                                             </div>
                                             <p className="text-xs leading-relaxed text-secondary space-y-4">
-                                                El incremento del <strong className="text-black">+{dashboardStats?.totalSales?.progress?.percentage}%</strong> en ventas este mes está impulsado principalmente por la categoría <strong className="text-black capitalize">{salesDeepDive?.categories[0]?.category}</strong>, que creció un <strong className="text-success">{salesDeepDive?.categories[0]?.growth}%</strong>.
+                                                El corte actual muestra <strong className="text-black">{dashboardStats?.totalSales?.progress?.percentage}%</strong> frente al mismo tramo del mes anterior. La categoría con mayor variación es <strong className="text-black capitalize">{salesDeepDive?.categories[0]?.category || 'sin ventas'}</strong>, con <strong className={Number(salesDeepDive?.categories[0]?.growth ?? 0) >= 0 ? 'text-success' : 'text-red'}>{salesDeepDive?.categories[0]?.growth ?? 0}%</strong>.
                                                 <br /><br />
-                                                Este comportamiento valida el éxito de la última campaña de stock y sugiere una oportunidad para rotar inventario en categorías de menor crecimiento.
+                                                Úsalo para decidir reposición, descuentos o foco comercial por categoría sin mezclar pedidos pendientes.
                                             </p>
                                         </div>
                                     </div>
@@ -3328,57 +3538,76 @@ const MyAccount = () => {
                         )}
 
                         {selectedDeepDive === 'profit' && (
-                            <div className="space-y-10">
-                                <h5 className="heading5 text-sm mb-6">Rentabilidad por Categoría Estelar</h5>
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                    <div className="lg:col-span-2 space-y-6">
+                            <div className="space-y-4">
+                                <h5 className="heading5 text-sm">Rentabilidad Realizada</h5>
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                                    <div className="lg:col-span-2 space-y-3">
                                         {salesDeepDive?.categories.slice(0, 4).map((cat, i) => {
                                             const revenue = Number(cat.current);
-                                            // Estimating margin based on overall margin for visual breakdown
-                                            const profitPerc = dashboardStats.businessMetrics?.profitStats?.margin || 30;
+                                            const maxRevenue = Math.max(...(salesDeepDive?.categories || []).map((item) => Number(item.current || 0)), 1)
+                                            const revenueShare = Math.max(2, (revenue / maxRevenue) * 100)
                                             return (
-                                                <div key={i} className="bg-surface p-6 rounded-2xl border border-line">
-                                                    <div className="flex justify-between items-center mb-4">
+                                                <div key={i} className="bg-surface p-4 rounded-lg border border-line">
+                                                    <div className="flex justify-between items-center mb-3">
                                                         <span className="capitalize font-bold text-sm">{cat.category}</span>
-                                                        <span className="text-xs font-bold text-primary">Margen Estimado: {profitPerc}%</span>
+                                                        <span className="text-xs font-bold text-primary">{formatMoney(revenue)} venta neta MTD</span>
                                                     </div>
-                                                    <div className="w-full h-4 bg-line rounded-full overflow-hidden flex shadow-inner">
-                                                        <div className="h-full bg-success" style={{ width: `${profitPerc}%` }}></div>
-                                                        <div className="h-full bg-orange-400 opacity-50" style={{ width: `${100 - profitPerc}%` }}></div>
+                                                    <div className="w-full h-4 bg-line rounded-full overflow-hidden shadow-inner">
+                                                        <div className="h-full bg-success" style={{ width: `${revenueShare}%` }}></div>
                                                     </div>
                                                     <div className="flex justify-between mt-2 text-[10px] font-bold text-secondary uppercase">
-                                                        <span>UTILIDAD</span>
-                                                        <span>COSTO ADQUISICIÓN</span>
+                                                        <span>MES ACTUAL</span>
+                                                        <span>{cat.growth >= 0 ? '+' : ''}{cat.growth}% VS MISMO CORTE ANTERIOR</span>
                                                     </div>
                                                 </div>
                                             )
                                         })}
                                     </div>
-                                    <div className="bg-black text-white p-10 rounded-[40px] shadow-2xl flex flex-col justify-between border border-white/10">
+                                    <div className="bg-black text-white p-5 rounded-2xl shadow-2xl flex flex-col justify-between border border-white/10">
                                         <div>
-                                            <h6 className="text-[10px] text-white/40 uppercase tracking-[0.2em] font-bold mb-8">Estado de Resultados</h6>
-                                            <div className="space-y-8">
+                                            <h6 className="text-[10px] text-white/40 uppercase font-bold mb-4">Estado de Resultados</h6>
+                                            <div className="space-y-4">
                                                 <div>
-                                                    <div className="text-xs text-white/50 mb-2">Ingresos Totales (sin IVA, sin envío)</div>
-                                                    <div className="text-3xl font-bold">${Number(dashboardStats.businessMetrics?.profitStats?.revenue || 0).toLocaleString()}</div>
+                                                    <div className="text-xs text-white/50 mb-1">Ingresos Totales (sin IVA, sin envío)</div>
+                                                    <div className="text-2xl font-bold">${Number(dashboardStats.businessMetrics?.profitStats?.revenue || 0).toLocaleString()}</div>
                                                 </div>
-                                                <div className="pb-8 border-b border-white/10">
-                                                    <div className="text-xs text-white/50 mb-2">Costo Directo (COGS)</div>
-                                                    <div className="text-3xl font-bold text-orange-400">-${Number(dashboardStats.businessMetrics?.profitStats?.cost || 0).toLocaleString()}</div>
+                                                <div className="pb-4 border-b border-white/10">
+                                                    <div className="text-xs text-white/50 mb-1">Costo Directo (COGS)</div>
+                                                    <div className="text-2xl font-bold text-orange-400">-${Number(dashboardStats.businessMetrics?.profitStats?.cost || 0).toLocaleString()}</div>
                                                 </div>
-                                                <div className="pt-4 border-b border-white/10 pb-8">
-                                                    <div className="text-xs text-white/50 mb-2">Envío cobrado (pasarela)</div>
-                                                    <div className="text-3xl font-bold text-white/80">${Number(dashboardStats.businessMetrics?.profitStats?.shipping_cost || 0).toLocaleString()}</div>
-                                                    <div className="text-[10px] text-white/40 mt-2">Se considera reembolsado por el cliente, no afecta la utilidad.</div>
+                                                <div className="grid grid-cols-2 gap-3 border-b border-white/10 pb-4">
+                                                    <div>
+                                                        <div className="text-xs text-white/50 mb-1">Envío cobrado</div>
+                                                        <div className="text-xl font-bold text-white/80">${Number(dashboardStats.businessMetrics?.profitStats?.shipping_collected ?? reportBalanceShipping).toLocaleString()}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-white/50 mb-1">Gastos operativos</div>
+                                                        <div className="text-xl font-bold text-orange-400">-${reportBalanceOperatingExpenses.toLocaleString()}</div>
+                                                    </div>
+                                                    <div className="col-span-2 text-[10px] text-white/40">El envío cobrado se muestra separado; no se trata como costo.</div>
                                                 </div>
-                                                <div className="pt-4">
-                                                    <div className="text-xs text-white/50 mb-2">Utilidad Bruta (sin IVA)</div>
-                                                    <div className="text-5xl font-bold text-success">${Number(dashboardStats.businessMetrics?.profitStats?.profit || 0).toLocaleString()}</div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <div className="text-xs text-white/50 mb-1">Utilidad bruta</div>
+                                                        <div className="text-2xl font-bold text-success">${Number(dashboardStats.businessMetrics?.profitStats?.gross_profit ?? dashboardStats.businessMetrics?.profitStats?.profit ?? 0).toLocaleString()}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-white/50 mb-1">Utilidad neta</div>
+                                                        <div className={`text-2xl font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>${reportBalanceNetProfit.toLocaleString()}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-white/50 mb-1">Margen bruto</div>
+                                                        <div className="text-xl font-bold">{reportBalanceGrossMargin.toFixed(1)}%</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-xs text-white/50 mb-1">Margen neto</div>
+                                                        <div className="text-xl font-bold">{reportBalanceNetMargin.toFixed(1)}%</div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
-                                        <div className="mt-12 p-4 bg-white/5 rounded-2xl border border-white/5 text-[10px] text-white/40 leading-relaxed italic">
-                                            * Los valores mostrados consideran el costo base de producto sin incluir costos fijos de operación.
+                                        <div className="mt-4 p-3 bg-white/5 rounded-lg border border-white/5 text-[10px] text-white/40 leading-relaxed italic">
+                                            * Neto descuenta gastos operativos registrados en caja/POS.
                                         </div>
                                     </div>
                                 </div>
@@ -3392,16 +3621,19 @@ const MyAccount = () => {
                                     <div className="bg-surface p-8 rounded-3xl border border-line">
                                         <div className="space-y-8">
                                             {metrics.aovDeepDive?.distribution.map((item, i) => {
-                                                const total = metrics.aovDeepDive?.distribution.reduce((acc, curr) => acc + Number(curr.count), 0) || 1;
-                                                const perc = (item.count / total) * 100;
+                                                const perc = Number(item.order_share ?? 0);
                                                 return (
                                                     <div key={i}>
                                                         <div className="flex justify-between items-center mb-3">
                                                             <span className="font-bold text-sm">{item.bucket}</span>
-                                                            <span className="text-xs text-secondary">{item.count} pedidos</span>
+                                                            <span className="text-xs text-secondary">{Number(item.count ?? 0).toLocaleString('es-EC')} pedidos • {perc.toFixed(1)}%</span>
                                                         </div>
                                                         <div className="w-full h-3 bg-line rounded-full overflow-hidden">
                                                             <div className="h-full bg-blue-500" style={{ width: `${perc}%` }}></div>
+                                                        </div>
+                                                        <div className="mt-2 flex justify-between text-[11px] text-secondary">
+                                                            <span>Promedio: {formatMoney(Number(item.avg_order_value ?? 0))}</span>
+                                                            <span>Ingreso: {formatMoney(Number(item.revenue ?? 0))}</span>
                                                         </div>
                                                     </div>
                                                 )
@@ -3411,19 +3643,32 @@ const MyAccount = () => {
                                     <div className="flex flex-col gap-6">
                                         <div className="p-8 bg-blue-50 border border-blue-100 rounded-3xl">
                                             <h6 className="heading6 text-sm mb-4 text-blue-900 flex items-center gap-2">
-                                                <Icon.Target size={20} weight="fill" /> Estrategia de Upselling
+                                                <Icon.Target size={20} weight="fill" /> Lectura útil
                                             </h6>
-                                            <p className="text-xs text-blue-800 leading-relaxed italic">
-                                                &quot;El {Math.round((metrics.aovDeepDive?.distribution.find(d => d.bucket.includes('Bajo'))?.count || 0) / (metrics.aovDeepDive?.distribution.reduce((acc, curr) => acc + Number(curr.count), 0) || 1) * 100)}% de tus pedidos son menores a $50. Implementar un umbral de &apos;Envío Gratis&apos; en $60 podría incrementar el Ticket Promedio en un 15%.&quot;
-                                            </p>
+                                            {(() => {
+                                                const distribution = metrics.aovDeepDive?.distribution || []
+                                                const lowValueOrders = distribution
+                                                    .filter((item) => ['$20 a $49.99', 'Menor a $20'].includes(String(item.bucket)))
+                                                    .reduce((acc, item) => acc + Number(item.count ?? 0), 0)
+                                                const totalOrders = distribution.reduce((acc, item) => acc + Number(item.count ?? 0), 0) || 1
+                                                const lowValueShare = (lowValueOrders / totalOrders) * 100
+                                                const largestRevenueBucket = distribution.slice().sort((left, right) => Number(right.revenue ?? 0) - Number(left.revenue ?? 0))[0]
+                                                return (
+                                                    <p className="text-xs text-blue-800 leading-relaxed">
+                                                        {lowValueShare.toFixed(1)}% de los pedidos realizados están por debajo de $50 netos.
+                                                        El mayor aporte de ingresos viene de {largestRevenueBucket?.bucket || 'sin segmento'}.
+                                                        Usa esta vista para definir umbrales de combos, retiro en tienda o envío gratis sin inventar proyecciones.
+                                                    </p>
+                                                )
+                                            })()}
                                         </div>
                                         <div className="p-8 bg-white border border-line rounded-3xl shadow-sm">
                                             <h6 className="heading6 text-sm mb-4">Ingresos por Segmento</h6>
                                             <div className="space-y-4">
                                                 {metrics.aovDeepDive?.distribution.map((item, i) => (
                                                     <div key={i} className="flex justify-between items-center text-xs">
-                                                        <span className="text-secondary">{item.bucket}</span>
-                                                        <span className="font-bold">${Number(item.revenue).toLocaleString()}</span>
+                                                        <span className="text-secondary">{item.bucket} ({Number(item.revenue_share ?? 0).toFixed(1)}%)</span>
+                                                        <span className="font-bold">{formatMoney(Number(item.revenue ?? 0))}</span>
                                                     </div>
                                                 ))}
                                             </div>
@@ -3905,7 +4150,7 @@ const MyAccount = () => {
                                         <button
                                             type="button"
                                             className={`px-4 py-2 rounded-lg border text-xs font-bold uppercase tracking-wider transition-all ${adminDataLoading ? 'border-line text-secondary bg-surface cursor-not-allowed' : 'border-black text-black hover:bg-black hover:text-white'}`}
-                                            onClick={() => setAdminReloadNonce((prev) => prev + 1)}
+                                            onClick={invalidateAdminPanelData}
                                             disabled={adminDataLoading}
                                         >
                                             {adminDataLoading ? 'Actualizando...' : 'Recargar panel'}
@@ -3971,8 +4216,8 @@ const MyAccount = () => {
                                                 onClick={() => openAdminReportSection('balance')}
                                             >
                                                 <div className="text-[10px] uppercase font-bold text-secondary mb-1">Balance</div>
-                                                <div className={`text-lg font-bold ${reportBalanceProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceProfit)}</div>
-                                                <div className="text-xs text-secondary mt-1">Margen {reportBalanceMargin.toFixed(1)}% • ROI {reportBalanceRoi.toFixed(1)}%</div>
+                                                <div className={`text-lg font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceNetProfit)}</div>
+                                                <div className="text-xs text-secondary mt-1">Neto {reportBalanceNetMargin.toFixed(1)}% • Bruto {reportBalanceGrossMargin.toFixed(1)}%</div>
                                             </button>
                                             <button
                                                 type="button"
@@ -4155,7 +4400,7 @@ const MyAccount = () => {
                                                     <div className="text-secondary text-sm font-medium">Ticket Promedio</div>
                                                     <Icon.Receipt className="text-blue-500" size={20} />
                                                 </div>
-                                                <div className="heading5">${dashboardStats?.businessMetrics?.averageOrderValue?.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}</div>
+                                                        <div className="heading5">{formatMoney(reportAverageOrderNet)}</div>
                                                 <div className="text-secondary text-xs mt-2 underline">Analizar distribución <Icon.ArrowRight size={10} className="inline ml-1" /></div>
                                             </div>
 
@@ -4164,11 +4409,21 @@ const MyAccount = () => {
                                                 onClick={() => openProductBreakdown('profit')}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Utilidad Bruta (sin IVA y sin envío)</div>
+                                                    <div className="text-secondary text-sm font-medium">Utilidad bruta / neta</div>
                                                     <Icon.HandCoins className="text-orange-500" size={20} />
                                                 </div>
-                                                <div className="heading5 text-success">${dashboardStats?.businessMetrics?.profitStats?.profit?.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}</div>
-                                                <div className="text-success text-xs mt-2 font-bold">{dashboardStats?.businessMetrics?.profitStats?.margin ?? 0}% <span className="text-secondary font-normal underline">margen neto</span></div>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Bruta</div>
+                                                        <div className="text-lg font-bold text-success">{formatMoney(reportBalanceGrossProfit)}</div>
+                                                        <div className="text-xs text-secondary">{reportBalanceGrossMargin.toFixed(1)}%</div>
+                                                    </div>
+                                                    <div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Neta</div>
+                                                        <div className={`text-lg font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceNetProfit)}</div>
+                                                        <div className="text-xs text-secondary">{reportBalanceNetMargin.toFixed(1)}%</div>
+                                                    </div>
+                                                </div>
                                             </div>
 
                                             <div
@@ -4180,7 +4435,7 @@ const MyAccount = () => {
                                                     <Icon.Archive className="text-purple-500" size={20} />
                                                 </div>
                                                 <div className="heading5">${dashboardStats?.businessMetrics?.inventoryValue?.cost_value?.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}</div>
-                                                <div className="text-secondary text-xs mt-2">{dashboardStats?.businessMetrics?.inventoryValue?.total_items ?? 0} items <span className="underline">ver riesgos <Icon.ArrowRight size={10} className="inline ml-1" /></span></div>
+                                                <div className="text-secondary text-xs mt-2">{Number(dashboardStats?.businessMetrics?.inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock <span className="underline">ver riesgos <Icon.ArrowRight size={10} className="inline ml-1" /></span></div>
                                             </div>
 
                                             <div
@@ -4468,13 +4723,13 @@ const MyAccount = () => {
                                                 </div>
                                             </div>
 
-                                            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                                <div className="bg-surface rounded-xl border border-line p-6">
-                                                    <div className="flex items-center gap-2 mb-4">
+                                            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                <div className="bg-surface rounded-lg border border-line p-4">
+                                                    <div className="flex items-center gap-2 mb-3">
                                                         <Icon.Tag size={20} className="text-primary" />
                                                         <div className="font-bold">Categorías Estrella</div>
                                                     </div>
-                                                    <div className="space-y-4">
+                                                    <div className="space-y-2">
                                                         {dashboardStats?.salesByCategory?.slice(0, 4).map((cat, i) => {
                                                             const total = dashboardStats.salesByCategory?.reduce((acc, curr) => acc + Number(curr.total), 0) || 1;
                                                             const perc = Math.round((Number(cat.total) / total) * 100);
@@ -4493,8 +4748,8 @@ const MyAccount = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="bg-surface rounded-xl border border-line p-6">
-                                                    <div className="flex items-center gap-2 mb-4">
+                                                <div className="bg-surface rounded-lg border border-line p-4">
+                                                    <div className="flex items-center gap-2 mb-3">
                                                         <Icon.Lightbulb size={24} className="text-yellow" />
                                                         <div className="font-bold">Análisis de Stock</div>
                                                     </div>
@@ -4516,21 +4771,29 @@ const MyAccount = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="bg-surface rounded-xl border border-line p-6">
-                                                    <div className="flex items-center gap-2 mb-4">
+                                                <div className="bg-surface rounded-lg border border-line p-4">
+                                                    <div className="flex items-center gap-2 mb-3">
                                                         <Icon.TrendUp size={24} className="text-success" />
                                                         <div className="font-bold">KPIs Financieros</div>
                                                     </div>
-                                                    <div className="space-y-4 cursor-pointer" onClick={() => setSelectedDeepDive('profit')}>
-                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Rentabilidad de Ventas</span>
-                                                            <span className="font-bold text-success text-sm">{dashboardStats?.businessMetrics?.profitStats?.margin}%</span>
+                                                    <div className="space-y-2 cursor-pointer" onClick={() => setSelectedDeepDive('profit')}>
+                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                            <span className="text-xs text-secondary font-bold">Margen bruto sobre venta neta</span>
+                                                            <span className="font-bold text-success text-sm">{dashboardStats?.businessMetrics?.profitStats?.gross_margin ?? dashboardStats?.businessMetrics?.profitStats?.margin}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Inversión Recuperada</span>
-                                                            <span className="font-bold text-sm">74.2%</span>
+                                                            <span className="text-xs text-secondary font-bold">Margen neto sobre venta neta</span>
+                                                            <span className={`font-bold text-sm ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceNetMargin.toFixed(1)}%</span>
                                                         </div>
-                                                        <div className="text-[9px] text-secondary text-center mt-2 group-hover:text-black">Diferencia entre Precio de Venta y Costo de Adquisición</div>
+                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                            <span className="text-xs text-secondary font-bold">ROI bruto sobre costo vendido</span>
+                                                            <span className="font-bold text-sm">{Number(dashboardStats?.businessMetrics?.profitStats?.roi ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                            <span className="text-xs text-secondary font-bold">ROI neto con gastos</span>
+                                                            <span className="font-bold text-sm">{Number(dashboardStats?.businessMetrics?.profitStats?.net_roi ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                                                        </div>
+                                                        <div className="text-[9px] text-secondary text-center mt-2 group-hover:text-black">Bruto descuenta producto; neto descuenta gastos registrados.</div>
                                                     </div>
                                                 </div>
                                             </div>
@@ -4744,86 +5007,94 @@ const MyAccount = () => {
 
                                         {adminReportSection === 'balance' && (
                                             <>
-                                                <div className="text-gray-400 text-sm">Balance general consolidado para decisiones operativas y financieras.</div>
-                                                <div className="heading2 mt-2">{formatMoney(reportBalanceNet)}</div>
-                                                <div className="text-secondary text-sm mt-1">Ventas netas acumuladas (sin IVA ni envío)</div>
+                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                                                    <div>
+                                                        <div className="text-gray-400 text-sm">Balance general consolidado para decisiones operativas y financieras.</div>
+                                                        <div className="heading3 mt-1">{formatMoney(reportBalanceNet)}</div>
+                                                        <div className="text-secondary text-xs mt-0.5">Ventas netas acumuladas, sin IVA ni envío</div>
+                                                    </div>
+                                                    <div className="text-xs text-secondary sm:text-right">{reportOrdersCount.toLocaleString('es-EC')} pedidos realizados • promedio {formatMoney(reportAverageOrderNet)}</div>
+                                                </div>
 
-                                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-6">
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">Venta total</div>
-                                                        <div className="heading5">{formatMoney(reportBalanceGross)}</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Incluye IVA + envío</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">IVA por pagar</div>
-                                                        <div className="heading5">{formatMoney(reportBalanceVat)}</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Impuesto cobrado al cliente</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">Envío cobrado</div>
-                                                        <div className="heading5">{formatMoney(reportBalanceShipping)}</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Ingreso operativo recuperado</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">Costo (COGS)</div>
-                                                        <div className="heading5 text-orange-600">-{formatMoney(reportBalanceCost)}</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Costo histórico vendido</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">Utilidad bruta</div>
-                                                        <div className={`heading5 ${reportBalanceProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceProfit)}</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Sin IVA ni envío</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">Margen neto</div>
-                                                        <div className="heading5">{reportBalanceMargin.toFixed(1)}%</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Utilidad / ventas netas</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">ROI</div>
-                                                        <div className="heading5">{reportBalanceRoi.toFixed(1)}%</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Utilidad / costo</div>
-                                                    </div>
-                                                    <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                        <div className="text-xs uppercase text-secondary font-bold mb-1">Promedio por pedido</div>
-                                                        <div className="heading5">{formatMoney(Number(dashboardStats?.businessMetrics?.averageOrderValue ?? 0))}</div>
-                                                        <div className="text-[11px] text-secondary mt-1">Ticket promedio actual</div>
+                                                <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-line">
+                                                        <div className="px-3 py-2">
+                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Ventas e impuestos</div>
+                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Total</span><strong>{formatMoney(reportBalanceGross)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neta</span><strong>{formatMoney(reportBalanceNet)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">IVA</span><strong className="text-orange-600">{formatMoney(reportBalanceVat)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Envío</span><strong>{formatMoney(reportBalanceShipping)}</strong></div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="px-3 py-2">
+                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Utilidad en dólares</div>
+                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Bruta</span><strong className={reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceGrossProfit)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neta</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Costo -{formatMoney(reportBalanceCost)} • gastos -{formatMoney(reportBalanceOperatingExpenses)}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="px-3 py-2">
+                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Márgenes</div>
+                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Bruto</span><strong>{reportBalanceGrossMargin.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neto</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Sobre ventas netas.</div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="px-3 py-2">
+                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">ROI</div>
+                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Bruto</span><strong>{reportBalanceRoi.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neto</span><strong>{Number(profitStats?.net_roi ?? 0).toFixed(1)}%</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Neto incluye gastos.</div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                <div className="mt-8 grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-6">
-                                                    <div className="p-6 rounded-2xl border border-line bg-white shadow-sm">
-                                                        <div className="heading6 mb-4">Lectura del balance</div>
-                                                        <div className="space-y-3 text-sm">
-                                                            <div className="flex items-center justify-between p-3 rounded-lg bg-surface border border-line">
+                                                <div className="mt-4 grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
+                                                    <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
+                                                        <div className="font-bold mb-3">Lectura del balance</div>
+                                                        <div className="space-y-2 text-sm">
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
                                                                 <span>Venta bruta facturada</span>
                                                                 <strong>{formatMoney(reportBalanceGross)}</strong>
                                                             </div>
-                                                            <div className="flex items-center justify-between p-3 rounded-lg bg-surface border border-line">
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
                                                                 <span>Menos IVA comprometido</span>
                                                                 <strong className="text-orange-600">-{formatMoney(reportBalanceVat)}</strong>
                                                             </div>
-                                                            <div className="flex items-center justify-between p-3 rounded-lg bg-surface border border-line">
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
                                                                 <span>Base neta del negocio</span>
                                                                 <strong>{formatMoney(reportBalanceNet)}</strong>
                                                             </div>
-                                                            <div className="flex items-center justify-between p-3 rounded-lg bg-surface border border-line">
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
                                                                 <span>Menos costo histórico vendido</span>
                                                                 <strong className="text-orange-600">-{formatMoney(reportBalanceCost)}</strong>
                                                             </div>
-                                                            <div className="flex items-center justify-between p-3 rounded-lg bg-black text-white">
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
                                                                 <span>Resultado bruto</span>
-                                                                <strong>{formatMoney(reportBalanceProfit)}</strong>
+                                                                <strong>{formatMoney(reportBalanceGrossProfit)}</strong>
+                                                            </div>
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                <span>Menos gastos operativos registrados</span>
+                                                                <strong className="text-orange-600">-{formatMoney(reportBalanceOperatingExpenses)}</strong>
+                                                            </div>
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
+                                                                <span>Resultado neto</span>
+                                                                <strong>{formatMoney(reportBalanceNetProfit)}</strong>
                                                             </div>
                                                         </div>
                                                     </div>
 
-                                                    <div className="p-6 rounded-2xl border border-line bg-white shadow-sm">
-                                                        <div className="heading6 mb-4">Acciones recomendadas</div>
-                                                        <div className="flex flex-wrap gap-3">
+                                                    <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
+                                                        <div className="font-bold mb-3">Acciones recomendadas</div>
+                                                        <div className="flex flex-wrap gap-2">
                                                             <button
                                                                 type="button"
-                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
                                                                 onClick={() => {
                                                                     setSelectedDeepDive('profit')
                                                                     openAdminReportSection('general')
@@ -4833,14 +5104,14 @@ const MyAccount = () => {
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
                                                                 onClick={() => navigateToPanelTab('margins')}
                                                             >
                                                                 Ajustar márgenes
                                                             </button>
                                                             <button
                                                                 type="button"
-                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
                                                                 onClick={() => openAdminReportSection('sales')}
                                                             >
                                                                 Abrir reporte de ventas
@@ -4913,14 +5184,14 @@ const MyAccount = () => {
                                                         <div className="text-xs text-secondary mt-1">Capital comprometido</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Valor mercado</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Potencial PVP</div>
                                                         <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.market_value ?? 0))}</div>
-                                                        <div className="text-xs text-secondary mt-1">Potencial bruto de venta</div>
+                                                        <div className="text-xs text-secondary mt-1">Stock valorizado a PVP</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Items monitoreados</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Unidades en stock</div>
                                                         <div className="text-2xl font-bold">{Number(inventoryValue?.total_items ?? 0).toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Catálogo con stock</div>
+                                                        <div className="text-xs text-secondary mt-1">{Number(inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
                                                         <div className="text-[10px] uppercase font-bold text-secondary mb-1">Sin stock</div>
@@ -4983,7 +5254,10 @@ const MyAccount = () => {
                                                                         <div className="text-sm font-bold text-red">{Number(item.quantity ?? 0)} uds</div>
                                                                     </div>
                                                                     <div className="text-xs text-secondary mt-1">
-                                                                        Cobertura estimada: {Number((item as any).estimated_days_left ?? 0)} día(s)
+                                                                        Cobertura: {(item as any).estimated_days_left === null || typeof (item as any).estimated_days_left === 'undefined'
+                                                                            ? 'sin ventas recientes'
+                                                                            : `${Number((item as any).estimated_days_left ?? 0)} día(s)`}
+                                                                        {Number((item as any).units_sold_30d ?? 0) > 0 && ` • ${Number((item as any).units_sold_30d ?? 0)} uds vendidas en 30 días`}
                                                                     </div>
                                                                 </div>
                                                             ))}
@@ -5881,23 +6155,25 @@ const MyAccount = () => {
 
                                         <div className="grid grid-cols-3 gap-6 mb-8">
                                             <div className="p-5 rounded-xl bg-surface border border-line">
-                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Margen Promedio</div>
+                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Margen ponderado</div>
                                                 <div className="heading4 text-success">
-                                                    {dashboardStats?.productAnalysis?.averageMargin ?? 0}%
+                                                    {productWeightedMargin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
                                                 </div>
+                                                <div className="text-secondary text-xs mt-1">Ponderado por stock valorizado</div>
                                             </div>
                                             <div className="p-5 rounded-xl bg-surface border border-line">
                                                 <div className="text-secondary text-xs uppercase font-bold mb-1">Oportunidades de Precio</div>
                                                 <div className="heading4 text-yellow">
                                                     {dashboardStats?.productAnalysis?.lowMarginOpportunities ?? 0} <span className="text-sm text-secondary font-normal">productos bajo margen</span>
                                                 </div>
+                                                <div className="text-secondary text-xs mt-1">{productMissingCostCount.toLocaleString('es-EC')} sin costo registrado</div>
                                             </div>
                                             <div className="p-5 rounded-xl bg-surface border border-line">
-                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Beneficio Potencial</div>
+                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Brecha vs objetivo</div>
                                                 <div className="heading4">
-                                                    {Math.max((marginSettings.targetMargin - (dashboardStats?.productAnalysis?.averageMargin ?? 0)), 0).toFixed(1)}%
+                                                    {Math.max((marginSettings.targetMargin - productWeightedMargin), 0).toFixed(1)}%
                                                 </div>
-                                                <div className="text-secondary text-xs mt-1">Brecha vs objetivo</div>
+                                                <div className="text-secondary text-xs mt-1">{productMarginSampleCount.toLocaleString('es-EC')} productos con costo y precio</div>
                                             </div>
                                         </div>
 
@@ -6159,6 +6435,97 @@ const MyAccount = () => {
                                         formatDateTime={formatDateTimeEcuador}
                                         getStatusBadge={getStatusBadge}
                                     />
+                                    )}
+
+                                    {activeTab === 'billing-rides' && (
+                                    <div className="tab text-content w-full">
+                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
+                                            <div>
+                                                <div className="heading4">Facturas PDF enviadas</div>
+                                                <p className="text-secondary text-sm mt-1">RIDE generados por Facturador en <span className="font-semibold text-black">storage/pdf/rides</span>.</p>
+                                            </div>
+                                            <button
+                                                type="button"
+                                                className="px-4 py-2 rounded-lg border border-line bg-white text-sm font-semibold hover:bg-surface disabled:opacity-60"
+                                                onClick={loadBillingRidePdfs}
+                                                disabled={billingRideLoading}
+                                            >
+                                                {billingRideLoading ? 'Actualizando...' : 'Actualizar'}
+                                            </button>
+                                        </div>
+
+                                        <div className="overflow-x-auto rounded-lg border border-line bg-white">
+                                            <table className="w-full min-w-[980px] text-sm">
+                                                <thead className="bg-surface text-[11px] uppercase text-secondary">
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-left">Factura</th>
+                                                        <th className="px-3 py-2 text-left">Cliente</th>
+                                                        <th className="px-3 py-2 text-left">Correo</th>
+                                                        <th className="px-3 py-2 text-right">Total</th>
+                                                        <th className="px-3 py-2 text-left">Fecha</th>
+                                                        <th className="px-3 py-2 text-left">SRI</th>
+                                                        <th className="px-3 py-2 text-left">PDF</th>
+                                                        <th className="px-3 py-2 text-right">Acción</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-line">
+                                                    {billingRidePdfs.map((ride) => {
+                                                        const sequential = [ride.establishment_code, ride.emission_point, ride.sequential].filter(Boolean).join('-') || ride.source_reference || ride.access_key
+                                                        return (
+                                                            <tr key={ride.access_key} className="hover:bg-surface/50">
+                                                                <td className="px-3 py-2">
+                                                                    <div className="font-semibold">{sequential}</div>
+                                                                    <div className="text-[11px] text-secondary break-all">{ride.access_key}</div>
+                                                                </td>
+                                                                <td className="px-3 py-2">
+                                                                    <div className="font-semibold">{ride.customer_name || '-'}</div>
+                                                                    <div className="text-[11px] text-secondary">{ride.customer_identification || '-'}</div>
+                                                                </td>
+                                                                <td className="px-3 py-2 text-secondary">{ride.customer_email || 'Sin correo'}</td>
+                                                                <td className="px-3 py-2 text-right font-semibold">{formatMoney(ride.total ?? 0)}</td>
+                                                                <td className="px-3 py-2">
+                                                                    <div>{ride.issue_date ? formatDateEcuador(ride.issue_date) : '-'}</div>
+                                                                    <div className="text-[11px] text-secondary">{ride.pdf_modified_at ? `PDF ${formatDateTimeEcuador(ride.pdf_modified_at)}` : 'Sin archivo generado'}</div>
+                                                                </td>
+                                                                <td className="px-3 py-2">
+                                                                    <span className="inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold text-secondary">{ride.sri_status || '-'}</span>
+                                                                </td>
+                                                                <td className="px-3 py-2">
+                                                                    <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${ride.pdf_exists ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                        {ride.pdf_exists ? 'Disponible' : 'No generado'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-3 py-2 text-right">
+                                                                    <button
+                                                                        type="button"
+                                                                        className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50"
+                                                                        onClick={() => openBillingRidePdf(ride.access_key)}
+                                                                        disabled={!ride.pdf_exists}
+                                                                    >
+                                                                        Abrir PDF
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                    {!billingRideLoading && billingRidePdfs.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan={8} className="px-3 py-8 text-center text-secondary">
+                                                                No hay RIDE PDF generados todavía.
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                    {billingRideLoading && (
+                                                        <tr>
+                                                            <td colSpan={8} className="px-3 py-8 text-center text-secondary">
+                                                                Cargando facturas PDF...
+                                                            </td>
+                                                        </tr>
+                                                    )}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
                                     )}
 
                                     {activeTab === 'users' && (

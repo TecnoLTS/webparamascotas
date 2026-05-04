@@ -6,7 +6,9 @@ import sharp from 'sharp'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 
-const allowedKinds = new Set(['thumb', 'gallery'])
+type UploadImageKind = 'thumb' | 'gallery' | 'brandLogo'
+
+const allowedKinds = new Set<UploadImageKind>(['thumb', 'gallery', 'brandLogo'])
 const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const outputImageExtension = 'webp'
 const productUploadVariantWidths = [220, 360]
@@ -16,6 +18,7 @@ const seoFilenameMaxLength = 140
 
 type UploadImageMetadata = {
   platform?: string
+  brandName?: string
   productName?: string
   category?: string
   productType?: string
@@ -79,6 +82,7 @@ const extractPlatformSlug = (host: string | null) => {
 
 const parseImageMetadata = (formData: FormData, reqHost: string | null): UploadImageMetadata => ({
   platform: typeof formData.get('platform') === 'string' ? String(formData.get('platform') || '') : extractPlatformSlug(reqHost),
+  brandName: typeof formData.get('brandName') === 'string' ? String(formData.get('brandName') || '') : '',
   productName: typeof formData.get('productName') === 'string' ? String(formData.get('productName') || '') : '',
   category: typeof formData.get('category') === 'string' ? String(formData.get('category') || '') : '',
   productType: typeof formData.get('productType') === 'string' ? String(formData.get('productType') || '') : '',
@@ -91,21 +95,29 @@ const parseImageMetadata = (formData: FormData, reqHost: string | null): UploadI
 
 const buildSeoImageFileName = (
   metadata: UploadImageMetadata,
-  kind: 'thumb' | 'gallery',
+  kind: UploadImageKind,
   ext: string
 ) => {
-  const orderedSegments = [
-    metadata.platform,
-    metadata.productName,
-    metadata.productType,
-    metadata.category,
-    metadata.variantLabel,
-    metadata.size,
-    metadata.color,
-    metadata.material,
-    metadata.species,
-    kind === 'thumb' ? 'miniatura' : 'ficha',
-  ]
+  const rawSegments = kind === 'brandLogo'
+    ? [
+      metadata.platform,
+      metadata.brandName,
+      'logo-marca',
+    ]
+    : [
+      metadata.platform,
+      metadata.productName,
+      metadata.productType,
+      metadata.category,
+      metadata.variantLabel,
+      metadata.size,
+      metadata.color,
+      metadata.material,
+      metadata.species,
+      kind === 'thumb' ? 'miniatura' : 'ficha',
+    ]
+
+  const orderedSegments = rawSegments
     .map((segment) => clipSlug(slugifySeoSegment(String(segment || ''))))
     .filter(Boolean)
 
@@ -121,6 +133,9 @@ const buildSeoImageFileName = (
 
 const buildVariantFileName = (fileName: string, width: number) =>
   fileName.replace(/\.webp$/i, `-${width}.webp`)
+
+const isUploadImageKind = (value: unknown): value is UploadImageKind =>
+  typeof value === 'string' && allowedKinds.has(value as UploadImageKind)
 
 const resolvePublicDir = async () => {
   const candidates = [
@@ -205,10 +220,7 @@ export const handleProductImageUpload = async (req: Request) => {
       return NextResponse.json({ ok: false, error: { message: 'No se recibió ninguna imagen.' } }, { status: 400 })
     }
 
-    const kindValue: 'thumb' | 'gallery' =
-      typeof kind === 'string' && allowedKinds.has(kind)
-        ? (kind as 'thumb' | 'gallery')
-        : 'gallery'
+    const kindValue: UploadImageKind = isUploadImageKind(kind) ? kind : 'gallery'
     const metadata = parseImageMetadata(formData, req.headers.get('x-forwarded-host') || req.headers.get('host'))
     if (!allowedTypes.has(file.type)) {
       return NextResponse.json({ ok: false, error: { message: 'Formato de imagen no permitido.' } }, { status: 400 })
@@ -225,34 +237,45 @@ export const handleProductImageUpload = async (req: Request) => {
 
     let webpBuffer: Buffer
     try {
-      webpBuffer = await sharp(buffer, { failOn: 'warning' })
-        .rotate()
-        .webp({ quality: 82, effort: 5 })
-        .toBuffer()
+      const image = sharp(buffer, { failOn: 'warning' }).rotate()
+      webpBuffer = kindValue === 'brandLogo'
+        ? await image
+          .resize({ width: 600, height: 240, fit: 'inside', withoutEnlargement: true })
+          .webp({ quality: 90, effort: 5 })
+          .toBuffer()
+        : await image
+          .webp({ quality: 82, effort: 5 })
+          .toBuffer()
     } catch {
       return NextResponse.json({ ok: false, error: { message: 'No se pudo convertir la imagen a WebP.' } }, { status: 400 })
     }
 
     const publicDir = await resolvePublicDir()
-    const uploadDir = path.join(publicDir, 'uploads', 'products')
+    const uploadDir = path.join(publicDir, 'uploads', kindValue === 'brandLogo' ? 'brands' : 'products')
     await fs.mkdir(uploadDir, { recursive: true })
     const fileName = buildSeoImageFileName(metadata, kindValue, outputImageExtension)
     const filePath = path.join(uploadDir, fileName)
     await fs.writeFile(filePath, webpBuffer)
-    await Promise.all(productUploadVariantWidths.map(async (width) => {
-      const variantPath = path.join(uploadDir, buildVariantFileName(fileName, width))
-      await sharp(webpBuffer)
-        .resize({ width, withoutEnlargement: true })
-        .webp({ quality: 78, effort: 5 })
-        .toFile(variantPath)
-    }))
+    if (kindValue !== 'brandLogo') {
+      await Promise.all(productUploadVariantWidths.map(async (width) => {
+        const variantPath = path.join(uploadDir, buildVariantFileName(fileName, width))
+        await sharp(webpBuffer)
+          .resize({ width, withoutEnlargement: true })
+          .webp({ quality: 78, effort: 5 })
+          .toFile(variantPath)
+      }))
+    }
+
+    const outputMetadata = await sharp(webpBuffer).metadata()
 
     return NextResponse.json({
       ok: true,
       data: {
-        url: `/uploads/products/${fileName}`,
+        url: `/uploads/${kindValue === 'brandLogo' ? 'brands' : 'products'}/${fileName}`,
         fileName,
         kind: kindValue,
+        width: outputMetadata.width,
+        height: outputMetadata.height,
       },
     })
   } catch {

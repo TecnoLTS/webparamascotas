@@ -33,9 +33,15 @@ export type ProductSupplierReference = {
   notes: string
 }
 
+export type ProductBrandReference = {
+  id: string
+  name: string
+  logoUrl: string
+}
+
 export type ProductReferenceData = {
   categories: string[]
-  brands: string[]
+  brands: ProductBrandReference[]
   suppliers: ProductSupplierReference[]
   sizes: string[]
   materials: string[]
@@ -56,7 +62,7 @@ export type ProductReferenceSection = {
   description: string
   itemLabel: string
   placeholder: string
-  kind?: 'text' | 'supplier'
+  kind?: 'text' | 'brand' | 'supplier'
   menuIcon:
     | 'SealCheck'
     | 'Truck'
@@ -114,6 +120,20 @@ export const createEmptyProductSupplierReference = (): ProductSupplierReference 
   notes: '',
 })
 
+export const createEmptyProductBrandReference = (): ProductBrandReference => ({
+  id: '',
+  name: '',
+  logoUrl: '',
+})
+
+export const createProductBrandReferenceId = (
+  name?: string | null,
+  fallback = '',
+) => {
+  const slug = createSlug(name || fallback)
+  return slug ? `brand-${slug}` : `brand-${Date.now()}`
+}
+
 export const createProductSupplierReferenceId = (
   name?: string | null,
   document?: string | null,
@@ -165,6 +185,82 @@ export const normalizeReferenceList = (input: unknown): string[] => {
   })
 
   return normalized
+}
+
+export const normalizeProductBrandRecord = (
+  input: unknown,
+  fallbackId = '',
+): ProductBrandReference | null => {
+  const source =
+    input && typeof input === 'object' && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : typeof input === 'string'
+        ? { name: input }
+        : null
+
+  if (!source) return null
+
+  const name = collapseWhitespace(
+    typeof source.name === 'string'
+      ? source.name
+      : typeof source.label === 'string'
+        ? source.label
+        : typeof source.brand === 'string'
+          ? source.brand
+          : '',
+  )
+  if (!name) return null
+
+  const logoUrl = collapseWhitespace(
+    typeof source.logoUrl === 'string'
+      ? source.logoUrl
+      : typeof source.logo_url === 'string'
+        ? source.logo_url
+        : typeof source.imageUrl === 'string'
+          ? source.imageUrl
+          : typeof source.image === 'string'
+            ? source.image
+            : typeof source.logo === 'string'
+              ? source.logo
+              : '',
+  )
+  const id = collapseWhitespace(typeof source.id === 'string' ? source.id : '')
+
+  return {
+    id: id || createProductBrandReferenceId(name, fallbackId),
+    name,
+    logoUrl,
+  }
+}
+
+export const normalizeProductBrandRecords = (input: unknown): ProductBrandReference[] => {
+  if (!Array.isArray(input)) return []
+
+  const seenNames = new Set<string>()
+  const seenIds = new Set<string>()
+  const normalized: ProductBrandReference[] = []
+
+  input.forEach((item, index) => {
+    const brand = normalizeProductBrandRecord(item, String(index + 1))
+    if (!brand) return
+
+    const nameKey = normalizeComparable(brand.name)
+    if (seenNames.has(nameKey)) return
+
+    seenNames.add(nameKey)
+
+    const baseId = brand.id || createProductBrandReferenceId(brand.name, String(index + 1))
+    let nextId = baseId
+    let suffix = 2
+    while (seenIds.has(nextId)) {
+      nextId = `${baseId}-${suffix}`
+      suffix += 1
+    }
+    seenIds.add(nextId)
+    normalized.push({ ...brand, id: nextId })
+  })
+
+  return normalized.sort((left, right) => left.name.localeCompare(right.name, 'es-EC', { sensitivity: 'base' }))
 }
 
 export const normalizeProductSupplierRecord = (
@@ -264,6 +360,11 @@ export const normalizeProductReferenceData = (input?: Partial<Record<ProductRefe
   const source = input || {}
 
   PRODUCT_REFERENCE_KEYS.forEach((key) => {
+    if (key === 'brands') {
+      defaults.brands = normalizeProductBrandRecords(source.brands)
+      return
+    }
+
     if (key === 'suppliers') {
       defaults.suppliers = normalizeProductSupplierRecords(source.suppliers)
       return
@@ -290,6 +391,20 @@ export const getReferenceOptionsWithCurrent = (options: string[], currentValue?:
 
   return normalizeReferenceList([current, ...normalizedOptions])
 }
+
+export const getBrandOptionsWithCurrent = (
+  brands: ProductBrandReference[],
+  currentValue?: string | null,
+) => getReferenceOptionsWithCurrent(brands.map((brand) => brand.name), currentValue)
+
+export const getBrandSearchText = (brand: ProductBrandReference) =>
+  [
+    brand.name,
+    brand.logoUrl,
+    brand.logoUrl ? 'con logo' : 'sin logo',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
 export const getSupplierSelectLabel = (supplier: ProductSupplierReference) =>
   supplier.document ? `${supplier.name} · ${supplier.document}` : supplier.name
@@ -366,9 +481,10 @@ export const PRODUCT_REFERENCE_SECTIONS: ProductReferenceSection[] = [
     key: 'brands',
     title: 'Marcas',
     sidebarTitle: 'Marcas',
-    description: 'Marca comercial visible en catálogo y ficha del producto.',
+    description: 'Marca comercial visible en catálogo, ficha de producto y carrusel de logos.',
     itemLabel: 'marca',
     placeholder: 'Ej: Frontline',
+    kind: 'brand',
     menuIcon: 'SealCheck',
   },
   {

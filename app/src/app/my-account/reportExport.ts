@@ -235,11 +235,12 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
   const profit = dashboardStats?.businessMetrics?.profitStats
   const inventory = dashboardStats?.businessMetrics?.inventoryValue
   const traceability = dashboardStats?.businessMetrics?.traceability
-  const shippingCost = toPlainNumber(profit?.shipping_cost)
-  const grossProfit = toPlainNumber(profit?.profit)
-  const operatingProfit = grossProfit - shippingCost
+  const operatingExpenses = toPlainNumber(profit?.operating_expenses)
+  const grossProfit = toPlainNumber(profit?.gross_profit ?? profit?.profit)
+  const netProfit = toPlainNumber(profit?.net_profit ?? (grossProfit - operatingExpenses))
   const net = toPlainNumber(summary?.net)
-  const operatingMargin = net > 0 ? (operatingProfit / net) * 100 : 0
+  const grossMargin = toPlainNumber(profit?.gross_margin ?? profit?.margin)
+  const netMargin = toPlainNumber(profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
   const statusMap = getOrdersByStatusMap(dashboardStats)
 
   return [
@@ -257,11 +258,12 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
         metricRow('Envío cobrado', moneyCell(summary?.shipping)),
         metricRow('Costo vendido', moneyCell(profit?.cost)),
         metricRow('Utilidad bruta', moneyCell(grossProfit)),
-        metricRow('Costo de envío asumido', moneyCell(shippingCost)),
-        metricRow('Resultado operativo', moneyCell(operatingProfit)),
-        metricRow('Margen bruto', percentCell(profit?.margin)),
-        metricRow('Margen operativo', percentCell(operatingMargin)),
-        metricRow('ROI', percentCell(profit?.roi)),
+        metricRow('Gastos operativos registrados', moneyCell(operatingExpenses)),
+        metricRow('Utilidad neta', moneyCell(netProfit)),
+        metricRow('Margen bruto', percentCell(grossMargin)),
+        metricRow('Margen neto', percentCell(netMargin)),
+        metricRow('ROI bruto', percentCell(profit?.roi)),
+        metricRow('ROI neto', percentCell(profit?.net_roi)),
         metricRow('Valor inventario al costo', moneyCell(inventory?.cost_value)),
         metricRow('Valor inventario a mercado', moneyCell(inventory?.market_value)),
         metricRow('Items en inventario', numberCell(inventory?.total_items, 'integer')),
@@ -402,11 +404,12 @@ const buildBalanceWorksheets = (context: ExportContext): WorksheetDefinition[] =
   const { dashboardStats } = context
   const summary = dashboardStats?.businessMetrics?.salesSummary
   const profit = dashboardStats?.businessMetrics?.profitStats
-  const shippingCost = toPlainNumber(profit?.shipping_cost)
-  const grossProfit = toPlainNumber(profit?.profit)
-  const operatingProfit = grossProfit - shippingCost
+  const operatingExpenses = toPlainNumber(profit?.operating_expenses)
+  const grossProfit = toPlainNumber(profit?.gross_profit ?? profit?.profit)
+  const netProfit = toPlainNumber(profit?.net_profit ?? (grossProfit - operatingExpenses))
   const net = toPlainNumber(summary?.net)
-  const operatingMargin = net > 0 ? (operatingProfit / net) * 100 : 0
+  const grossMargin = toPlainNumber(profit?.gross_margin ?? profit?.margin)
+  const netMargin = toPlainNumber(profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
 
   return [
     {
@@ -423,11 +426,12 @@ const buildBalanceWorksheets = (context: ExportContext): WorksheetDefinition[] =
         metricRow('Envío cobrado', moneyCell(summary?.shipping)),
         metricRow('Costo vendido', moneyCell(profit?.cost)),
         metricRow('Utilidad bruta', moneyCell(grossProfit)),
-        metricRow('Costo de envío asumido', moneyCell(shippingCost)),
-        metricRow('Resultado operativo', moneyCell(operatingProfit)),
-        metricRow('Margen bruto', percentCell(profit?.margin)),
-        metricRow('Margen operativo', percentCell(operatingMargin)),
-        metricRow('ROI', percentCell(profit?.roi)),
+        metricRow('Gastos operativos registrados', moneyCell(operatingExpenses)),
+        metricRow('Utilidad neta', moneyCell(netProfit)),
+        metricRow('Margen bruto', percentCell(grossMargin)),
+        metricRow('Margen neto', percentCell(netMargin)),
+        metricRow('ROI bruto', percentCell(profit?.roi)),
+        metricRow('ROI neto', percentCell(profit?.net_roi)),
       ],
     },
     {

@@ -95,6 +95,7 @@ const isPublicApiPath = (pathname: string, method?: string) => {
     if (pathname === '/api/products' || pathname.startsWith('/api/products/')) return true
     if (pathname === '/api/settings/shipping') return true
     if (pathname === '/api/settings/store-status') return true
+    if (pathname === '/api/settings/brand-logos') return true
     if (pathname === '/api/health') return true
   }
 

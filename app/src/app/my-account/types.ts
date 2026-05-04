@@ -15,13 +15,44 @@ export interface DashboardStats {
     salesTrend30Days?: Array<{ day: string, total: number }>;
     topProducts?: Array<{ name: string, sold: number, revenue: number }>;
     salesByCategory?: Array<{ category: string, total: number }>;
-    productAnalysis?: { averageMargin: number, lowMarginOpportunities: number, totalMonitored: number };
+    productAnalysis?: {
+        averageMargin: number;
+        weightedMargin?: number;
+        lowMarginOpportunities: number;
+        missingCostCount?: number;
+        stockValueAtCost?: number;
+        totalMonitored: number;
+        pricedCostedProducts?: number;
+    };
     tax?: { rate: number; multiplier: number };
     businessMetrics?: {
         averageOrderValue: number;
-        salesSummary?: { gross?: number; net?: number; vat?: number; shipping?: number };
-        profitStats: { revenue: number, cost: number, shipping_cost?: number, profit: number, margin: number, roi?: number };
-        inventoryValue: { market_value: number, cost_value: number, total_items: number };
+        salesSummary?: {
+            orders_count?: number;
+            gross?: number;
+            net?: number;
+            vat?: number;
+            shipping?: number;
+            average_order_net?: number;
+            average_order_gross?: number;
+        };
+        profitStats: {
+            revenue: number;
+            cost: number;
+            shipping_collected?: number;
+            shipping_cost?: number;
+            operating_expenses?: number;
+            gross_profit?: number;
+            gross_margin?: number;
+            net_profit?: number;
+            net_margin?: number;
+            expense_source?: string;
+            profit: number;
+            margin: number;
+            roi?: number;
+            net_roi?: number;
+        };
+        inventoryValue: { market_value: number, cost_value: number, total_items: number, products_count?: number, skus_with_stock?: number };
         ordersByStatus: Array<{ status: string, count: number }>;
         recentOrders: Array<{ id: string, user_name: string, total: number, status: string, created_at: string }>;
         salesDeepDive?: {
@@ -33,7 +64,7 @@ export interface DashboardStats {
         };
         inventoryDeepDive?: {
             highValueItems: Array<{ name: string, quantity: number, cost: string, total_cost: string }>;
-            riskItems: Array<{ name: string, quantity: number }>;
+            riskItems: Array<{ name: string, quantity: number, units_sold_30d?: number | string, avg_daily_units?: number | string, estimated_days_left?: number | string | null }>;
             expiringItems?: Array<{
                 id?: string;
                 legacy_id?: string;
@@ -60,7 +91,7 @@ export interface DashboardStats {
             };
         };
         aovDeepDive?: {
-            distribution: Array<{ bucket: string, count: number, revenue: string }>;
+            distribution: Array<{ bucket: string, count: number, revenue: string, avg_order_value?: string | number, order_share?: string | number, revenue_share?: string | number }>;
         };
         traceability?: {
             orders: Array<{
@@ -252,6 +283,28 @@ export type DeepDiveView = 'sales' | 'profit' | 'aov' | 'inventory' | 'product-b
 export type ProductDetailMetric = 'gross' | 'net' | 'vat' | 'shipping' | 'profit' | 'inventory'
 export type AdminReportSection = 'general' | 'sales' | 'balance' | 'inventory' | 'traceability'
 export type AdminMenuGroupKey = 'monitoring' | 'reporting' | 'catalog' | 'operations' | 'finance'
+
+export type BillingRidePdf = {
+    access_key: string;
+    source_reference?: string | null;
+    authorization_number?: string | null;
+    authorization_date?: string | null;
+    issue_date?: string | null;
+    customer_name?: string | null;
+    customer_identification?: string | null;
+    customer_email?: string | null;
+    total?: number | string | null;
+    establishment_code?: string | null;
+    emission_point?: string | null;
+    sequential?: string | null;
+    ambiente?: string | null;
+    sri_status?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    pdf_exists?: boolean;
+    pdf_size?: number | null;
+    pdf_modified_at?: string | null;
+}
 export type ProductPublicationFilter = 'all' | 'published' | 'hidden'
 export type ProductEditorMode = 'create' | 'edit' | 'duplicate-variant' | 'restock'
 

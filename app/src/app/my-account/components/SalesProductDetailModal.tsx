@@ -71,7 +71,7 @@ export default function SalesProductDetailModal({
                                 {renderMetricCard('Costo', formatMoney(product.month_cost))}
                                 {renderMetricCard('Utilidad', formatMoney(product.month_profit), product.month_profit < 0)}
                                 <div className="p-3 rounded-lg border border-line bg-white col-span-2">
-                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen neto</div>
+                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
                                     <div className="text-lg font-bold">
                                         {Number(product.month_margin).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
                                     </div>
@@ -96,7 +96,7 @@ export default function SalesProductDetailModal({
                                 {renderMetricCard('Costo', formatMoney(product.historical_cost))}
                                 {renderMetricCard('Utilidad', formatMoney(product.historical_profit), product.historical_profit < 0)}
                                 <div className="p-3 rounded-lg border border-line bg-white col-span-2">
-                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen neto</div>
+                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
                                     <div className="text-lg font-bold">
                                         {Number(product.historical_margin).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
                                     </div>

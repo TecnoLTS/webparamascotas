@@ -4,14 +4,17 @@ import React from 'react'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
 import {
+    getBrandSearchText,
     getSupplierSearchText,
     normalizeReferenceList,
     PRODUCT_REFERENCE_SECTIONS,
     PRODUCT_SYSTEM_REFERENCE_GROUPS,
+    type ProductBrandReference,
     type ProductReferenceData,
     type ProductReferenceKey,
     type ProductSupplierReference,
 } from '@/lib/productReferenceData'
+import BrandReferenceSectionCard from './BrandReferenceSectionCard'
 import ProductReferenceSectionCard from './ProductReferenceSectionCard'
 import SupplierReferenceSectionCard from './SupplierReferenceSectionCard'
 
@@ -54,9 +57,11 @@ export default React.memo(function ProductReferenceDataPanel({
                 section.title,
                 section.sidebarTitle,
                 section.description,
-                ...(section.key === 'suppliers'
-                    ? data.suppliers.map((supplier) => getSupplierSearchText(supplier))
-                    : (data[section.key] || [])),
+                ...(section.key === 'brands'
+                    ? data.brands.map((brand) => getBrandSearchText(brand))
+                    : section.key === 'suppliers'
+                        ? data.suppliers.map((supplier) => getSupplierSearchText(supplier))
+                        : (data[section.key] || [])),
             ]
                 .join(' ')
                 .toLocaleLowerCase('es-EC')
@@ -69,6 +74,13 @@ export default React.memo(function ProductReferenceDataPanel({
         onChange({
             ...data,
             [key]: normalizeReferenceList(nextValues),
+        })
+    }, [data, onChange])
+
+    const updateBrands = React.useCallback((nextValues: ProductBrandReference[]) => {
+        onChange({
+            ...data,
+            brands: nextValues,
         })
     }, [data, onChange])
 
@@ -229,10 +241,18 @@ export default React.memo(function ProductReferenceDataPanel({
                             focused={focusKey === selectedSection.key}
                             onChangeValues={updateSuppliers}
                         />
+                    ) : selectedSection.key === 'brands' ? (
+                        <BrandReferenceSectionCard
+                            section={selectedSection}
+                            values={data.brands}
+                            saving={saving}
+                            focused={focusKey === selectedSection.key}
+                            onChangeValues={updateBrands}
+                        />
                     ) : (
                         <ProductReferenceSectionCard
                             section={selectedSection}
-                            values={data[selectedSection.key] || []}
+                            values={(data[selectedSection.key] || []) as string[]}
                             saving={saving}
                             focused={focusKey === selectedSection.key}
                             onChangeValues={(nextValues) => updateSectionValues(selectedSection.key, nextValues)}

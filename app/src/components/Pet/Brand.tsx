@@ -5,14 +5,34 @@ import { Swiper, SwiperSlide } from 'swiper/react';
 import { Autoplay } from 'swiper/modules';
 import 'swiper/css';
 import { ProductType } from '@/type/ProductType';
-import { getCatalogBrands } from '@/lib/catalog';
+import { getCatalogBrandStats } from '@/lib/catalog';
+import { normalizeProductBrandRecords, type ProductBrandReference } from '@/lib/productReferenceData';
 
 type BrandProps = {
     products?: ProductType[]
+    brandReferences?: ProductBrandReference[]
 }
 
-const Brand = ({ products = [] }: BrandProps) => {
-    const brands = getCatalogBrands(products)
+const normalizeBrandKey = (value?: string | null) =>
+    String(value || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLocaleLowerCase('es-EC')
+
+const Brand = ({ products = [], brandReferences = [] }: BrandProps) => {
+    const logoReferences = normalizeProductBrandRecords(brandReferences).filter((brand) => brand.logoUrl)
+    const logosByBrand = new Map(logoReferences.map((brand) => [normalizeBrandKey(brand.name), brand]))
+    const brands = getCatalogBrandStats(products)
+        .map((brandStat) => {
+            const reference = logosByBrand.get(normalizeBrandKey(brandStat.brand))
+            if (!reference?.logoUrl) return null
+
+            return {
+                name: brandStat.brand,
+                logoUrl: reference.logoUrl,
+            }
+        })
+        .filter((brand): brand is { name: string; logoUrl: string } => Boolean(brand))
 
     if (brands.length === 0) {
         return null
@@ -54,12 +74,14 @@ const Brand = ({ products = [] }: BrandProps) => {
                             }}
                         >
                             {brands.map((brand) => (
-                                <SwiperSlide key={brand}>
-                                    <div className="brand-item relative flex items-center justify-center min-h-[76px] rounded-2xl border border-line bg-white px-4">
-                                        <div className="text-center">
-                                            <div className="text-[11px] uppercase tracking-[0.22em] text-secondary">Marca</div>
-                                            <div className="mt-2 text-title font-semibold">{brand}</div>
-                                        </div>
+                                <SwiperSlide key={brand.name}>
+                                    <div className="brand-item relative flex items-center justify-center min-h-[76px] rounded-2xl border border-line bg-white px-4 py-3">
+                                        <img
+                                            src={brand.logoUrl}
+                                            alt={`Logo ${brand.name}`}
+                                            className="max-h-[52px] max-w-[140px] object-contain"
+                                            loading="lazy"
+                                        />
                                     </div>
                                 </SwiperSlide>
                             ))}

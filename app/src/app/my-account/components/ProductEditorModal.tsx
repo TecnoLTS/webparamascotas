@@ -9,6 +9,7 @@ import type { PricingCalc, PricingMargins } from '@/lib/api/settings'
 import { normalizeMeasurementLabel } from '@/lib/measurementLabel'
 import {
     findSupplierReference,
+    getBrandOptionsWithCurrent,
     getReferenceOptionsWithCurrent,
     getSupplierPurchaseTaxRateLabel,
     getSupplierOptionsWithCurrent,
@@ -720,7 +721,7 @@ export default function ProductEditorModal({
         [form.attributes?.catalogCategories]
     )
     const sizeGuideRows = React.useMemo(() => parseProductSizeGuideRows(form.attributes?.sizeGuideRows), [form.attributes?.sizeGuideRows])
-    const brandOptions = React.useMemo(() => getReferenceOptionsWithCurrent(referenceData.brands, form.brand), [form.brand, referenceData.brands])
+    const brandOptions = React.useMemo(() => getBrandOptionsWithCurrent(referenceData.brands, form.brand), [form.brand, referenceData.brands])
     const supplierOptions = React.useMemo(
         () => getSupplierOptionsWithCurrent(referenceData.suppliers, form.purchaseInvoice?.supplierName || form.attributes?.supplier),
         [form.attributes?.supplier, form.purchaseInvoice?.supplierName, referenceData.suppliers]

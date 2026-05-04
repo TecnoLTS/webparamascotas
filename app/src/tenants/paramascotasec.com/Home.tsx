@@ -6,6 +6,7 @@ import Footer from '@/components/Footer/Footer'
 import { ProductType } from '@/type/ProductType'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { getCategoryCards, getHomeSecondaryCategoryCards } from '@/data/petCategoryCards'
+import type { ProductBrandReference } from '@/lib/productReferenceData'
 
 const Collection = dynamic(() => import('@/components/Pet/Collection'))
 const Collection2 = dynamic(() => import('@/components/Pet/Collection2'))
@@ -17,8 +18,10 @@ const Brand = dynamic(() => import('@/components/Pet/Brand'))
 
 const ParamascotasecHome = ({
   products,
+  brandLogos = [],
 }: {
   products: ProductType[]
+  brandLogos?: ProductBrandReference[]
 }) => {
   const availableCategoryIds = buildCatalogCategoryCards(products).map((category) => category.id)
   const availableCategoryIdSet = new Set(availableCategoryIds.map((categoryId) => categoryId.toLowerCase()))
@@ -43,7 +46,7 @@ const ParamascotasecHome = ({
         <ChooseUs />
         <DeferredFeatureProduct data={products} start={0} limit={4} />
         <Collection2 categories={homeFeaturedCategories} />
-        <Brand products={products} />
+        <Brand products={products} brandReferences={brandLogos} />
       </main>
       <Footer categoryIds={footerCategoryIds} />
     </>

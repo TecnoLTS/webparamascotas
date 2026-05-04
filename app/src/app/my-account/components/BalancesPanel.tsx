@@ -12,9 +12,15 @@ type SalesSummaryLike = {
 
 type ProfitStatsLike = {
     cost?: number
+    gross_profit?: number
+    gross_margin?: number
+    net_profit?: number
+    net_margin?: number
+    operating_expenses?: number
     profit?: number
     margin?: number
     roi?: number
+    net_roi?: number
 }
 
 type RecentOrderLike = {
@@ -72,10 +78,10 @@ function BalanceMetricCard({
     valueClassName?: string
 }) {
     return (
-        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-            <div className="text-xs uppercase text-secondary font-bold mb-1">{label}</div>
-            <div className={`heading5 ${valueClassName}`}>{value}</div>
-            <div className="text-[11px] text-secondary mt-1">{caption}</div>
+        <div className="px-2.5 py-2 bg-white rounded-md border border-line">
+            <div className="text-[10px] uppercase text-secondary font-bold leading-tight">{label}</div>
+            <div className={`text-base font-bold leading-tight ${valueClassName}`}>{value}</div>
+            <div className="text-[10px] text-secondary leading-tight">{caption}</div>
         </div>
     )
 }
@@ -100,9 +106,13 @@ function BalancesPanel({
     const vat = Number(salesSummary?.vat ?? 0)
     const shipping = Number(salesSummary?.shipping ?? 0)
     const cost = Number(profitStats?.cost ?? 0)
-    const profit = Number(profitStats?.profit ?? 0)
-    const margin = Number(profitStats?.margin ?? 0)
+    const grossProfit = Number(profitStats?.gross_profit ?? profitStats?.profit ?? 0)
+    const grossMargin = Number(profitStats?.gross_margin ?? profitStats?.margin ?? 0)
+    const operatingExpenses = Number(profitStats?.operating_expenses ?? 0)
+    const netProfit = Number(profitStats?.net_profit ?? grossProfit - operatingExpenses)
+    const netMargin = Number(profitStats?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
     const roi = Number(profitStats?.roi ?? 0)
+    const netRoi = Number(profitStats?.net_roi ?? 0)
 
     return (
         <div className="tab text-content w-full">
@@ -110,30 +120,34 @@ function BalancesPanel({
             <div className="heading2 mt-2">{formatMoney(netSales)}</div>
             <div className="text-secondary text-sm mt-1">Ventas netas (sin IVA ni envio)</div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5 mt-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-1.5 mt-3">
                 <BalanceMetricCard label="Venta total" value={formatMoney(gross)} caption="Incluye IVA + envio" />
                 <BalanceMetricCard label="IVA por pagar" value={formatMoney(vat)} caption="Impuesto cobrado" />
                 <BalanceMetricCard label="Envio cobrado" value={formatMoney(shipping)} caption="Ingreso operativo" />
                 <BalanceMetricCard label="Costo (COGS)" value={`-${formatMoney(cost)}`} caption="Costo real de producto" valueClassName="text-orange-600" />
-                <BalanceMetricCard label="Utilidad bruta" value={formatMoney(profit)} caption="Sin IVA ni envio" valueClassName="text-success" />
-                <BalanceMetricCard label="Margen neto" value={`${margin.toFixed(1)}%`} caption="Utilidad / ventas netas" />
-                <BalanceMetricCard label="ROI" value={`${roi.toFixed(1)}%`} caption="Utilidad / costo" />
+                <BalanceMetricCard label="Utilidad bruta" value={formatMoney(grossProfit)} caption="Venta neta - costo producto" valueClassName={grossProfit >= 0 ? 'text-success' : 'text-red'} />
+                <BalanceMetricCard label="Utilidad neta" value={formatMoney(netProfit)} caption="Bruta - gastos operativos" valueClassName={netProfit >= 0 ? 'text-success' : 'text-red'} />
+                <BalanceMetricCard label="Margen bruto" value={`${grossMargin.toFixed(1)}%`} caption="Utilidad bruta / ventas netas" />
+                <BalanceMetricCard label="Margen neto" value={`${netMargin.toFixed(1)}%`} caption="Utilidad neta / ventas netas" />
+                <BalanceMetricCard label="ROI bruto" value={`${roi.toFixed(1)}%`} caption="Utilidad bruta / costo" />
+                <BalanceMetricCard label="ROI neto" value={`${netRoi.toFixed(1)}%`} caption="Utilidad neta / costo + gastos" />
+                <BalanceMetricCard label="Gastos operativos" value={`-${formatMoney(operatingExpenses)}`} caption="Gastos caja/POS" valueClassName="text-orange-600" />
                 <BalanceMetricCard label="Venta neta" value={formatMoney(net)} caption="Base real de ingresos" />
             </div>
 
-            <div className="mt-8 p-5 bg-surface rounded-xl border border-line">
-                <div className="text-xs uppercase text-secondary font-bold mb-3">Acciones recomendadas</div>
-                <div className="flex flex-wrap gap-3">
-                    <button type="button" className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenProfitAnalysis}>
+            <div className="mt-3 px-3 py-2 bg-surface rounded-lg border border-line">
+                <div className="text-xs uppercase text-secondary font-bold mb-1.5">Acciones recomendadas</div>
+                <div className="flex flex-wrap gap-2">
+                    <button type="button" className="px-2.5 py-1.5 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenProfitAnalysis}>
                         Analizar rentabilidad
                     </button>
-                    <button type="button" className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenMargins}>
+                    <button type="button" className="px-2.5 py-1.5 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenMargins}>
                         Ajustar margenes
                     </button>
-                    <button type="button" className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenOrders}>
+                    <button type="button" className="px-2.5 py-1.5 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenOrders}>
                         Revisar pedidos
                     </button>
-                    <button type="button" className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenTaxes}>
+                    <button type="button" className="px-2.5 py-1.5 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface" onClick={onOpenTaxes}>
                         IVA y costos de envio
                     </button>
                 </div>

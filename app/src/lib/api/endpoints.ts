@@ -28,6 +28,7 @@ export const apiEndpoints = {
     productReferenceData: '/api/admin/settings/product-reference-data',
     storeStatus: '/api/admin/settings/store-status',
     publicStoreStatus: '/api/settings/store-status',
+    publicBrandLogos: '/api/settings/brand-logos',
   },
   reports: {
     recentOrders: '/api/reports/recent-orders',

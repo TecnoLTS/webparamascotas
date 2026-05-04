@@ -1,5 +1,10 @@
 import { fetchJson, requestApi } from '@/lib/apiClient'
-import { normalizeProductReferenceData, type ProductReferenceData } from '@/lib/productReferenceData'
+import {
+  normalizeProductBrandRecords,
+  normalizeProductReferenceData,
+  type ProductBrandReference,
+  type ProductReferenceData,
+} from '@/lib/productReferenceData'
 import { apiEndpoints } from './endpoints'
 
 export type ProductPageSettings = {
@@ -90,6 +95,11 @@ export const updateStoreStatus = (payload: StoreStatusSettings) =>
 
 export const getPublicStoreStatus = () =>
   fetchJson<StoreStatusSettings>(apiEndpoints.settings.publicStoreStatus)
+
+export const getPublicBrandLogos = async () => {
+  const data = await fetchJson<ProductBrandReference[]>(apiEndpoints.settings.publicBrandLogos)
+  return normalizeProductBrandRecords(data).filter((brand) => brand.logoUrl)
+}
 
 export const getProductReferenceData = async () => {
   const data = await fetchJson<ProductReferenceData>(apiEndpoints.settings.productReferenceData)

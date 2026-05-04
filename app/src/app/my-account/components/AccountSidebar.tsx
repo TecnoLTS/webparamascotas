@@ -27,6 +27,7 @@ import {
     Palette,
     Percent,
     Power,
+    Receipt,
     Rows,
     Ruler,
     SealCheck,
@@ -294,6 +295,10 @@ export default function AccountSidebar({
                                     <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'shipments'} onClick={() => onNavigateToPanelTab('shipments')}>
                                         <Truck size={18} />
                                         <strong className="heading6">Envíos</strong>
+                                    </PanelNavButton>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'billing-rides'} onClick={() => onNavigateToPanelTab('billing-rides')}>
+                                        <Receipt size={18} />
+                                        <strong className="heading6">Facturas PDF</strong>
                                     </PanelNavButton>
                                     <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'balances'} onClick={() => onNavigateToPanelTab('balances')}>
                                         <Briefcase size={18} />

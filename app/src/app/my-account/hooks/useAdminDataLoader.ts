@@ -34,6 +34,7 @@ type UseAdminDataLoaderParams = {
   salesRankingMonth: string
   user: AccountUser | null
   adminReloadNonce: number
+  passiveRefreshNonce?: number
   handleLogout: () => void
   setAdminDataLoading: React.Dispatch<React.SetStateAction<boolean>>
   setAdminDataError: React.Dispatch<React.SetStateAction<string | null>>
@@ -60,6 +61,7 @@ export const useAdminDataLoader = ({
   salesRankingMonth,
   user,
   adminReloadNonce,
+  passiveRefreshNonce = 0,
   handleLogout,
   setAdminDataLoading,
   setAdminDataError,
@@ -82,6 +84,12 @@ export const useAdminDataLoader = ({
 }: UseAdminDataLoaderParams) => {
   const resourceCacheRef = React.useRef<Record<string, unknown>>({})
   const lastCacheNonceRef = React.useRef<number>(adminReloadNonce)
+  const lastLoadSignalRef = React.useRef({
+    activeTab,
+    salesRankingMonth,
+    adminReloadNonce,
+    passiveRefreshNonce,
+  })
 
   const handlersRef = React.useRef({
     handleLogout,
@@ -158,6 +166,18 @@ export const useAdminDataLoader = ({
 
   React.useEffect(() => {
     const current = handlersRef.current
+    const previousSignal = lastLoadSignalRef.current
+    const adminNonceChanged = previousSignal.adminReloadNonce !== adminReloadNonce
+    const passiveNonceChanged = previousSignal.passiveRefreshNonce !== passiveRefreshNonce
+    const tabOrMonthChanged = previousSignal.activeTab !== activeTab || previousSignal.salesRankingMonth !== salesRankingMonth
+    const loadMode: 'manual' | 'mutation' | 'passive' = passiveNonceChanged && !adminNonceChanged && !tabOrMonthChanged ? 'passive' : (adminNonceChanged ? 'mutation' : 'manual')
+
+    lastLoadSignalRef.current = {
+      activeTab,
+      salesRankingMonth,
+      adminReloadNonce,
+      passiveRefreshNonce,
+    }
 
     if (!user || user.role !== 'admin' || !activeTab) {
       current.setAdminDataLoading(false)
@@ -186,6 +206,10 @@ export const useAdminDataLoader = ({
         return
       }
 
+      if (loadMode === 'passive') {
+        return
+      }
+
       if (!cancelled) {
         if (RETRYABLE_PANEL_ERROR_PATTERN.test(message)) {
           current.setAdminDataError('Hubo inestabilidad temporal del servidor. Reintenta en unos segundos.')
@@ -196,7 +220,9 @@ export const useAdminDataLoader = ({
     }
 
     const loadAdminData = async () => {
-      if (!cancelled) {
+      const isPassive = loadMode === 'passive'
+
+      if (!cancelled && !isPassive) {
         current.setAdminDataLoading(true)
         current.setAdminDataError(null)
       }
@@ -210,7 +236,7 @@ export const useAdminDataLoader = ({
         const statsCacheKey = `stats:${salesRankingMonth}`
         const cachedStats = getCached<DashboardStats>(statsCacheKey)
 
-        if (cachedStats) {
+        if (cachedStats && !isPassive) {
           if (!cancelled) current.setDashboardStats(cachedStats)
         } else {
           tasks.push(
@@ -222,17 +248,17 @@ export const useAdminDataLoader = ({
         }
       }
 
-      if (ADMIN_TABS_WITH_VAT_SETTINGS.has(activeTab)) {
+      if (!isPassive && ADMIN_TABS_WITH_VAT_SETTINGS.has(activeTab)) {
         tasks.push(current.loadVatRate({ silent: true }))
       }
 
-      if (ADMIN_TABS_WITH_SHIPPING_SETTINGS.has(activeTab)) {
+      if (!isPassive && ADMIN_TABS_WITH_SHIPPING_SETTINGS.has(activeTab)) {
         tasks.push(current.loadShippingRates({ silent: true }))
       }
 
       if (ADMIN_TABS_WITH_PRODUCTS.has(activeTab)) {
         const cachedProducts = getCached<any[]>('products')
-        if (cachedProducts) {
+        if (cachedProducts && !isPassive) {
           if (!cancelled) current.setAdminProductsList(cachedProducts)
         } else {
           tasks.push(
@@ -245,7 +271,7 @@ export const useAdminDataLoader = ({
         }
       }
 
-      if (ADMIN_TABS_WITH_REFERENCE_DATA.has(activeTab)) {
+      if (!isPassive && ADMIN_TABS_WITH_REFERENCE_DATA.has(activeTab)) {
         tasks.push(current.loadProductReferenceData({ silent: true }))
       }
 
@@ -253,7 +279,7 @@ export const useAdminDataLoader = ({
         tasks.push(current.loadRecentPurchaseInvoices({ silent: true }))
       }
 
-      if (ADMIN_TABS_WITH_USERS.has(activeTab)) {
+      if (!isPassive && ADMIN_TABS_WITH_USERS.has(activeTab)) {
         const cachedUsers = getCached<AdminUserSummary[]>('users')
         if (cachedUsers) {
           if (!cancelled) current.setAdminUsersList(cachedUsers)
@@ -272,7 +298,7 @@ export const useAdminDataLoader = ({
 
       if (ADMIN_TABS_WITH_ORDERS.has(activeTab)) {
         const cachedOrders = getCached<Order[]>('orders')
-        if (cachedOrders) {
+        if (cachedOrders && !isPassive) {
           if (!cancelled) current.setAdminOrdersList(cachedOrders)
         } else {
           tasks.push(
@@ -284,19 +310,19 @@ export const useAdminDataLoader = ({
         }
       }
 
-      if (ADMIN_TABS_WITH_PRICING_SETTINGS.has(activeTab)) {
+      if (!isPassive && ADMIN_TABS_WITH_PRICING_SETTINGS.has(activeTab)) {
         tasks.push(current.loadPricingSettings())
       }
 
-      if (activeTab === 'product-page') {
+      if (!isPassive && activeTab === 'product-page') {
         tasks.push(current.loadProductPageSettings())
       }
 
-      if (activeTab === 'store-status') {
+      if (!isPassive && activeTab === 'store-status') {
         tasks.push(current.loadStoreStatus())
       }
 
-      if (activeTab === 'local-sales') {
+      if (!isPassive && activeTab === 'local-sales') {
         if (!cancelled) current.setPosLoading(true)
         tasks.push(
           current.loadPosSnapshot().finally(() => {
@@ -307,7 +333,7 @@ export const useAdminDataLoader = ({
 
       if (activeTab === 'shipments') {
         const cachedShipments = getCached<{ providers: ShippingProvider[]; pickups: ShippingPickup[] }>('shipments')
-        if (cachedShipments) {
+        if (cachedShipments && !isPassive) {
           if (!cancelled) {
             current.setShippingProviders(cachedShipments.providers)
             current.setShippingPickups(cachedShipments.pickups)
@@ -336,7 +362,7 @@ export const useAdminDataLoader = ({
         }
       })
 
-      if (!cancelled) {
+      if (!cancelled && !isPassive) {
         current.setAdminDataLoading(false)
       }
     }
@@ -346,5 +372,5 @@ export const useAdminDataLoader = ({
     return () => {
       cancelled = true
     }
-  }, [activeTab, salesRankingMonth, user, adminReloadNonce])
+  }, [activeTab, salesRankingMonth, user, adminReloadNonce, passiveRefreshNonce])
 }

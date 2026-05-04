@@ -5,6 +5,7 @@ import { getSiteConfig } from '@/lib/site'
 import ParamascotasecHome from '@/tenants/paramascotasec.com/Home'
 import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { toCanonicalUrl } from '@/lib/publicUrl'
+import { getPublicBrandLogos } from '@/lib/api/settings'
 
 export async function generateMetadata(): Promise<Metadata> {
     const site = getSiteConfig()
@@ -23,11 +24,23 @@ export const dynamic = 'force-dynamic'
 
 export default async function HomePet() {
     let products = [] as Awaited<ReturnType<typeof fetchProducts>>
-    try {
-        products = orderProductsFoodFirst(await fetchProducts({ fresh: true }))
-    } catch (error) {
-        console.error('No se pudieron cargar productos en HomePet:', error)
+    let brandLogos = [] as Awaited<ReturnType<typeof getPublicBrandLogos>>
+    const [productsResult, brandLogosResult] = await Promise.allSettled([
+        fetchProducts({ fresh: true }),
+        getPublicBrandLogos(),
+    ])
+
+    if (productsResult.status === 'fulfilled') {
+        products = orderProductsFoodFirst(productsResult.value)
+    } else {
+        console.error('No se pudieron cargar productos en HomePet:', productsResult.reason)
     }
 
-    return <ParamascotasecHome products={products} />
+    if (brandLogosResult.status === 'fulfilled') {
+        brandLogos = brandLogosResult.value
+    } else {
+        console.error('No se pudieron cargar logos de marcas en HomePet:', brandLogosResult.reason)
+    }
+
+    return <ParamascotasecHome products={products} brandLogos={brandLogos} />
 }

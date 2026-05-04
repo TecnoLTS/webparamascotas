@@ -1,4 +1,5 @@
 export const ADMIN_TABS_WITH_STATS = new Set([
+  'dashboard',
   'alerts',
   'reports',
   'sales-ranking',
