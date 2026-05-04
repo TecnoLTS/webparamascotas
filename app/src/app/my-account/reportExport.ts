@@ -235,12 +235,17 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
   const profit = dashboardStats?.businessMetrics?.profitStats
   const inventory = dashboardStats?.businessMetrics?.inventoryValue
   const traceability = dashboardStats?.businessMetrics?.traceability
-  const operatingExpenses = toPlainNumber(profit?.operating_expenses)
+  const paidExpenses = toPlainNumber(profit?.paid_expenses ?? profit?.operating_expenses)
+  const pendingExpenses = toPlainNumber(profit?.pending_expenses)
+  const overdueExpenses = toPlainNumber(profit?.overdue_expenses)
+  const committedExpenses = toPlainNumber(profit?.committed_expenses ?? (paidExpenses + pendingExpenses + overdueExpenses))
   const grossProfit = toPlainNumber(profit?.gross_profit ?? profit?.profit)
-  const netProfit = toPlainNumber(profit?.net_profit ?? (grossProfit - operatingExpenses))
+  const netProfit = toPlainNumber(profit?.net_cash_profit ?? profit?.net_profit ?? (grossProfit - paidExpenses))
+  const netCommittedProfit = toPlainNumber(profit?.net_committed_profit ?? (grossProfit - committedExpenses))
   const net = toPlainNumber(summary?.net)
   const grossMargin = toPlainNumber(profit?.gross_margin ?? profit?.margin)
-  const netMargin = toPlainNumber(profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
+  const netMargin = toPlainNumber(profit?.net_cash_margin ?? profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
+  const netCommittedMargin = toPlainNumber(profit?.net_committed_margin ?? (net > 0 ? (netCommittedProfit / net) * 100 : 0))
   const statusMap = getOrdersByStatusMap(dashboardStats)
 
   return [
@@ -258,12 +263,18 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
         metricRow('Envío cobrado', moneyCell(summary?.shipping)),
         metricRow('Costo vendido', moneyCell(profit?.cost)),
         metricRow('Utilidad bruta', moneyCell(grossProfit)),
-        metricRow('Gastos operativos registrados', moneyCell(operatingExpenses)),
-        metricRow('Utilidad neta', moneyCell(netProfit)),
+        metricRow('Gastos pagados', moneyCell(paidExpenses)),
+        metricRow('Gastos pendientes', moneyCell(pendingExpenses)),
+        metricRow('Gastos vencidos', moneyCell(overdueExpenses)),
+        metricRow('Gastos comprometidos', moneyCell(committedExpenses)),
+        metricRow('Utilidad neta por caja', moneyCell(netProfit)),
+        metricRow('Utilidad neta comprometida', moneyCell(netCommittedProfit)),
         metricRow('Margen bruto', percentCell(grossMargin)),
-        metricRow('Margen neto', percentCell(netMargin)),
+        metricRow('Margen neto por caja', percentCell(netMargin)),
+        metricRow('Margen neto comprometido', percentCell(netCommittedMargin)),
         metricRow('ROI bruto', percentCell(profit?.roi)),
-        metricRow('ROI neto', percentCell(profit?.net_roi)),
+        metricRow('ROI neto por caja', percentCell(profit?.net_roi)),
+        metricRow('ROI neto comprometido', percentCell(profit?.committed_net_roi)),
         metricRow('Valor inventario al costo', moneyCell(inventory?.cost_value)),
         metricRow('Valor inventario a mercado', moneyCell(inventory?.market_value)),
         metricRow('Items en inventario', numberCell(inventory?.total_items, 'integer')),
@@ -404,12 +415,17 @@ const buildBalanceWorksheets = (context: ExportContext): WorksheetDefinition[] =
   const { dashboardStats } = context
   const summary = dashboardStats?.businessMetrics?.salesSummary
   const profit = dashboardStats?.businessMetrics?.profitStats
-  const operatingExpenses = toPlainNumber(profit?.operating_expenses)
+  const paidExpenses = toPlainNumber(profit?.paid_expenses ?? profit?.operating_expenses)
+  const pendingExpenses = toPlainNumber(profit?.pending_expenses)
+  const overdueExpenses = toPlainNumber(profit?.overdue_expenses)
+  const committedExpenses = toPlainNumber(profit?.committed_expenses ?? (paidExpenses + pendingExpenses + overdueExpenses))
   const grossProfit = toPlainNumber(profit?.gross_profit ?? profit?.profit)
-  const netProfit = toPlainNumber(profit?.net_profit ?? (grossProfit - operatingExpenses))
+  const netProfit = toPlainNumber(profit?.net_cash_profit ?? profit?.net_profit ?? (grossProfit - paidExpenses))
+  const netCommittedProfit = toPlainNumber(profit?.net_committed_profit ?? (grossProfit - committedExpenses))
   const net = toPlainNumber(summary?.net)
   const grossMargin = toPlainNumber(profit?.gross_margin ?? profit?.margin)
-  const netMargin = toPlainNumber(profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
+  const netMargin = toPlainNumber(profit?.net_cash_margin ?? profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
+  const netCommittedMargin = toPlainNumber(profit?.net_committed_margin ?? (net > 0 ? (netCommittedProfit / net) * 100 : 0))
 
   return [
     {
@@ -426,12 +442,18 @@ const buildBalanceWorksheets = (context: ExportContext): WorksheetDefinition[] =
         metricRow('Envío cobrado', moneyCell(summary?.shipping)),
         metricRow('Costo vendido', moneyCell(profit?.cost)),
         metricRow('Utilidad bruta', moneyCell(grossProfit)),
-        metricRow('Gastos operativos registrados', moneyCell(operatingExpenses)),
-        metricRow('Utilidad neta', moneyCell(netProfit)),
+        metricRow('Gastos pagados', moneyCell(paidExpenses)),
+        metricRow('Gastos pendientes', moneyCell(pendingExpenses)),
+        metricRow('Gastos vencidos', moneyCell(overdueExpenses)),
+        metricRow('Gastos comprometidos', moneyCell(committedExpenses)),
+        metricRow('Utilidad neta por caja', moneyCell(netProfit)),
+        metricRow('Utilidad neta comprometida', moneyCell(netCommittedProfit)),
         metricRow('Margen bruto', percentCell(grossMargin)),
-        metricRow('Margen neto', percentCell(netMargin)),
+        metricRow('Margen neto por caja', percentCell(netMargin)),
+        metricRow('Margen neto comprometido', percentCell(netCommittedMargin)),
         metricRow('ROI bruto', percentCell(profit?.roi)),
-        metricRow('ROI neto', percentCell(profit?.net_roi)),
+        metricRow('ROI neto por caja', percentCell(profit?.net_roi)),
+        metricRow('ROI neto comprometido', percentCell(profit?.committed_net_roi)),
       ],
     },
     {

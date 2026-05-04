@@ -42,8 +42,16 @@ export interface DashboardStats {
             shipping_collected?: number;
             shipping_cost?: number;
             operating_expenses?: number;
+            paid_expenses?: number;
+            pending_expenses?: number;
+            overdue_expenses?: number;
+            committed_expenses?: number;
             gross_profit?: number;
             gross_margin?: number;
+            net_cash_profit?: number;
+            net_cash_margin?: number;
+            net_committed_profit?: number;
+            net_committed_margin?: number;
             net_profit?: number;
             net_margin?: number;
             expense_source?: string;
@@ -51,6 +59,7 @@ export interface DashboardStats {
             margin: number;
             roi?: number;
             net_roi?: number;
+            committed_net_roi?: number;
         };
         inventoryValue: { market_value: number, cost_value: number, total_items: number, products_count?: number, skus_with_stock?: number };
         ordersByStatus: Array<{ status: string, count: number }>;
@@ -304,6 +313,67 @@ export type BillingRidePdf = {
     pdf_exists?: boolean;
     pdf_size?: number | null;
     pdf_modified_at?: string | null;
+}
+
+export type BusinessExpenseStatus = 'pending' | 'paid' | 'overdue' | 'cancelled'
+export type BusinessExpenseType = 'one_time' | 'recurring_instance'
+
+export type BusinessExpense = {
+    id: string;
+    tenant_id?: string;
+    recurrence_id?: string | null;
+    category: string;
+    description: string;
+    amount: number;
+    tax_amount: number;
+    total: number;
+    expense_date: string;
+    due_date?: string | null;
+    paid_at?: string | null;
+    status: BusinessExpenseStatus;
+    type: BusinessExpenseType;
+    payment_method?: string | null;
+    reference?: string | null;
+    notes?: string | null;
+    source?: string | null;
+    source_id?: string | null;
+    payment_exists?: boolean;
+    created_by_user_id?: string;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export type BusinessExpenseRecurrence = {
+    id: string;
+    tenant_id?: string;
+    category: string;
+    description: string;
+    amount: number;
+    tax_amount: number;
+    total: number;
+    frequency: 'weekly' | 'monthly';
+    interval_count: number;
+    start_date: string;
+    next_due_date: string;
+    payment_method?: string | null;
+    reference?: string | null;
+    notes?: string | null;
+    active: boolean;
+    created_by_user_id?: string;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export type BusinessExpenseSummary = {
+    paid: number;
+    pending: number;
+    overdue: number;
+    committed: number;
+    cash_expenses?: number;
+    committed_expenses?: number;
+    paid_count?: number;
+    pending_count?: number;
+    overdue_count?: number;
 }
 export type ProductPublicationFilter = 'all' | 'published' | 'hidden'
 export type ProductEditorMode = 'create' | 'edit' | 'duplicate-variant' | 'restock'
@@ -623,6 +693,7 @@ export type PosMovement = {
     type: 'income' | 'expense' | 'withdrawal' | 'deposit' | 'adjustment';
     amount: number;
     description?: string | null;
+    business_expense_id?: string | null;
     created_by_user_id: string;
     created_at: string;
 }

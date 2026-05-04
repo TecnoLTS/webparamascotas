@@ -10,6 +10,7 @@ export const ADMIN_TABS_WITH_STATS = new Set([
   'calculations',
   'pricing-rules',
   'discount-codes',
+  'expenses',
   'product-page',
   'balances',
 ])

@@ -182,6 +182,10 @@ import type {
     AdminReportSection,
     AdminUserSummary,
     BillingRidePdf,
+    BusinessExpense,
+    BusinessExpenseRecurrence,
+    BusinessExpenseStatus,
+    BusinessExpenseSummary,
     DashboardStats,
     DeepDiveView,
     LocalSaleLineItem,
@@ -444,6 +448,9 @@ const InventoryManagementPanel = dynamic(() => import('./components/InventoryMan
 const DiscountCodesPanel = dynamic(() => import('./components/DiscountCodesPanel'), {
     ssr: false,
 })
+const BusinessExpensesPanel = dynamic(() => import('./components/BusinessExpensesPanel'), {
+    ssr: false,
+})
 const LocalSalesPanel = dynamic(() => import('./components/LocalSalesPanel'), {
     ssr: false,
 })
@@ -467,6 +474,20 @@ type DiscountFormState = {
     endsAt: string
     isActive: boolean
 }
+
+type BusinessExpenseFilters = {
+    status: string
+    category: string
+    from: string
+    to: string
+}
+
+const createDefaultBusinessExpenseFilters = (): BusinessExpenseFilters => ({
+    status: 'all',
+    category: 'all',
+    from: '',
+    to: '',
+})
 
 const createEmptyDiscountForm = (): DiscountFormState => ({
     code: '',
@@ -583,6 +604,13 @@ const MyAccount = () => {
     const [adminOrdersList, setAdminOrdersList] = useState<Order[]>([])
     const [billingRidePdfs, setBillingRidePdfs] = useState<BillingRidePdf[]>([])
     const [billingRideLoading, setBillingRideLoading] = useState(false)
+    const [businessExpenses, setBusinessExpenses] = useState<BusinessExpense[]>([])
+    const [businessExpenseRecurrences, setBusinessExpenseRecurrences] = useState<BusinessExpenseRecurrence[]>([])
+    const [businessExpenseSummary, setBusinessExpenseSummary] = useState<BusinessExpenseSummary | null>(null)
+    const [businessExpenseCategories, setBusinessExpenseCategories] = useState<string[]>([])
+    const [businessExpenseFilters, setBusinessExpenseFilters] = useState<BusinessExpenseFilters>(createDefaultBusinessExpenseFilters)
+    const [businessExpensesLoading, setBusinessExpensesLoading] = useState(false)
+    const [businessExpenseSaving, setBusinessExpenseSaving] = useState(false)
     const [adminProductsList, setAdminProductsList] = useState<any[]>([])
     const [adminProductsSearch, setAdminProductsSearch] = useState('')
     const [adminProductsQuickFilter, setAdminProductsQuickFilter] = useState<'all' | 'publishable' | 'blocked' | 'with-stock' | 'no-stock' | 'no-price'>('all')
@@ -858,6 +886,144 @@ const MyAccount = () => {
             showNotification('Tu navegador bloqueó la apertura del PDF.', 'error')
         }
     }, [showNotification])
+
+    const loadBusinessExpenses = React.useCallback(async (options?: { silent?: boolean }) => {
+        if (!user || user.role !== 'admin') return
+        const silent = options?.silent === true
+        if (!silent) setBusinessExpensesLoading(true)
+        try {
+            const params = new URLSearchParams()
+            if (businessExpenseFilters.status && businessExpenseFilters.status !== 'all') params.set('status', businessExpenseFilters.status)
+            if (businessExpenseFilters.category && businessExpenseFilters.category !== 'all') params.set('category', businessExpenseFilters.category)
+            if (businessExpenseFilters.from) params.set('from', businessExpenseFilters.from)
+            if (businessExpenseFilters.to) params.set('to', businessExpenseFilters.to)
+            const query = params.toString()
+            const res = await withTransientRetry(() => requestApi<{
+                expenses?: BusinessExpense[]
+                summary?: BusinessExpenseSummary
+                categories?: string[]
+            }>(`/api/admin/expenses${query ? `?${query}` : ''}`))
+            setBusinessExpenses(Array.isArray(res.body.expenses) ? res.body.expenses : [])
+            setBusinessExpenseSummary(res.body.summary ?? null)
+            setBusinessExpenseCategories(Array.isArray(res.body.categories) ? res.body.categories : [])
+        } catch (error) {
+            console.error(error)
+            if (!silent) {
+                showNotification('No se pudieron cargar los gastos del negocio.', 'error')
+            }
+        } finally {
+            if (!silent) setBusinessExpensesLoading(false)
+        }
+    }, [businessExpenseFilters, showNotification, user])
+
+    const loadBusinessExpenseRecurrences = React.useCallback(async (options?: { silent?: boolean }) => {
+        if (!user || user.role !== 'admin') return
+        const silent = options?.silent === true
+        if (!silent) setBusinessExpensesLoading(true)
+        try {
+            const res = await withTransientRetry(() => requestApi<{
+                recurrences?: BusinessExpenseRecurrence[]
+                summary?: BusinessExpenseSummary
+                categories?: string[]
+            }>('/api/admin/expenses/recurrences'))
+            setBusinessExpenseRecurrences(Array.isArray(res.body.recurrences) ? res.body.recurrences : [])
+            if (res.body.summary) setBusinessExpenseSummary(res.body.summary)
+            if (Array.isArray(res.body.categories)) setBusinessExpenseCategories(res.body.categories)
+        } catch (error) {
+            console.error(error)
+            if (!silent) {
+                showNotification('No se pudieron cargar los gastos recurrentes.', 'error')
+            }
+        } finally {
+            if (!silent) setBusinessExpensesLoading(false)
+        }
+    }, [showNotification, user])
+
+    const reloadBusinessExpensesPanel = React.useCallback(async (silent = false) => {
+        await Promise.all([
+            loadBusinessExpenses({ silent }),
+            loadBusinessExpenseRecurrences({ silent }),
+        ])
+    }, [loadBusinessExpenseRecurrences, loadBusinessExpenses])
+
+    const createBusinessExpense = React.useCallback(async (payload: Record<string, unknown>) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi('/api/admin/expenses', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            showNotification('Gasto registrado correctamente.')
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo registrar el gasto.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
+    const createBusinessExpenseRecurrence = React.useCallback(async (payload: Record<string, unknown>) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi('/api/admin/expenses/recurrences', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            showNotification('Gasto recurrente creado correctamente.')
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo crear el gasto recurrente.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
+    const updateBusinessExpenseStatus = React.useCallback(async (expenseId: string, status: BusinessExpenseStatus) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi(`/api/admin/expenses/${encodeURIComponent(expenseId)}/status`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status }),
+            })
+            showNotification(status === 'paid' ? 'Gasto marcado como pagado.' : 'Estado del gasto actualizado.')
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo actualizar el gasto.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
+    const toggleBusinessExpenseRecurrence = React.useCallback(async (recurrenceId: string, active: boolean) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi(`/api/admin/expenses/recurrences/${encodeURIComponent(recurrenceId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active }),
+            })
+            showNotification(active ? 'Recurrencia activada.' : 'Recurrencia pausada.')
+            await reloadBusinessExpensesPanel(true)
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo actualizar la recurrencia.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [reloadBusinessExpensesPanel, showNotification])
 
     const printOrderInvoiceById = async (orderId: string) => {
         let printWindow: Window | null = null
@@ -1699,6 +1865,10 @@ const MyAccount = () => {
         setPosMovementAmount,
         posMovementDescription,
         setPosMovementDescription,
+        posMovementCreateExpense,
+        setPosMovementCreateExpense,
+        posMovementExpenseCategory,
+        setPosMovementExpenseCategory,
         syncPosState,
         loadPosSnapshot,
         handleOpenPosShift,
@@ -1912,6 +2082,12 @@ const MyAccount = () => {
     }, [activeTab, adminReloadNonce, passiveRefreshNonce, loadBillingRidePdfs, user])
 
     React.useEffect(() => {
+        if (!user || user.role !== 'admin') return
+        if (activeTab !== 'expenses') return
+        reloadBusinessExpensesPanel(true)
+    }, [activeTab, adminReloadNonce, businessExpenseFilters, reloadBusinessExpensesPanel, user])
+
+    React.useEffect(() => {
         if (!isPurchaseInvoiceModalOpen) return
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape' && !purchaseInvoiceDetailLoading) {
@@ -2024,6 +2200,8 @@ const MyAccount = () => {
         if (
             adminDataLoading ||
             billingRideLoading ||
+            businessExpensesLoading ||
+            businessExpenseSaving ||
             posLoading ||
             Boolean(posActionLoading) ||
             purchaseInvoicesLoading ||
@@ -2063,6 +2241,8 @@ const MyAccount = () => {
         addressSaving,
         adminDataLoading,
         billingRideLoading,
+        businessExpenseSaving,
+        businessExpensesLoading,
         discountCodesLoading,
         discountFormSaving,
         isOrderModalOpen,
@@ -2276,9 +2456,14 @@ const MyAccount = () => {
     const reportBalanceCost = Number(profitStats?.cost ?? 0)
     const reportBalanceGrossProfit = Number(profitStats?.gross_profit ?? profitStats?.profit ?? 0)
     const reportBalanceGrossMargin = Number(profitStats?.gross_margin ?? profitStats?.margin ?? 0)
-    const reportBalanceOperatingExpenses = Number(profitStats?.operating_expenses ?? 0)
-    const reportBalanceNetProfit = Number(profitStats?.net_profit ?? reportBalanceGrossProfit - reportBalanceOperatingExpenses)
-    const reportBalanceNetMargin = Number(profitStats?.net_margin ?? (reportBalanceNet > 0 ? (reportBalanceNetProfit / reportBalanceNet) * 100 : 0))
+    const reportBalancePaidExpenses = Number(profitStats?.paid_expenses ?? profitStats?.operating_expenses ?? 0)
+    const reportBalancePendingExpenses = Number(profitStats?.pending_expenses ?? 0)
+    const reportBalanceOverdueExpenses = Number(profitStats?.overdue_expenses ?? 0)
+    const reportBalanceCommittedExpenses = Number(profitStats?.committed_expenses ?? (reportBalancePaidExpenses + reportBalancePendingExpenses + reportBalanceOverdueExpenses))
+    const reportBalanceNetProfit = Number(profitStats?.net_cash_profit ?? profitStats?.net_profit ?? reportBalanceGrossProfit - reportBalancePaidExpenses)
+    const reportBalanceNetMargin = Number(profitStats?.net_cash_margin ?? profitStats?.net_margin ?? (reportBalanceNet > 0 ? (reportBalanceNetProfit / reportBalanceNet) * 100 : 0))
+    const reportBalanceCommittedNetProfit = Number(profitStats?.net_committed_profit ?? reportBalanceGrossProfit - reportBalanceCommittedExpenses)
+    const reportBalanceCommittedNetMargin = Number(profitStats?.net_committed_margin ?? (reportBalanceNet > 0 ? (reportBalanceCommittedNetProfit / reportBalanceNet) * 100 : 0))
     const reportBalanceRoi = Number(profitStats?.roi ?? 0)
     const reportOrdersCount = Number(salesSummary?.orders_count ?? 0)
     const reportAverageOrderNet = Number(salesSummary?.average_order_net ?? dashboardStats?.businessMetrics?.averageOrderValue ?? 0)
@@ -3581,10 +3766,10 @@ const MyAccount = () => {
                                                         <div className="text-xl font-bold text-white/80">${Number(dashboardStats.businessMetrics?.profitStats?.shipping_collected ?? reportBalanceShipping).toLocaleString()}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-white/50 mb-1">Gastos operativos</div>
-                                                        <div className="text-xl font-bold text-orange-400">-${reportBalanceOperatingExpenses.toLocaleString()}</div>
+                                                        <div className="text-xs text-white/50 mb-1">Gastos pagados</div>
+                                                        <div className="text-xl font-bold text-orange-400">-${reportBalancePaidExpenses.toLocaleString()}</div>
                                                     </div>
-                                                    <div className="col-span-2 text-[10px] text-white/40">El envío cobrado se muestra separado; no se trata como costo.</div>
+                                                    <div className="col-span-2 text-[10px] text-white/40">Pendientes/vencidos: -${(reportBalancePendingExpenses + reportBalanceOverdueExpenses).toLocaleString()} comprometidos.</div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div>
@@ -3592,7 +3777,7 @@ const MyAccount = () => {
                                                         <div className="text-2xl font-bold text-success">${Number(dashboardStats.businessMetrics?.profitStats?.gross_profit ?? dashboardStats.businessMetrics?.profitStats?.profit ?? 0).toLocaleString()}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-white/50 mb-1">Utilidad neta</div>
+                                                        <div className="text-xs text-white/50 mb-1">Neta por caja</div>
                                                         <div className={`text-2xl font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>${reportBalanceNetProfit.toLocaleString()}</div>
                                                     </div>
                                                     <div>
@@ -3600,14 +3785,14 @@ const MyAccount = () => {
                                                         <div className="text-xl font-bold">{reportBalanceGrossMargin.toFixed(1)}%</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-white/50 mb-1">Margen neto</div>
+                                                        <div className="text-xs text-white/50 mb-1">Margen caja</div>
                                                         <div className="text-xl font-bold">{reportBalanceNetMargin.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="mt-4 p-3 bg-white/5 rounded-lg border border-white/5 text-[10px] text-white/40 leading-relaxed italic">
-                                            * Neto descuenta gastos operativos registrados en caja/POS.
+                                            * Neto por caja descuenta gastos pagados; comprometido incluye pendientes y vencidos.
                                         </div>
                                     </div>
                                 </div>
@@ -4782,15 +4967,19 @@ const MyAccount = () => {
                                                             <span className="font-bold text-success text-sm">{dashboardStats?.businessMetrics?.profitStats?.gross_margin ?? dashboardStats?.businessMetrics?.profitStats?.margin}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Margen neto sobre venta neta</span>
+                                                            <span className="text-xs text-secondary font-bold">Margen neto por caja</span>
                                                             <span className={`font-bold text-sm ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceNetMargin.toFixed(1)}%</span>
+                                                        </div>
+                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                            <span className="text-xs text-secondary font-bold">Margen neto comprometido</span>
+                                                            <span className={`font-bold text-sm ${reportBalanceCommittedNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceCommittedNetMargin.toFixed(1)}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
                                                             <span className="text-xs text-secondary font-bold">ROI bruto sobre costo vendido</span>
                                                             <span className="font-bold text-sm">{Number(dashboardStats?.businessMetrics?.profitStats?.roi ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">ROI neto con gastos</span>
+                                                            <span className="text-xs text-secondary font-bold">ROI neto por caja</span>
                                                             <span className="font-bold text-sm">{Number(dashboardStats?.businessMetrics?.profitStats?.net_roi ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
                                                         </div>
                                                         <div className="text-[9px] text-secondary text-center mt-2 group-hover:text-black">Bruto descuenta producto; neto descuenta gastos registrados.</div>
@@ -5031,15 +5220,17 @@ const MyAccount = () => {
                                                             <div className="text-[10px] uppercase text-secondary font-bold mb-1">Utilidad en dólares</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                                                                 <div className="flex justify-between gap-2"><span className="text-secondary">Bruta</span><strong className={reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceGrossProfit)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neta</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Costo -{formatMoney(reportBalanceCost)} • gastos -{formatMoney(reportBalanceOperatingExpenses)}</div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Caja</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Comp.</span><strong className={reportBalanceCommittedNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceCommittedNetProfit)}</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Costo -{formatMoney(reportBalanceCost)} • pagados -{formatMoney(reportBalancePaidExpenses)}</div>
                                                             </div>
                                                         </div>
                                                         <div className="px-3 py-2">
                                                             <div className="text-[10px] uppercase text-secondary font-bold mb-1">Márgenes</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                                                                 <div className="flex justify-between gap-2"><span className="text-secondary">Bruto</span><strong>{reportBalanceGrossMargin.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neto</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Caja</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Comp.</span><strong className={reportBalanceCommittedNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceCommittedNetMargin.toFixed(1)}%</strong></div>
                                                                 <div className="col-span-2 text-[11px] text-secondary">Sobre ventas netas.</div>
                                                             </div>
                                                         </div>
@@ -5047,8 +5238,9 @@ const MyAccount = () => {
                                                             <div className="text-[10px] uppercase text-secondary font-bold mb-1">ROI</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                                                                 <div className="flex justify-between gap-2"><span className="text-secondary">Bruto</span><strong>{reportBalanceRoi.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neto</span><strong>{Number(profitStats?.net_roi ?? 0).toFixed(1)}%</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Neto incluye gastos.</div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Caja</span><strong>{Number(profitStats?.net_roi ?? 0).toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Comp.</span><strong>{Number(profitStats?.committed_net_roi ?? 0).toFixed(1)}%</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Caja: pagados. Comp.: pagados + pendientes.</div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -5079,12 +5271,20 @@ const MyAccount = () => {
                                                                 <strong>{formatMoney(reportBalanceGrossProfit)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Menos gastos operativos registrados</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalanceOperatingExpenses)}</strong>
+                                                                <span>Menos gastos pagados</span>
+                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePaidExpenses)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Resultado neto</span>
+                                                                <span>Resultado neto por caja</span>
                                                                 <strong>{formatMoney(reportBalanceNetProfit)}</strong>
+                                                            </div>
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                <span>Gastos pendientes y vencidos</span>
+                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePendingExpenses + reportBalanceOverdueExpenses)}</strong>
+                                                            </div>
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
+                                                                <span>Resultado neto comprometido</span>
+                                                                <strong>{formatMoney(reportBalanceCommittedNetProfit)}</strong>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -5122,6 +5322,13 @@ const MyAccount = () => {
                                                                 onClick={() => navigateToPanelTab('taxes')}
                                                             >
                                                                 IVA y costos de envío
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                onClick={() => navigateToPanelTab('expenses')}
+                                                            >
+                                                                Registrar gastos
                                                             </button>
                                                         </div>
                                                     </div>
@@ -5680,6 +5887,8 @@ const MyAccount = () => {
                                             posMovementAdjustments={posMovementAdjustments}
                                             posMovementAmount={posMovementAmount}
                                             posMovementDescription={posMovementDescription}
+                                            posMovementCreateExpense={posMovementCreateExpense}
+                                            posMovementExpenseCategory={posMovementExpenseCategory}
                                             posMovementExpense={posMovementExpense}
                                             posMovementIncome={posMovementIncome}
                                             posMovementType={posMovementType}
@@ -5730,7 +5939,9 @@ const MyAccount = () => {
                                             setPosCloseNotes={setPosCloseNotes}
                                             setPosClosingCash={setPosClosingCash}
                                             setPosMovementAmount={setPosMovementAmount}
+                                            setPosMovementCreateExpense={setPosMovementCreateExpense}
                                             setPosMovementDescription={setPosMovementDescription}
+                                            setPosMovementExpenseCategory={setPosMovementExpenseCategory}
                                             setPosMovementType={setPosMovementType}
                                             setPosOpenNotes={setPosOpenNotes}
                                             setPosOpeningCash={setPosOpeningCash}
@@ -6383,6 +6594,38 @@ const MyAccount = () => {
                                         onDiscountEdit={handleDiscountEdit}
                                         onDiscountToggleStatus={handleDiscountToggleStatus}
                                         onDiscountRefresh={() => loadDiscountData()}
+                                    />
+                                    )}
+
+                                    {activeTab === 'expenses' && (
+                                    <BusinessExpensesPanel
+                                        expenses={businessExpenses}
+                                        recurrences={businessExpenseRecurrences}
+                                        summary={businessExpenseSummary}
+                                        categories={businessExpenseCategories.length > 0 ? businessExpenseCategories : [
+                                            'Arriendo',
+                                            'Sueldos',
+                                            'Servicios básicos',
+                                            'Internet / telefonía',
+                                            'Software / suscripciones',
+                                            'Marketing',
+                                            'Transporte / delivery',
+                                            'Mantenimiento',
+                                            'Contabilidad / legal',
+                                            'Otros',
+                                        ]}
+                                        filters={businessExpenseFilters}
+                                        loading={businessExpensesLoading}
+                                        saving={businessExpenseSaving}
+                                        onFiltersChange={setBusinessExpenseFilters}
+                                        onRefresh={() => reloadBusinessExpensesPanel(false)}
+                                        onCreateExpense={createBusinessExpense}
+                                        onCreateRecurrence={createBusinessExpenseRecurrence}
+                                        onUpdateStatus={updateBusinessExpenseStatus}
+                                        onToggleRecurrence={toggleBusinessExpenseRecurrence}
+                                        formatMoney={formatMoney}
+                                        formatDate={formatDateEcuador}
+                                        formatDateTime={formatDateTimeEcuador}
                                     />
                                     )}
 

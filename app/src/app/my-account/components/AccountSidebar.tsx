@@ -346,6 +346,10 @@ export default function AccountSidebar({
                                         <Tag size={18} />
                                         <strong className="heading6">Cupones</strong>
                                     </PanelNavButton>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'expenses'} onClick={() => onNavigateToPanelTab('expenses')}>
+                                        <Receipt size={18} />
+                                        <strong className="heading6">Gastos</strong>
+                                    </PanelNavButton>
                                 </div>
                             )}
                         </div>

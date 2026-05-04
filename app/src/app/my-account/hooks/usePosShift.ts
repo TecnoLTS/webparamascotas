@@ -23,6 +23,8 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
   const [posMovementType, setPosMovementType] = React.useState<PosMovement['type']>('expense')
   const [posMovementAmount, setPosMovementAmount] = React.useState('')
   const [posMovementDescription, setPosMovementDescription] = React.useState('')
+  const [posMovementCreateExpense, setPosMovementCreateExpense] = React.useState(false)
+  const [posMovementExpenseCategory, setPosMovementExpenseCategory] = React.useState('Otros')
 
   const syncPosState = React.useCallback((payload: any) => {
     const shift = payload?.shift ? payload.shift as PosShift : null
@@ -121,11 +123,14 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
           type: posMovementType,
           amount,
           description: posMovementDescription.trim() || null,
+          create_business_expense: ['expense', 'withdrawal'].includes(posMovementType) ? posMovementCreateExpense : false,
+          business_expense_category: posMovementExpenseCategory,
         }),
       })
       syncPosState(res.body)
       setPosMovementAmount('')
       setPosMovementDescription('')
+      setPosMovementCreateExpense(false)
       showNotification('Movimiento de caja registrado.')
     } catch (error: any) {
       console.error(error)
@@ -133,7 +138,7 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
     } finally {
       setPosActionLoading(false)
     }
-  }, [parseDecimalInput, posMovementAmount, posMovementDescription, posMovementType, showNotification, syncPosState])
+  }, [parseDecimalInput, posMovementAmount, posMovementCreateExpense, posMovementDescription, posMovementExpenseCategory, posMovementType, showNotification, syncPosState])
 
   return {
     posActiveShift,
@@ -156,6 +161,10 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
     setPosMovementAmount,
     posMovementDescription,
     setPosMovementDescription,
+    posMovementCreateExpense,
+    setPosMovementCreateExpense,
+    posMovementExpenseCategory,
+    setPosMovementExpenseCategory,
     syncPosState,
     loadPosSnapshot,
     handleOpenPosShift,

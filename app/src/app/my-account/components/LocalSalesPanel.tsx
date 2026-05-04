@@ -80,7 +80,9 @@ export default function LocalSalesPanel(props: LocalSalesPanelProps) {
     posLoading,
     posMovementAdjustments,
     posMovementAmount,
+    posMovementCreateExpense,
     posMovementDescription,
+    posMovementExpenseCategory,
     posMovementExpense,
     posMovementIncome,
     posMovementType,
@@ -130,7 +132,9 @@ export default function LocalSalesPanel(props: LocalSalesPanelProps) {
     setPosCloseNotes,
     setPosClosingCash,
     setPosMovementAmount,
+    setPosMovementCreateExpense,
     setPosMovementDescription,
+    setPosMovementExpenseCategory,
     setPosMovementType,
     setPosOpenNotes,
     setPosOpeningCash,
@@ -860,6 +864,36 @@ export default function LocalSalesPanel(props: LocalSalesPanelProps) {
                                                         placeholder="Descripción del movimiento"
                                                         className="w-full mb-3 px-3 py-2 rounded-lg border border-line text-sm focus:border-black outline-none"
                                                     />
+                                                    {(posMovementType === 'expense' || posMovementType === 'withdrawal') && (
+                                                        <div className="mb-3 flex flex-col sm:flex-row gap-2 sm:items-center">
+                                                            <label className="flex items-center gap-2 text-xs font-semibold text-secondary">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={Boolean(posMovementCreateExpense)}
+                                                                    onChange={(event) => setPosMovementCreateExpense(event.target.checked)}
+                                                                />
+                                                                Registrar tambien como gasto operativo pagado
+                                                            </label>
+                                                            {posMovementCreateExpense && (
+                                                                <select
+                                                                    value={posMovementExpenseCategory}
+                                                                    onChange={(event) => setPosMovementExpenseCategory(event.target.value)}
+                                                                    className="px-3 py-2 rounded-lg border border-line text-xs bg-white focus:border-black outline-none"
+                                                                >
+                                                                    <option value="Arriendo">Arriendo</option>
+                                                                    <option value="Sueldos">Sueldos</option>
+                                                                    <option value="Servicios básicos">Servicios básicos</option>
+                                                                    <option value="Internet / telefonía">Internet / telefonía</option>
+                                                                    <option value="Software / suscripciones">Software / suscripciones</option>
+                                                                    <option value="Marketing">Marketing</option>
+                                                                    <option value="Transporte / delivery">Transporte / delivery</option>
+                                                                    <option value="Mantenimiento">Mantenimiento</option>
+                                                                    <option value="Contabilidad / legal">Contabilidad / legal</option>
+                                                                    <option value="Otros">Otros</option>
+                                                                </select>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                     <div className="overflow-auto max-h-[210px] border border-line rounded-xl">
                                                         <table className="w-full min-w-[540px]">
                                                             <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
@@ -878,7 +912,10 @@ export default function LocalSalesPanel(props: LocalSalesPanelProps) {
                                                                         <td className={`px-3 py-2 text-xs text-right font-semibold ${movement.type === 'expense' || movement.type === 'withdrawal' ? 'text-red' : 'text-success'}`}>
                                                                             {formatMoney(movement.amount)}
                                                                         </td>
-                                                                        <td className="px-3 py-2 text-xs">{movement.description || '-'}</td>
+                                                                        <td className="px-3 py-2 text-xs">
+                                                                            <div>{movement.description || '-'}</div>
+                                                                            {movement.business_expense_id && <div className="text-[10px] text-secondary">Gasto: {movement.business_expense_id}</div>}
+                                                                        </td>
                                                                     </tr>
                                                                 ))}
                                                                 {posMovements.length === 0 && (
