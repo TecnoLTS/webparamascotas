@@ -7,6 +7,11 @@ export const formatDateEcuador = (
   value: string | number | Date,
   options: Intl.DateTimeFormatOptions = {},
 ) => {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split('-').map(Number)
+    const dateOnly = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+    return dateOnly.toLocaleDateString('es-EC', { timeZone: 'UTC', ...options })
+  }
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
   return date.toLocaleDateString('es-EC', { timeZone: 'America/Guayaquil', ...options })

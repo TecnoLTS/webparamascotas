@@ -46,6 +46,7 @@ export interface DashboardStats {
             pending_expenses?: number;
             overdue_expenses?: number;
             committed_expenses?: number;
+            financial_adjustments?: number;
             gross_profit?: number;
             gross_margin?: number;
             net_cash_profit?: number;
@@ -338,6 +339,8 @@ export type BusinessExpense = {
     source?: string | null;
     source_id?: string | null;
     payment_exists?: boolean;
+    financial_period_key?: string;
+    is_period_closed?: boolean;
     created_by_user_id?: string;
     created_at?: string | null;
     updated_at?: string | null;
@@ -374,6 +377,45 @@ export type BusinessExpenseSummary = {
     paid_count?: number;
     pending_count?: number;
     overdue_count?: number;
+}
+
+export type FinancialPeriod = {
+    id?: string | null;
+    tenant_id?: string;
+    period_key: string;
+    start_date: string;
+    end_date: string;
+    status: 'open' | 'closed' | 'reopened';
+    snapshot?: Record<string, any> | null;
+    closed_by_user_id?: string | null;
+    closed_at?: string | null;
+    notes?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+
+export type FinancialAdjustment = {
+    id: string;
+    tenant_id?: string;
+    period_key: string;
+    adjustment_date: string;
+    type: string;
+    target_type?: string | null;
+    target_id?: string | null;
+    original_period_key?: string | null;
+    description: string;
+    amount: number;
+    tax_amount: number;
+    total: number;
+    reason?: string | null;
+    created_by_user_id?: string;
+    created_at?: string | null;
+}
+
+export type FinancialPeriodPreview = {
+    period: FinancialPeriod;
+    snapshot: Record<string, any>;
+    adjustments?: FinancialAdjustment[];
 }
 export type ProductPublicationFilter = 'all' | 'published' | 'hidden'
 export type ProductEditorMode = 'create' | 'edit' | 'duplicate-variant' | 'restock'

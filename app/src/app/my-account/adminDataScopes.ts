@@ -36,7 +36,7 @@ export const ADMIN_TABS_WITH_SHIPPING_SETTINGS = new Set([
   'balances',
 ])
 
-export const ADMIN_TABS_WITH_PRODUCTS = new Set(['products', 'inventory', 'prices', 'local-sales', 'quotations'])
+export const ADMIN_TABS_WITH_PRODUCTS = new Set(['products', 'inventory', 'prices', 'local-sales', 'quotations', 'expenses'])
 export const ADMIN_TABS_WITH_REFERENCE_DATA = new Set(['products', 'inventory', 'catalogs'])
 export const ADMIN_TABS_WITH_USERS = new Set(['users'])
 export const ADMIN_TABS_WITH_ORDERS = new Set(['admin-orders', 'shipments', 'balances', 'local-sales'])

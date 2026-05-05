@@ -21,6 +21,7 @@ type ProfitStatsLike = {
     pending_expenses?: number
     overdue_expenses?: number
     committed_expenses?: number
+    financial_adjustments?: number
     net_cash_profit?: number
     net_cash_margin?: number
     net_committed_profit?: number
@@ -121,6 +122,7 @@ function BalancesPanel({
     const pendingExpenses = Number(profitStats?.pending_expenses ?? 0)
     const overdueExpenses = Number(profitStats?.overdue_expenses ?? 0)
     const committedExpenses = Number(profitStats?.committed_expenses ?? (paidExpenses + pendingExpenses + overdueExpenses))
+    const financialAdjustments = Number(profitStats?.financial_adjustments ?? 0)
     const netProfit = Number(profitStats?.net_cash_profit ?? profitStats?.net_profit ?? grossProfit - paidExpenses)
     const netMargin = Number(profitStats?.net_cash_margin ?? profitStats?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
     const committedNetProfit = Number(profitStats?.net_committed_profit ?? grossProfit - committedExpenses)
@@ -152,6 +154,7 @@ function BalancesPanel({
                 <BalanceMetricCard label="Gastos pagados" value={`-${formatMoney(paidExpenses)}`} caption="Afectan caja" valueClassName="text-orange-600" />
                 <BalanceMetricCard label="Gastos pendientes" value={`-${formatMoney(pendingExpenses)}`} caption="Compromiso por pagar" valueClassName="text-orange-600" />
                 <BalanceMetricCard label="Gastos vencidos" value={`-${formatMoney(overdueExpenses)}`} caption="Compromiso atrasado" valueClassName="text-red" />
+                <BalanceMetricCard label="Ajustes cierre" value={formatMoney(financialAdjustments)} caption="Correcciones posteriores" valueClassName={financialAdjustments <= 0 ? 'text-success' : 'text-red'} />
                 <BalanceMetricCard label="Venta neta" value={formatMoney(net)} caption="Base real de ingresos" />
             </div>
 

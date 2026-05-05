@@ -188,6 +188,9 @@ import type {
     BusinessExpenseSummary,
     DashboardStats,
     DeepDiveView,
+    FinancialAdjustment,
+    FinancialPeriod,
+    FinancialPeriodPreview,
     LocalSaleLineItem,
     LocalSaleQuotationResult,
     LocalSaleQuote,
@@ -608,6 +611,9 @@ const MyAccount = () => {
     const [businessExpenseRecurrences, setBusinessExpenseRecurrences] = useState<BusinessExpenseRecurrence[]>([])
     const [businessExpenseSummary, setBusinessExpenseSummary] = useState<BusinessExpenseSummary | null>(null)
     const [businessExpenseCategories, setBusinessExpenseCategories] = useState<string[]>([])
+    const [financialPeriods, setFinancialPeriods] = useState<FinancialPeriod[]>([])
+    const [financialAdjustments, setFinancialAdjustments] = useState<FinancialAdjustment[]>([])
+    const [currentFinancialPeriod, setCurrentFinancialPeriod] = useState<FinancialPeriod | null>(null)
     const [businessExpenseFilters, setBusinessExpenseFilters] = useState<BusinessExpenseFilters>(createDefaultBusinessExpenseFilters)
     const [businessExpensesLoading, setBusinessExpensesLoading] = useState(false)
     const [businessExpenseSaving, setBusinessExpenseSaving] = useState(false)
@@ -939,12 +945,36 @@ const MyAccount = () => {
         }
     }, [showNotification, user])
 
+    const loadFinancialPeriods = React.useCallback(async (options?: { silent?: boolean }) => {
+        if (!user || user.role !== 'admin') return
+        const silent = options?.silent === true
+        if (!silent) setBusinessExpensesLoading(true)
+        try {
+            const res = await withTransientRetry(() => requestApi<{
+                current_period?: FinancialPeriod
+                periods?: FinancialPeriod[]
+                adjustments?: FinancialAdjustment[]
+            }>('/api/admin/financial-periods'))
+            setCurrentFinancialPeriod(res.body.current_period ?? null)
+            setFinancialPeriods(Array.isArray(res.body.periods) ? res.body.periods : [])
+            setFinancialAdjustments(Array.isArray(res.body.adjustments) ? res.body.adjustments : [])
+        } catch (error) {
+            console.error(error)
+            if (!silent) {
+                showNotification('No se pudieron cargar los cierres financieros.', 'error')
+            }
+        } finally {
+            if (!silent) setBusinessExpensesLoading(false)
+        }
+    }, [showNotification, user])
+
     const reloadBusinessExpensesPanel = React.useCallback(async (silent = false) => {
         await Promise.all([
             loadBusinessExpenses({ silent }),
             loadBusinessExpenseRecurrences({ silent }),
+            loadFinancialPeriods({ silent }),
         ])
-    }, [loadBusinessExpenseRecurrences, loadBusinessExpenses])
+    }, [loadBusinessExpenseRecurrences, loadBusinessExpenses, loadFinancialPeriods])
 
     const createBusinessExpense = React.useCallback(async (payload: Record<string, unknown>) => {
         setBusinessExpenseSaving(true)
@@ -1024,6 +1054,75 @@ const MyAccount = () => {
             setBusinessExpenseSaving(false)
         }
     }, [reloadBusinessExpensesPanel, showNotification])
+
+    const closeFinancialPeriod = React.useCallback(async (periodKey: string, notes: string) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi(`/api/admin/financial-periods/${encodeURIComponent(periodKey)}/close`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notes }),
+            })
+            showNotification(`Período ${periodKey} cerrado correctamente.`)
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo cerrar el período financiero.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
+    const previewFinancialPeriod = React.useCallback(async (periodKey: string) => {
+        const res = await requestApi<FinancialPeriodPreview>(`/api/admin/financial-periods/${encodeURIComponent(periodKey)}/preview`)
+        return res.body
+    }, [])
+
+    const createFinancialAdjustment = React.useCallback(async (payload: Record<string, unknown>) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi('/api/admin/financial-adjustments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            showNotification('Ajuste financiero registrado correctamente.')
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo registrar el ajuste financiero.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
+    const createHistoricalSale = React.useCallback(async (payload: Record<string, unknown>) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi('/api/admin/historical-sales', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            showNotification('Venta histórica registrada correctamente.')
+            await Promise.allSettled([
+                reloadBusinessExpensesPanel(true),
+                requestApi<Order[]>('/api/orders').then((res) => setAdminOrdersList(res.body)),
+                requestApi<DashboardStats>(`/api/admin/dashboard/stats${/^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth) ? `?month=${encodeURIComponent(salesRankingMonth)}` : ''}`).then((res) => setDashboardStats(res.body)),
+            ])
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo registrar la venta histórica.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, salesRankingMonth, showNotification])
 
     const printOrderInvoiceById = async (orderId: string) => {
         let printWindow: Window | null = null
@@ -2474,7 +2573,7 @@ const MyAccount = () => {
         setSelectedSalesProduct(item)
         setIsSalesProductModalOpen(true)
     }
-    const productsNeededForLocalSales = activeTab === 'local-sales' || activeTab === 'quotations'
+    const productsNeededForLocalSales = activeTab === 'local-sales' || activeTab === 'quotations' || activeTab === 'expenses'
     const productsNeededForInventory = activeTab === 'inventory' || activeTab === 'reports' || activeTab === 'alerts'
     const productsNeededForProductsPanel = activeTab === 'products'
     const productsNeededForBreakdowns = Boolean(selectedDeepDive === 'product-breakdown')
@@ -2486,6 +2585,34 @@ const MyAccount = () => {
 
         return buildLocalSaleCatalog(adminProductsList || [], deferredLocalSaleSearch, parseMoney)
     }, [adminProductsList, deferredLocalSaleSearch, parseMoney, productsNeededForLocalSales])
+    const historicalSaleProducts = React.useMemo(() => {
+        if (activeTab !== 'expenses') return []
+        return (adminProductsList || [])
+            .map((product: any) => {
+                const id = getAdminProductEntityId(product)
+                if (!id) return null
+                const sku = String(product.attributes?.sku || '').trim()
+                return {
+                    id,
+                    name: String(product.name || 'Producto sin nombre'),
+                    sku,
+                    stock: Math.max(0, Number(product.quantity ?? 0)),
+                    price: parseMoney(product.price) * getProductTaxMultiplier(product),
+                    cost: parseMoney(product.business?.cost ?? product.cost),
+                    taxRate: getProductTaxRate(product),
+                }
+            })
+            .filter((product): product is {
+                id: string
+                name: string
+                sku: string
+                stock: number
+                price: number
+                cost: number
+                taxRate: number
+            } => product !== null)
+            .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name), 'es'))
+    }, [activeTab, adminProductsList, getProductTaxMultiplier, getProductTaxRate, parseMoney])
     const localSaleItemQuantityById = React.useMemo(() => {
         return new Map(localSaleItems.map((item) => [item.internalId, item.quantity]))
     }, [localSaleItems])
@@ -6602,6 +6729,10 @@ const MyAccount = () => {
                                         expenses={businessExpenses}
                                         recurrences={businessExpenseRecurrences}
                                         summary={businessExpenseSummary}
+                                        financialPeriods={financialPeriods}
+                                        financialAdjustments={financialAdjustments}
+                                        currentFinancialPeriod={currentFinancialPeriod}
+                                        historicalSaleProducts={historicalSaleProducts}
                                         categories={businessExpenseCategories.length > 0 ? businessExpenseCategories : [
                                             'Arriendo',
                                             'Sueldos',
@@ -6623,6 +6754,10 @@ const MyAccount = () => {
                                         onCreateRecurrence={createBusinessExpenseRecurrence}
                                         onUpdateStatus={updateBusinessExpenseStatus}
                                         onToggleRecurrence={toggleBusinessExpenseRecurrence}
+                                        onPreviewFinancialPeriod={previewFinancialPeriod}
+                                        onCloseFinancialPeriod={closeFinancialPeriod}
+                                        onCreateFinancialAdjustment={createFinancialAdjustment}
+                                        onCreateHistoricalSale={createHistoricalSale}
                                         formatMoney={formatMoney}
                                         formatDate={formatDateEcuador}
                                         formatDateTime={formatDateTimeEcuador}

@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { BusinessExpense, BusinessExpenseRecurrence, BusinessExpenseStatus, BusinessExpenseSummary } from '../types'
+import type { BusinessExpense, BusinessExpenseRecurrence, BusinessExpenseStatus, BusinessExpenseSummary, FinancialAdjustment, FinancialPeriod, FinancialPeriodPreview } from '../types'
 
 type ExpenseFilters = {
     status: string
@@ -33,10 +33,42 @@ type ExpenseFormState = {
 
 type MoneyField = 'subtotal' | 'taxAmount' | 'total'
 
+export type HistoricalSaleProductOption = {
+    id: string
+    name: string
+    sku?: string
+    stock: number
+    price: number
+    cost: number
+    taxRate: number
+}
+
+type HistoricalSaleLine = {
+    id: string
+    productId: string
+    quantity: string
+    unitPrice: string
+    unitCost: string
+}
+
+type HistoricalSaleFormState = {
+    saleDate: string
+    paymentMethod: string
+    reference: string
+    notes: string
+    customerName: string
+    affectInventory: boolean
+    lines: HistoricalSaleLine[]
+}
+
 type BusinessExpensesPanelProps = {
     expenses: BusinessExpense[]
     recurrences: BusinessExpenseRecurrence[]
     summary: BusinessExpenseSummary | null
+    financialPeriods: FinancialPeriod[]
+    financialAdjustments: FinancialAdjustment[]
+    currentFinancialPeriod: FinancialPeriod | null
+    historicalSaleProducts: HistoricalSaleProductOption[]
     categories: string[]
     filters: ExpenseFilters
     loading: boolean
@@ -47,6 +79,10 @@ type BusinessExpensesPanelProps = {
     onCreateRecurrence: (payload: Record<string, unknown>) => Promise<void>
     onUpdateStatus: (expenseId: string, status: BusinessExpenseStatus) => Promise<void>
     onToggleRecurrence: (recurrenceId: string, active: boolean) => Promise<void>
+    onPreviewFinancialPeriod: (periodKey: string) => Promise<FinancialPeriodPreview>
+    onCloseFinancialPeriod: (periodKey: string, notes: string) => Promise<void>
+    onCreateFinancialAdjustment: (payload: Record<string, unknown>) => Promise<void>
+    onCreateHistoricalSale: (payload: Record<string, unknown>) => Promise<void>
     formatMoney: (value: number | string | null | undefined) => string
     formatDate: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string
     formatDateTime: (value: string | number | Date, options?: Intl.DateTimeFormatOptions) => string
@@ -77,8 +113,41 @@ const createExpenseForm = (): ExpenseFormState => ({
     notes: '',
 })
 
+const createHistoricalSaleLine = (): HistoricalSaleLine => ({
+    id: Math.random().toString(36).slice(2),
+    productId: '',
+    quantity: '1',
+    unitPrice: '',
+    unitCost: '',
+})
+
+const createHistoricalSaleForm = (): HistoricalSaleFormState => ({
+    saleDate: today(),
+    paymentMethod: 'cash',
+    reference: '',
+    notes: '',
+    customerName: '',
+    affectInventory: false,
+    lines: [createHistoricalSaleLine()],
+})
+
 const parseAmount = (value: string) => {
-    const parsed = Number(String(value || '').replace(/\./g, '').replace(',', '.'))
+    const raw = String(value || '').trim()
+    const hasComma = raw.includes(',')
+    const hasDot = raw.includes('.')
+    let normalized = raw
+    if (hasComma && hasDot) {
+        normalized = raw.lastIndexOf(',') > raw.lastIndexOf('.')
+            ? raw.replace(/\./g, '').replace(',', '.')
+            : raw.replace(/,/g, '')
+    } else if (hasComma) {
+        normalized = raw.replace(',', '.')
+    } else if (hasDot) {
+        const dotParts = raw.split('.')
+        const decimalCandidate = dotParts.length === 2 ? dotParts[1] : ''
+        normalized = decimalCandidate.length === 3 ? raw.replace(/\./g, '') : raw
+    }
+    const parsed = Number(normalized)
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
 }
 
@@ -122,6 +191,10 @@ export default function BusinessExpensesPanel({
     expenses,
     recurrences,
     summary,
+    financialPeriods,
+    financialAdjustments,
+    currentFinancialPeriod,
+    historicalSaleProducts,
     categories,
     filters,
     loading,
@@ -132,11 +205,20 @@ export default function BusinessExpensesPanel({
     onCreateRecurrence,
     onUpdateStatus,
     onToggleRecurrence,
+    onPreviewFinancialPeriod,
+    onCloseFinancialPeriod,
+    onCreateFinancialAdjustment,
+    onCreateHistoricalSale,
     formatMoney,
     formatDate,
     formatDateTime,
 }: BusinessExpensesPanelProps) {
     const [expenseForm, setExpenseForm] = React.useState<ExpenseFormState>(createExpenseForm)
+    const [historicalSaleForm, setHistoricalSaleForm] = React.useState<HistoricalSaleFormState>(createHistoricalSaleForm)
+    const [showAllPeriods, setShowAllPeriods] = React.useState(false)
+    const [periodPreview, setPeriodPreview] = React.useState<FinancialPeriodPreview | null>(null)
+    const [periodPreviewNotes, setPeriodPreviewNotes] = React.useState('')
+    const [periodPreviewLoading, setPeriodPreviewLoading] = React.useState(false)
     const categoryOptions = React.useMemo(() => {
         const values = [...categories, 'Otros'].map((category) => String(category || '').trim()).filter(Boolean)
         return Array.from(new Set(values))
@@ -147,9 +229,35 @@ export default function BusinessExpensesPanel({
     const overdue = Number(summary?.overdue ?? 0)
     const committed = pending + overdue
     const totalObligations = paid + committed
+    const currentPeriodLabel = currentFinancialPeriod?.period_key || today().slice(0, 7)
+    const openPastPeriods = financialPeriods.filter((period) => period.status !== 'closed' && period.end_date < today())
+    const closedPeriods = financialPeriods.filter((period) => period.status === 'closed')
+    const visiblePeriods = showAllPeriods ? financialPeriods : financialPeriods.slice(0, 6)
     const selectedCategory = expenseForm.category === CUSTOM_CATEGORY_VALUE
         ? expenseForm.customCategory.trim()
         : expenseForm.category
+    const productsById = React.useMemo(() => {
+        const map = new Map<string, HistoricalSaleProductOption>()
+        historicalSaleProducts.forEach((product) => map.set(product.id, product))
+        return map
+    }, [historicalSaleProducts])
+    const historicalSaleTotals = React.useMemo(() => {
+        return historicalSaleForm.lines.reduce((acc, line) => {
+            const quantity = Math.max(0, Math.round(parseAmount(line.quantity)))
+            const price = parseAmount(line.unitPrice)
+            const cost = parseAmount(line.unitCost)
+            const product = productsById.get(line.productId)
+            const taxRate = Number(product?.taxRate ?? 0)
+            const gross = quantity * price
+            const net = taxRate > 0 ? gross / (1 + taxRate / 100) : gross
+            acc.gross += gross
+            acc.net += net
+            acc.tax += Math.max(gross - net, 0)
+            acc.cost += quantity * cost
+            acc.units += quantity
+            return acc
+        }, { gross: 0, net: 0, tax: 0, cost: 0, units: 0 })
+    }, [historicalSaleForm.lines, productsById])
 
     const handleMoneyChange = React.useCallback((field: MoneyField, rawValue: string) => {
         const value = sanitizeMoneyInput(rawValue)
@@ -170,7 +278,7 @@ export default function BusinessExpensesPanel({
                 const total = parseAmount(previous.total)
                 const subtotal = parseAmount(previous.subtotal)
 
-                if (previous.lastMoneyInput === 'total' && hasAmountInput(previous.total)) {
+                if (hasAmountInput(previous.total)) {
                     return {
                         ...previous,
                         taxAmount: value,
@@ -188,43 +296,12 @@ export default function BusinessExpensesPanel({
             }
 
             const total = parseAmount(value)
-            const subtotal = parseAmount(previous.subtotal)
             const taxAmount = parseAmount(previous.taxAmount)
-
-            if (previous.lastMoneyInput === 'subtotal' && hasAmountInput(previous.subtotal)) {
-                return {
-                    ...previous,
-                    total: value,
-                    taxAmount: formatInputAmount(Math.max(total - subtotal, 0)),
-                    lastMoneyInput: 'total',
-                }
-            }
-
-            if (hasAmountInput(previous.taxAmount) && taxAmount > 0) {
-                const normalizedTax = Math.min(taxAmount, total)
-                return {
-                    ...previous,
-                    total: value,
-                    taxAmount: formatInputAmount(normalizedTax),
-                    subtotal: formatInputAmount(Math.max(total - normalizedTax, 0)),
-                    lastMoneyInput: 'total',
-                }
-            }
-
-            if (hasAmountInput(previous.subtotal) && subtotal > 0) {
-                return {
-                    ...previous,
-                    total: value,
-                    taxAmount: formatInputAmount(Math.max(total - subtotal, 0)),
-                    lastMoneyInput: 'total',
-                }
-            }
-
             return {
                 ...previous,
                 total: value,
-                subtotal: formatInputAmount(total),
-                taxAmount: '0.00',
+                subtotal: formatInputAmount(Math.max(total - taxAmount, 0)),
+                taxAmount: hasAmountInput(previous.taxAmount) ? previous.taxAmount : '0.00',
                 lastMoneyInput: 'total',
             }
         })
@@ -267,6 +344,86 @@ export default function BusinessExpensesPanel({
         setExpenseForm(createExpenseForm())
     }
 
+    const updateHistoricalLine = (lineId: string, patch: Partial<HistoricalSaleLine>) => {
+        setHistoricalSaleForm((previous) => ({
+            ...previous,
+            lines: previous.lines.map((line) => line.id === lineId ? { ...line, ...patch } : line),
+        }))
+    }
+
+    const selectHistoricalProduct = (lineId: string, productId: string) => {
+        const product = productsById.get(productId)
+        updateHistoricalLine(lineId, {
+            productId,
+            unitPrice: product ? formatInputAmount(product.price) : '',
+            unitCost: product ? formatInputAmount(product.cost) : '',
+        })
+    }
+
+    const submitHistoricalSale = async (event: React.FormEvent) => {
+        event.preventDefault()
+        const items = historicalSaleForm.lines
+            .map((line) => ({
+                product_id: line.productId,
+                quantity: Math.max(1, Math.round(parseAmount(line.quantity))),
+                unit_price_gross: parseAmount(line.unitPrice),
+                unit_cost: parseAmount(line.unitCost),
+                tax_rate: productsById.get(line.productId)?.taxRate ?? undefined,
+            }))
+            .filter((item) => item.product_id && item.quantity > 0 && item.unit_price_gross >= 0)
+
+        if (items.length === 0) {
+            window.alert('Agrega al menos un producto válido para la venta histórica.')
+            return
+        }
+
+        await onCreateHistoricalSale({
+            sale_date: historicalSaleForm.saleDate,
+            payment_method: historicalSaleForm.paymentMethod,
+            reference: historicalSaleForm.reference,
+            order_notes: historicalSaleForm.notes,
+            customer_name: historicalSaleForm.customerName,
+            affect_inventory: historicalSaleForm.affectInventory,
+            items,
+        })
+        setHistoricalSaleForm(createHistoricalSaleForm())
+    }
+
+    const previewPeriod = async (period: FinancialPeriod) => {
+        setPeriodPreviewLoading(true)
+        try {
+            const preview = await onPreviewFinancialPeriod(period.period_key)
+            setPeriodPreview(preview)
+            setPeriodPreviewNotes(period.notes || '')
+        } finally {
+            setPeriodPreviewLoading(false)
+        }
+    }
+
+    const closePreviewedPeriod = async () => {
+        if (!periodPreview?.period?.period_key) return
+        await onCloseFinancialPeriod(periodPreview.period.period_key, periodPreviewNotes)
+        setPeriodPreview(null)
+        setPeriodPreviewNotes('')
+    }
+
+    const createAdjustmentForExpense = async (expense: BusinessExpense) => {
+        const reason = window.prompt('Motivo del ajuste posterior', `Corrección del gasto ${expense.description}`)
+        if (reason === null) return
+        const originalPeriod = expense.financial_period_key || String(expense.expense_date || '').slice(0, 7)
+        await onCreateFinancialAdjustment({
+            type: 'expense_reversal',
+            target_type: 'business_expense',
+            target_id: expense.id,
+            original_period_key: originalPeriod,
+            description: `Reverso gasto ${expense.description || expense.category}`,
+            amount: -Math.abs(Number(expense.amount || 0)),
+            tax_amount: -Math.abs(Number(expense.tax_amount || 0)),
+            total: -Math.abs(Number(expense.total || 0)),
+            reason: reason.trim() || `Corrección de gasto del período ${originalPeriod}`,
+        })
+    }
+
     return (
         <div className="tab text-content w-full space-y-3">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -286,6 +443,120 @@ export default function BusinessExpensesPanel({
                 <SummaryCell label="Comprometidos" value={formatMoney(committed)} hint="Pendiente + vencido" />
                 <SummaryCell label="Obligaciones" value={formatMoney(totalObligations)} hint="Pagado + comprometido" />
             </div>
+
+            <section className="rounded-lg border border-line bg-white p-3 space-y-3">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="text-sm font-semibold">Cierre financiero mensual</div>
+                        <div className="text-xs text-secondary">Mes actual: {currentPeriodLabel} · {currentFinancialPeriod?.status === 'closed' ? 'cerrado' : 'abierto'}</div>
+                    </div>
+                    <div className="text-xs text-secondary">Pendientes de cierre: <span className="font-bold text-black">{openPastPeriods.length}</span> · Cerrados visibles: {closedPeriods.length}</div>
+                </div>
+                <div className="overflow-x-auto rounded-md border border-line">
+                    <table className="w-full min-w-[760px] text-sm">
+                        <thead className="bg-surface text-[10px] uppercase text-secondary">
+                            <tr>
+                                <th className="px-2 py-1.5 text-left">Mes</th>
+                                <th className="px-2 py-1.5 text-left">Rango</th>
+                                <th className="px-2 py-1.5 text-left">Estado</th>
+                                <th className="px-2 py-1.5 text-right">Neta caja</th>
+                                <th className="px-2 py-1.5 text-right">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-line">
+                    {visiblePeriods.map((period) => {
+                        const isClosed = period.status === 'closed'
+                        const canClose = !isClosed && period.end_date < today()
+                        const snapshotProfit = Number((period.snapshot as any)?.profit?.net_cash_profit ?? 0)
+                        return (
+                            <tr key={period.period_key} className="bg-white">
+                                <td className="px-2 py-1.5 font-bold">{period.period_key}</td>
+                                <td className="px-2 py-1.5 text-secondary">{formatDate(period.start_date)} - {formatDate(period.end_date)}</td>
+                                <td className="px-2 py-1.5">
+                                    <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${isClosed ? 'bg-slate-100 text-slate-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                        {isClosed ? 'Cerrado' : 'Abierto'}
+                                    </span>
+                                </td>
+                                <td className="px-2 py-1.5 text-right font-semibold">{isClosed ? formatMoney(snapshotProfit) : '-'}</td>
+                                <td className="px-2 py-1.5 text-right">
+                                    {canClose && (
+                                    <button type="button" className="rounded-md border border-black px-2 py-1 text-xs font-bold hover:bg-black hover:text-white disabled:opacity-50" disabled={saving || periodPreviewLoading} onClick={() => previewPeriod(period)}>
+                                        Vista previa
+                                    </button>
+                                    )}
+                                    {!canClose && !isClosed && <span className="text-[11px] text-secondary">Disponible al terminar</span>}
+                                </td>
+                            </tr>
+                        )
+                    })}
+                        </tbody>
+                    </table>
+                </div>
+                {financialPeriods.length > 6 && (
+                    <button type="button" className="text-xs font-semibold text-primary hover:underline" onClick={() => setShowAllPeriods((value) => !value)}>
+                        {showAllPeriods ? 'Mostrar menos meses' : `Mostrar todos (${financialPeriods.length})`}
+                    </button>
+                )}
+                <div className="text-[11px] text-secondary">La lista visible está limitada para no llenar el panel; si se acumulan muchos meses, se muestra el conteo y puedes expandirlos.</div>
+                {financialAdjustments.length > 0 && (
+                    <div className="border-t border-line pt-2">
+                        <div className="text-xs uppercase font-bold text-secondary mb-1">Ajustes recientes</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+                            {financialAdjustments.slice(0, 6).map((adjustment) => (
+                                <div key={adjustment.id} className="rounded-md border border-line px-2.5 py-2">
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-semibold truncate">{adjustment.description}</div>
+                                            <div className="text-[11px] text-secondary">{adjustment.period_key} · origen {adjustment.original_period_key || '-'}</div>
+                                        </div>
+                                        <div className={`text-sm font-bold ${Number(adjustment.total) < 0 ? 'text-success' : 'text-red'}`}>{formatMoney(adjustment.total)}</div>
+                                    </div>
+                                    {adjustment.reason && <div className="text-[11px] text-secondary truncate mt-1">{adjustment.reason}</div>}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </section>
+
+            {periodPreview && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl border border-line shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                        <div className="p-4 border-b border-line flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-lg font-bold">Vista previa de cierre {periodPreview.period.period_key}</div>
+                                <div className="text-sm text-secondary">{formatDate(periodPreview.period.start_date)} - {formatDate(periodPreview.period.end_date)}</div>
+                            </div>
+                            <button type="button" className="text-secondary hover:text-black" onClick={() => setPeriodPreview(null)}>Cerrar</button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                <SummaryCell label="Ventas netas" value={formatMoney((periodPreview.snapshot as any)?.sales?.net ?? 0)} hint={`${(periodPreview.snapshot as any)?.sales?.orders_count ?? 0} pedidos`} />
+                                <SummaryCell label="IVA cobrado" value={formatMoney((periodPreview.snapshot as any)?.sales?.tax ?? 0)} hint="Impuesto venta" tone="text-orange-600" />
+                                <SummaryCell label="Utilidad bruta" value={formatMoney((periodPreview.snapshot as any)?.profit?.gross_profit ?? 0)} hint="Neta - costo" tone={Number((periodPreview.snapshot as any)?.profit?.gross_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
+                                <SummaryCell label="Neta caja" value={formatMoney((periodPreview.snapshot as any)?.profit?.net_cash_profit ?? 0)} hint="Bruta - pagados - ajustes" tone={Number((periodPreview.snapshot as any)?.profit?.net_cash_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
+                                <SummaryCell label="Gastos pagados" value={formatMoney((periodPreview.snapshot as any)?.profit?.paid_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.paid_count ?? 0} gastos`} tone="text-orange-600" />
+                                <SummaryCell label="Pendientes" value={formatMoney((periodPreview.snapshot as any)?.profit?.pending_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.pending_count ?? 0} por pagar`} tone="text-amber-700" />
+                                <SummaryCell label="Vencidos" value={formatMoney((periodPreview.snapshot as any)?.profit?.overdue_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.overdue_count ?? 0} atrasados`} tone="text-red" />
+                                <SummaryCell label="Neta comprometida" value={formatMoney((periodPreview.snapshot as any)?.profit?.net_committed_profit ?? 0)} hint="Incluye pendientes" tone={Number((periodPreview.snapshot as any)?.profit?.net_committed_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
+                            </div>
+                            <label className="block">
+                                <span className="text-[10px] uppercase font-bold text-secondary">Notas del cierre</span>
+                                <textarea className="mt-1 border border-line rounded-lg px-3 py-2 w-full text-sm min-h-[76px]" value={periodPreviewNotes} onChange={(event) => setPeriodPreviewNotes(event.target.value)} placeholder="Ej: Cierre revisado contra caja, gastos y pedidos facturados." />
+                            </label>
+                            <div className="rounded-lg bg-surface border border-line px-3 py-2 text-xs text-secondary">
+                                Al confirmar, estos totales quedan congelados. Cualquier corrección posterior se registrará como ajuste en el mes abierto actual.
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-line flex flex-col sm:flex-row justify-end gap-2">
+                            <button type="button" className="px-4 py-2 rounded-lg border border-line font-semibold" onClick={() => setPeriodPreview(null)}>Cancelar</button>
+                            <button type="button" className="button-main px-4 py-2 rounded-lg font-bold disabled:opacity-60" disabled={saving} onClick={closePreviewedPeriod}>
+                                Confirmar cierre
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <form className="rounded-lg border border-line bg-white p-3 space-y-3" onSubmit={submitExpense}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
@@ -404,6 +675,99 @@ export default function BusinessExpensesPanel({
                 </div>
             </form>
 
+            <form className="rounded-lg border border-line bg-white p-3 space-y-3" onSubmit={submitHistoricalSale}>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                        <div className="text-sm font-semibold">Carga histórica de ventas</div>
+                        <div className="text-xs text-secondary">Úsala para ventas reales de meses abiertos, como abril, sin moverlas al mes actual.</div>
+                    </div>
+                    <div className="text-xs text-secondary">Por defecto no modifica el stock actual.</div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
+                    <label className="space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-secondary">Fecha real</span>
+                        <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" type="date" value={historicalSaleForm.saleDate} onChange={(event) => setHistoricalSaleForm({ ...historicalSaleForm, saleDate: event.target.value })} required />
+                    </label>
+                    <label className="space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-secondary">Pago</span>
+                        <select className="border border-line rounded-lg px-3 py-2 w-full text-sm bg-white" value={historicalSaleForm.paymentMethod} onChange={(event) => setHistoricalSaleForm({ ...historicalSaleForm, paymentMethod: event.target.value })}>
+                            <option value="cash">Efectivo</option>
+                            <option value="transfer">Transferencia</option>
+                            <option value="card">Tarjeta</option>
+                            <option value="historical">Histórico</option>
+                        </select>
+                    </label>
+                    <label className="space-y-1 sm:col-span-2">
+                        <span className="text-[10px] uppercase font-bold text-secondary">Cliente</span>
+                        <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" placeholder="Opcional" value={historicalSaleForm.customerName} onChange={(event) => setHistoricalSaleForm({ ...historicalSaleForm, customerName: event.target.value })} />
+                    </label>
+                    <label className="space-y-1 sm:col-span-2">
+                        <span className="text-[10px] uppercase font-bold text-secondary">Referencia</span>
+                        <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" placeholder="Factura, comprobante o nota" value={historicalSaleForm.reference} onChange={(event) => setHistoricalSaleForm({ ...historicalSaleForm, reference: event.target.value })} />
+                    </label>
+                </div>
+
+                <div className="space-y-2">
+                    {historicalSaleForm.lines.map((line, index) => {
+                        const product = productsById.get(line.productId)
+                        return (
+                            <div key={line.id} className="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_80px_110px_110px_70px] gap-2 items-end">
+                                <label className="space-y-1">
+                                    <span className="text-[10px] uppercase font-bold text-secondary">Producto {index + 1}</span>
+                                    <select className="border border-line rounded-lg px-3 py-2 w-full text-sm bg-white" value={line.productId} onChange={(event) => selectHistoricalProduct(line.id, event.target.value)} required>
+                                        <option value="">Selecciona producto</option>
+                                        {historicalSaleProducts.map((item) => (
+                                            <option key={item.id} value={item.id}>{item.name}{item.sku ? ` · ${item.sku}` : ''}</option>
+                                        ))}
+                                    </select>
+                                    {product && <div className="text-[10px] text-secondary">Stock actual: {product.stock} · IVA: {Number(product.taxRate).toLocaleString('es-EC', { maximumFractionDigits: 2 })}%</div>}
+                                </label>
+                                <label className="space-y-1">
+                                    <span className="text-[10px] uppercase font-bold text-secondary">Cant.</span>
+                                    <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" inputMode="numeric" value={line.quantity} onChange={(event) => updateHistoricalLine(line.id, { quantity: event.target.value })} required />
+                                </label>
+                                <label className="space-y-1">
+                                    <span className="text-[10px] uppercase font-bold text-secondary">PVP unit.</span>
+                                    <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" inputMode="decimal" value={line.unitPrice} onChange={(event) => updateHistoricalLine(line.id, { unitPrice: sanitizeMoneyInput(event.target.value) })} required />
+                                </label>
+                                <label className="space-y-1">
+                                    <span className="text-[10px] uppercase font-bold text-secondary">Costo unit.</span>
+                                    <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" inputMode="decimal" value={line.unitCost} onChange={(event) => updateHistoricalLine(line.id, { unitCost: sanitizeMoneyInput(event.target.value) })} />
+                                </label>
+                                <button type="button" className="px-2 py-2 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={historicalSaleForm.lines.length === 1} onClick={() => setHistoricalSaleForm((previous) => ({ ...previous, lines: previous.lines.filter((item) => item.id !== line.id) }))}>
+                                    Quitar
+                                </button>
+                            </div>
+                        )
+                    })}
+                    <button type="button" className="text-xs font-semibold text-primary hover:underline" onClick={() => setHistoricalSaleForm((previous) => ({ ...previous, lines: [...previous.lines, createHistoricalSaleLine()] }))}>
+                        + Agregar producto
+                    </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-1.5">
+                    <SummaryCell label="Total venta" value={formatMoney(historicalSaleTotals.gross)} hint={`${historicalSaleTotals.units} unidades`} />
+                    <SummaryCell label="Venta neta" value={formatMoney(historicalSaleTotals.net)} hint="Sin IVA estimado" />
+                    <SummaryCell label="IVA" value={formatMoney(historicalSaleTotals.tax)} hint="Según producto" tone="text-orange-600" />
+                    <SummaryCell label="Costo" value={formatMoney(historicalSaleTotals.cost)} hint="Costo producto" />
+                    <SummaryCell label="Utilidad bruta" value={formatMoney(historicalSaleTotals.net - historicalSaleTotals.cost)} hint="Neta - costo" tone={(historicalSaleTotals.net - historicalSaleTotals.cost) >= 0 ? 'text-success' : 'text-red'} />
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_190px] gap-2">
+                    <div className="space-y-2">
+                        <textarea className="border border-line rounded-lg px-3 py-2 w-full text-sm min-h-[58px]" placeholder="Notas de carga histórica" value={historicalSaleForm.notes} onChange={(event) => setHistoricalSaleForm({ ...historicalSaleForm, notes: event.target.value })} />
+                        <label className="inline-flex items-center gap-2 text-xs text-secondary">
+                            <input type="checkbox" checked={historicalSaleForm.affectInventory} onChange={(event) => setHistoricalSaleForm({ ...historicalSaleForm, affectInventory: event.target.checked })} />
+                            Descontar stock ahora
+                        </label>
+                    </div>
+                    <button type="submit" className="button-main w-full py-2 rounded-lg text-sm font-bold disabled:opacity-60" disabled={saving || historicalSaleProducts.length === 0}>
+                        {saving ? 'Guardando...' : 'Registrar venta histórica'}
+                    </button>
+                </div>
+                {historicalSaleProducts.length === 0 && <div className="text-[11px] text-secondary">Carga productos del panel para registrar ventas históricas.</div>}
+            </form>
+
             <section className="rounded-lg border border-line bg-white">
                 <div className="px-3 py-2 border-b border-line flex flex-wrap items-center gap-2">
                     <select className="border border-line rounded-lg px-3 py-2 text-sm bg-white" value={filters.status} onChange={(event) => onFiltersChange({ ...filters, status: event.target.value })}>
@@ -461,21 +825,27 @@ export default function BusinessExpensesPanel({
                                     <td className="px-3 py-2 text-right">
                                         <div className="flex justify-end gap-1.5">
                                             {expense.status !== 'paid' && (
-                                                <button type="button" className="px-2 py-1 rounded-md border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => onUpdateStatus(expense.id, 'paid')}>
+                                                <button type="button" className="px-2 py-1 rounded-md border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving || expense.is_period_closed} onClick={() => onUpdateStatus(expense.id, 'paid')}>
                                                     Pagar
                                                 </button>
                                             )}
-                                            {expense.status !== 'pending' && expense.status !== 'paid' && (
+                                            {expense.status !== 'pending' && expense.status !== 'paid' && !expense.is_period_closed && (
                                                 <button type="button" className="px-2 py-1 rounded-md border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => onUpdateStatus(expense.id, 'pending')}>
                                                     Pendiente
                                                 </button>
                                             )}
-                                            {expense.status !== 'cancelled' && (
+                                            {expense.status !== 'cancelled' && !expense.is_period_closed && (
                                                 <button type="button" className="px-2 py-1 rounded-md border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => onUpdateStatus(expense.id, 'cancelled')}>
                                                     Anular
                                                 </button>
                                             )}
+                                            {expense.is_period_closed && (
+                                                <button type="button" className="px-2 py-1 rounded-md border border-black text-xs font-semibold hover:bg-black hover:text-white disabled:opacity-50" disabled={saving} onClick={() => createAdjustmentForExpense(expense)}>
+                                                    Crear ajuste
+                                                </button>
+                                            )}
                                         </div>
+                                        {expense.is_period_closed && <div className="mt-1 text-[10px] text-secondary">Mes cerrado: se corrige con ajuste.</div>}
                                     </td>
                                 </tr>
                             ))}
