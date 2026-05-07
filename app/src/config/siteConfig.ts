@@ -88,7 +88,7 @@ export const siteConfig: SiteConfig = {
   baseUrl: 'https://paramascotasec.com',
   apiBaseUrl: 'https://api.paramascotasec.com',
   description:
-    'Tienda online para mascotas: alimentos, ropa, juguetes, accesorios y cuidado para perros y gatos.',
+    'Tienda de mascotas online en Ecuador: alimento para perros y gatos, comida humeda, snacks, ropa, juguetes, accesorios y cuidado.',
   logo: {
     src: '/images/brand/LogoVerde150.svg',
     alt: 'ParaMascotasEC',
@@ -102,8 +102,6 @@ export const siteConfig: SiteConfig = {
   social: {
     facebook: 'https://www.facebook.com/paramascotasec',
     instagram: 'https://www.instagram.com/paramascotasec',
-    twitter: 'https://www.twitter.com/',
-    youtube: 'https://www.youtube.com/',
   },
   categories: PET_HOME_CATEGORY_CARDS,
   categoryFilters: PET_CATEGORY_FILTERS,

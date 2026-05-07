@@ -231,7 +231,7 @@ export const useAdminDataLoader = ({
 
       if (ADMIN_TABS_WITH_STATS.has(activeTab)) {
         const monthQuery = /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
-          ? `?month=${encodeURIComponent(salesRankingMonth)}`
+          ? `?period=${encodeURIComponent(salesRankingMonth)}`
           : ''
         const statsCacheKey = `stats:${salesRankingMonth}`
         const cachedStats = getCached<DashboardStats>(statsCacheKey)

@@ -1,8 +1,15 @@
 import type { MetadataRoute } from 'next'
-import { getProductDetailRouteId, buildCatalogCategoryCards } from '@/lib/catalog'
 import { fetchProducts } from '@/lib/products'
-import { getCategoryUrl } from '@/data/petCategoryCards'
+import {
+  getProductSeoPath,
+  getBrandSeoPath,
+  getSeoBrandNames,
+  getDynamicCatalogPages,
+  SEO_CATALOG_PAGES,
+} from '@/lib/seoUrls'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
+import { SEO_GUIDES } from '@/data/seoGuides'
+import { SEO_SERVICE_PAGES } from '@/data/seoServices'
 import type { ProductType } from '@/type/ProductType'
 
 export const dynamic = 'force-dynamic'
@@ -30,12 +37,7 @@ const getProductLastModified = (product: ProductType) => {
 }
 
 const isIndexableProduct = (product: ProductType) =>
-  product.published !== false && Boolean(getProductDetailRouteId(product))
-
-const getProductUrl = (baseUrl: string, product: ProductType) => {
-  const params = new URLSearchParams({ id: String(getProductDetailRouteId(product)) })
-  return `${baseUrl}/product/default?${params.toString()}`
-}
+  product.published !== false && Boolean(product.slug || product.id)
 
 const uniqueSitemapEntries = (entries: MetadataRoute.Sitemap) => {
   const seen = new Set<string>()
@@ -52,7 +54,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   const staticRoutes: MetadataRoute.Sitemap = [
     '',
-    '/shop/breadcrumb1',
+    '/tienda',
+    '/servicios',
     '/pages/about',
     '/pages/contact',
     '/pages/faqs',
@@ -64,31 +67,65 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ].map((path) => ({
     url: toCanonicalUrl(path),
     lastModified: generatedAt,
-    changeFrequency: path === '' ? 'daily' : 'weekly',
-    priority: path === '' ? 1 : path === '/shop/breadcrumb1' ? 0.9 : 0.5,
+    changeFrequency: path === '' || path === '/tienda' ? 'daily' : 'weekly',
+    priority: path === '' ? 1 : path === '/tienda' ? 0.98 : 0.5,
+  }))
+
+  const catalogRoutes: MetadataRoute.Sitemap = SEO_CATALOG_PAGES.map((page) => ({
+    url: `${baseUrl}${page.path}`,
+    lastModified: generatedAt,
+    changeFrequency: 'daily',
+    priority: page.priority,
+  }))
+
+  const guideRoutes: MetadataRoute.Sitemap = SEO_GUIDES.map((guide) => ({
+    url: `${baseUrl}/guias/${guide.slug}`,
+    lastModified: new Date(guide.updatedAt),
+    changeFrequency: 'monthly',
+    priority: 0.64,
+  }))
+
+  const serviceRoutes: MetadataRoute.Sitemap = SEO_SERVICE_PAGES.map((page) => ({
+    url: `${baseUrl}${page.path}`,
+    lastModified: new Date(page.updatedAt),
+    changeFrequency: 'monthly',
+    priority: page.priority,
   }))
 
   try {
     const products = (await fetchProducts({ fresh: true })).filter(isIndexableProduct)
     const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
-      url: getProductUrl(baseUrl, product),
+      url: `${baseUrl}${getProductSeoPath(product)}`,
       lastModified: getProductLastModified(product),
       changeFrequency: 'weekly',
-      priority: 0.6,
+      priority: String(product.category || '').toLowerCase().includes('alimento') ? 0.82 : 0.72,
     }))
 
-    const categoryRoutes: MetadataRoute.Sitemap = buildCatalogCategoryCards(products)
-      .filter((category) => category.id.toLowerCase() !== 'todos')
-      .map((category) => ({
-        url: toCanonicalUrl(getCategoryUrl(category.id)),
-        lastModified: generatedAt,
-        changeFrequency: 'daily',
-        priority: 0.75,
-      }))
+    const brandRoutes: MetadataRoute.Sitemap = getSeoBrandNames(products).map((brand) => ({
+      url: `${baseUrl}${getBrandSeoPath(brand)}`,
+      lastModified: generatedAt,
+      changeFrequency: 'weekly',
+      priority: 0.74,
+    }))
 
-    return uniqueSitemapEntries([...staticRoutes, ...categoryRoutes, ...productRoutes])
+    const dynamicCatalogRoutes: MetadataRoute.Sitemap = getDynamicCatalogPages(products).map((page) => ({
+      url: `${baseUrl}${page.path}`,
+      lastModified: generatedAt,
+      changeFrequency: 'daily',
+      priority: page.priority,
+    }))
+
+    return uniqueSitemapEntries([
+      ...staticRoutes,
+      ...catalogRoutes,
+      ...dynamicCatalogRoutes,
+      ...brandRoutes,
+      ...guideRoutes,
+      ...serviceRoutes,
+      ...productRoutes,
+    ])
   } catch (err) {
-    console.error('No se pudo generar sitemap dinámico', err)
-    return staticRoutes
+    console.error('No se pudo generar sitemap dinamico', err)
+    return uniqueSitemapEntries([...staticRoutes, ...catalogRoutes, ...guideRoutes, ...serviceRoutes])
   }
 }

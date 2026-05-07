@@ -11,9 +11,17 @@ export async function generateMetadata(): Promise<Metadata> {
     const site = getSiteConfig()
 
     return {
-        title: `${site.name} - Tu Tienda de Mascotas en Ecuador`,
+        title: 'Tienda de mascotas online en Ecuador',
         description: site.description,
-        keywords: ['mascotas', 'perros', 'gatos', 'alimento para mascotas', 'Ecuador', 'tienda de mascotas online'],
+        keywords: [
+            'tienda de mascotas Ecuador',
+            'alimento para perros Ecuador',
+            'alimento para gatos Ecuador',
+            'comida humeda para perros',
+            'comida humeda para gatos',
+            'accesorios para mascotas',
+            'ParaMascotasEC',
+        ],
         alternates: {
             canonical: toCanonicalUrl('/'),
         },

@@ -117,7 +117,7 @@ const AboutUs = () => {
                                     </div>
                                 </div>
                                 <div className="mt-7 md:mt-10">
-                                    <Link href="/shop/breadcrumb1" className="button-main rounded-full bg-[var(--blue)] px-6 py-3 text-white transition-all hover:bg-[var(--bluesecondary)] hover:text-white md:px-8">
+                                    <Link href="/tienda" className="button-main rounded-full bg-[var(--blue)] px-6 py-3 text-white transition-all hover:bg-[var(--bluesecondary)] hover:text-white md:px-8">
                                         Explorar Productos
                                     </Link>
                                 </div>

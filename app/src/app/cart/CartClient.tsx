@@ -256,7 +256,7 @@ const Cart = () => {
                                             {salesDisabledMessage}
                                         </div>
                                     )}
-                                    <Link className="text-button hover-underline" href={"/shop/breadcrumb1"}>Seguir comprando</Link>
+                                    <Link className="text-button hover-underline" href={"/tienda"}>Seguir comprando</Link>
                                 </div>
                             </div>
                         </div>

@@ -119,7 +119,7 @@ export default function OrderDetailModal({
         : pendingStatus === 'shipped'
             ? 'marcar el pedido como Enviado'
             : pendingStatus === 'delivered'
-                ? 'marcar el pedido como Completado'
+                ? 'marcar el pedido como Entregado'
                 : pendingStatus === 'canceled'
                     ? 'cancelar el pedido'
                     : ''
@@ -358,7 +358,7 @@ export default function OrderDetailModal({
                                     className="px-4 py-2 rounded-lg bg-black text-white hover:bg-primary transition-all text-sm font-semibold"
                                     onClick={() => setPendingStatus('delivered')}
                                 >
-                                    Completado
+                                    Entregado
                                 </button>
                                 <button
                                     className="px-4 py-2 rounded-lg border border-red text-red hover:bg-red/10 transition-all text-sm font-semibold"

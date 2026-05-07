@@ -10,7 +10,6 @@ import { useModalQuickviewContext } from '@/context/ModalQuickviewContext'
 import { useRouter } from 'next/navigation'
 import Rate from '../Other/Rate'
 import {
-    getProductDetailRouteId,
     getProductCurrentPrice,
     getProductDiscountPercent,
     getProductOriginalPrice,
@@ -22,6 +21,7 @@ import {
     isProductOnSale,
     resolveSelectedVariant,
 } from '@/lib/catalog'
+import { getProductSeoPath } from '@/lib/seoUrls'
 import {
     fetchLiveCatalogSnapshot,
     findLiveCatalogProduct,
@@ -115,7 +115,7 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
     }
 
     const handleDetailProduct = () => {
-        router.push(`/product/default?id=${getProductDetailRouteId(data)}`);
+        router.push(getProductSeoPath(data));
     };
 
     useEffect(() => {

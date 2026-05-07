@@ -1,3 +1,102 @@
+export type ReportPeriodSummary = {
+    period: {
+        period_key: string;
+        start_date: string;
+        end_date: string;
+        end_exclusive?: string;
+        timezone?: string;
+    };
+    timezone: string;
+    realized_statuses: string[];
+    sales: {
+        orders_count: number;
+        total: number;
+        net: number;
+        tax: number;
+        shipping: number;
+    };
+    profit: {
+        cost: number;
+        gross_profit: number;
+        gross_margin: number;
+        period_expenses: number;
+        paid_expenses: number;
+        pending_expenses: number;
+        overdue_expenses: number;
+        committed_expenses: number;
+        financial_adjustments: number;
+        net_cash_profit: number;
+        net_cash_margin: number;
+        net_period_profit: number;
+        net_period_margin: number;
+        net_committed_profit?: number;
+        net_committed_margin?: number;
+    };
+    expenses: {
+        paid_count: number;
+        pending_count: number;
+        overdue_count: number;
+    };
+    adjustments?: { total?: number; count?: number };
+    orders: Array<{
+        id: string;
+        created_at: string;
+        status: string;
+        user_name?: string | null;
+        customer_email?: string | null;
+        customer_phone?: string | null;
+        customer_document_type?: string | null;
+        customer_document_number?: string | null;
+        payment_method?: string | null;
+        delivery_method?: string | null;
+        discount_code?: string | null;
+        discount_total?: number;
+        items_subtotal?: number;
+        vat_rate?: number;
+        shipping_base?: number;
+        shipping_tax_amount?: number;
+        item_lines_count?: number;
+        units_count?: number;
+        items_summary?: string;
+        gross: number;
+        net: number;
+        vat: number;
+        shipping: number;
+        cost?: number;
+        profit?: number;
+        margin?: number;
+        average_unit_net?: number;
+    }>;
+    products: Array<{
+        product_id: string;
+        product_name: string;
+        category: string;
+        orders_count: number;
+        units_sold: number;
+        gross_revenue: number;
+        net_revenue: number;
+        vat_amount: number;
+        shipping_amount: number;
+        cost: number;
+        profit: number;
+        margin: number;
+        order_refs: string[];
+    }>;
+    categories: Array<{
+        category: string;
+        orders_count: number;
+        units_sold: number;
+        gross_revenue: number;
+        net_revenue: number;
+        vat_amount: number;
+        shipping_amount: number;
+        cost: number;
+        profit: number;
+        margin: number;
+        order_refs: string[];
+    }>;
+}
+
 export interface DashboardStats {
     totalSales: {
         amount: number;
@@ -11,8 +110,8 @@ export interface DashboardStats {
         count: number;
         progress: { percentage: number; current: number; previous: number };
     };
-    monthlyPerformance: Array<{ day: string, total: number }>;
-    salesTrend30Days?: Array<{ day: string, total: number }>;
+    monthlyPerformance: Array<{ day: string, date?: string, total: number }>;
+    salesTrend30Days?: Array<{ day: string, date?: string, total: number }>;
     topProducts?: Array<{ name: string, sold: number, revenue: number }>;
     salesByCategory?: Array<{ category: string, total: number }>;
     productAnalysis?: {
@@ -36,12 +135,14 @@ export interface DashboardStats {
             average_order_net?: number;
             average_order_gross?: number;
         };
+        financialTrends?: FinancialTrends;
         profitStats: {
             revenue: number;
             cost: number;
             shipping_collected?: number;
             shipping_cost?: number;
             operating_expenses?: number;
+            period_expenses?: number;
             paid_expenses?: number;
             pending_expenses?: number;
             overdue_expenses?: number;
@@ -51,6 +152,8 @@ export interface DashboardStats {
             gross_margin?: number;
             net_cash_profit?: number;
             net_cash_margin?: number;
+            net_period_profit?: number;
+            net_period_margin?: number;
             net_committed_profit?: number;
             net_committed_margin?: number;
             net_profit?: number;
@@ -60,6 +163,7 @@ export interface DashboardStats {
             margin: number;
             roi?: number;
             net_roi?: number;
+            cash_net_roi?: number;
             committed_net_roi?: number;
         };
         inventoryValue: { market_value: number, cost_value: number, total_items: number, products_count?: number, skus_with_stock?: number };
@@ -123,6 +227,9 @@ export interface DashboardStats {
                 net_revenue: number;
                 vat_amount?: number;
                 shipping_amount?: number;
+                cost?: number;
+                profit?: number;
+                margin?: number;
                 order_refs: string[];
             }>;
             categories: Array<{
@@ -131,6 +238,9 @@ export interface DashboardStats {
                 net_revenue: number;
                 vat_amount?: number;
                 shipping_amount?: number;
+                cost?: number;
+                profit?: number;
+                margin?: number;
                 order_refs: string[];
             }>;
         };
@@ -138,8 +248,20 @@ export interface DashboardStats {
             period: { start: string; end: string };
             selectedMonth?: string;
             historicalPeriod?: { start: string | null; end: string | null };
+            rangePeriod?: { start: string; end: string };
             monthlyTotals: { units_sold: number; net_revenue: number };
             monthlyFinancial?: {
+                orders_count: number;
+                gross: number;
+                net: number;
+                vat: number;
+                shipping: number;
+                cost: number;
+                profit: number;
+                margin: number;
+            };
+            rangeTotals?: { units_sold: number; net_revenue: number };
+            rangeFinancial?: {
                 orders_count: number;
                 gross: number;
                 net: number;
@@ -173,6 +295,15 @@ export interface DashboardStats {
                 month_cost: number;
                 month_profit: number;
                 month_margin: number;
+                range_orders_count?: number;
+                range_units_sold?: number;
+                range_gross_revenue?: number;
+                range_net_revenue?: number;
+                range_vat_amount?: number;
+                range_shipping_amount?: number;
+                range_cost?: number;
+                range_profit?: number;
+                range_margin?: number;
                 historical_orders_count: number;
                 historical_units_sold: number;
                 historical_gross_revenue: number;
@@ -196,6 +327,47 @@ export interface DashboardStats {
                 month_cost: number;
                 month_profit: number;
                 month_margin: number;
+                range_orders_count?: number;
+                range_units_sold?: number;
+                range_gross_revenue?: number;
+                range_net_revenue?: number;
+                range_vat_amount?: number;
+                range_shipping_amount?: number;
+                range_cost?: number;
+                range_profit?: number;
+                range_margin?: number;
+                historical_orders_count: number;
+                historical_units_sold: number;
+                historical_gross_revenue: number;
+                historical_net_revenue: number;
+                historical_vat_amount: number;
+                historical_shipping_amount: number;
+                historical_cost: number;
+                historical_profit: number;
+                historical_margin: number;
+            }>;
+            rangeRanking?: Array<{
+                product_id: string;
+                product_name: string;
+                category: string;
+                month_orders_count: number;
+                month_units_sold: number;
+                month_gross_revenue: number;
+                month_net_revenue: number;
+                month_vat_amount: number;
+                month_shipping_amount: number;
+                month_cost: number;
+                month_profit: number;
+                month_margin: number;
+                range_orders_count?: number;
+                range_units_sold?: number;
+                range_gross_revenue?: number;
+                range_net_revenue?: number;
+                range_vat_amount?: number;
+                range_shipping_amount?: number;
+                range_cost?: number;
+                range_profit?: number;
+                range_margin?: number;
                 historical_orders_count: number;
                 historical_units_sold: number;
                 historical_gross_revenue: number;
@@ -207,8 +379,48 @@ export interface DashboardStats {
                 historical_margin: number;
             }>;
         };
+        report?: ReportPeriodSummary;
     };
     strategicAlerts?: Array<{ type: 'critical' | 'warning' | 'info', message: string, action: string }>;
+}
+
+export type FinancialTrendPoint = {
+    period: string;
+    date: string;
+    orders_count: number;
+    gross_sales: number;
+    net_sales: number;
+    tax_collected: number;
+    shipping_collected: number;
+    product_cost: number;
+    gross_profit: number;
+    expenses_paid: number;
+    expenses_cash_paid?: number;
+    expenses_incurred?: number;
+    period_expenses?: number;
+    expenses_incurred_paid?: number;
+    expenses_pending: number;
+    expenses_overdue: number;
+    committed_expenses: number;
+    expenses_paid_count?: number;
+    expenses_incurred_count?: number;
+    expenses_pending_count?: number;
+    expenses_overdue_count?: number;
+    financial_adjustments: number;
+    net_cash_profit: number;
+    net_period_profit?: number;
+    net_committed_profit: number;
+    gross_margin: number;
+    net_cash_margin: number;
+    net_period_margin?: number;
+    net_committed_margin: number;
+}
+
+export type FinancialTrends = {
+    start_date?: string;
+    daily?: FinancialTrendPoint[];
+    monthly?: FinancialTrendPoint[];
+    totals?: Partial<FinancialTrendPoint>;
 }
 
 export interface Order {
@@ -567,6 +779,7 @@ export type SalesRankingRow = {
     cost: number;
     profit: number;
     margin: number;
+    order_refs?: string[];
     month_orders_count: number;
     month_units_sold: number;
     month_gross_revenue: number;
@@ -576,6 +789,15 @@ export type SalesRankingRow = {
     month_cost: number;
     month_profit: number;
     month_margin: number;
+    range_orders_count: number;
+    range_units_sold: number;
+    range_gross_revenue: number;
+    range_net_revenue: number;
+    range_vat_amount: number;
+    range_shipping_amount: number;
+    range_cost: number;
+    range_profit: number;
+    range_margin: number;
     historical_orders_count: number;
     historical_units_sold: number;
     historical_gross_revenue: number;

@@ -17,6 +17,7 @@ type ProfitStatsLike = {
     net_profit?: number
     net_margin?: number
     operating_expenses?: number
+    period_expenses?: number
     paid_expenses?: number
     pending_expenses?: number
     overdue_expenses?: number
@@ -24,12 +25,15 @@ type ProfitStatsLike = {
     financial_adjustments?: number
     net_cash_profit?: number
     net_cash_margin?: number
+    net_period_profit?: number
+    net_period_margin?: number
     net_committed_profit?: number
     net_committed_margin?: number
     profit?: number
     margin?: number
     roi?: number
     net_roi?: number
+    cash_net_roi?: number
     committed_net_roi?: number
 }
 
@@ -118,18 +122,18 @@ function BalancesPanel({
     const cost = Number(profitStats?.cost ?? 0)
     const grossProfit = Number(profitStats?.gross_profit ?? profitStats?.profit ?? 0)
     const grossMargin = Number(profitStats?.gross_margin ?? profitStats?.margin ?? 0)
-    const paidExpenses = Number(profitStats?.paid_expenses ?? profitStats?.operating_expenses ?? 0)
+    const periodExpenses = Number(profitStats?.period_expenses ?? profitStats?.operating_expenses ?? 0)
+    const paidExpenses = Number(profitStats?.paid_expenses ?? 0)
     const pendingExpenses = Number(profitStats?.pending_expenses ?? 0)
     const overdueExpenses = Number(profitStats?.overdue_expenses ?? 0)
-    const committedExpenses = Number(profitStats?.committed_expenses ?? (paidExpenses + pendingExpenses + overdueExpenses))
     const financialAdjustments = Number(profitStats?.financial_adjustments ?? 0)
-    const netProfit = Number(profitStats?.net_cash_profit ?? profitStats?.net_profit ?? grossProfit - paidExpenses)
-    const netMargin = Number(profitStats?.net_cash_margin ?? profitStats?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
-    const committedNetProfit = Number(profitStats?.net_committed_profit ?? grossProfit - committedExpenses)
-    const committedNetMargin = Number(profitStats?.net_committed_margin ?? (net > 0 ? (committedNetProfit / net) * 100 : 0))
+    const netProfit = Number(profitStats?.net_profit ?? profitStats?.net_period_profit ?? grossProfit - periodExpenses - financialAdjustments)
+    const netMargin = Number(profitStats?.net_margin ?? profitStats?.net_period_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
+    const flowProfit = Number(profitStats?.net_cash_profit ?? grossProfit - paidExpenses - financialAdjustments)
+    const flowMargin = Number(profitStats?.net_cash_margin ?? (net > 0 ? (flowProfit / net) * 100 : 0))
     const roi = Number(profitStats?.roi ?? 0)
     const netRoi = Number(profitStats?.net_roi ?? 0)
-    const committedNetRoi = Number(profitStats?.committed_net_roi ?? 0)
+    const cashNetRoi = Number(profitStats?.cash_net_roi ?? 0)
 
     return (
         <div className="tab text-content w-full">
@@ -138,22 +142,22 @@ function BalancesPanel({
             <div className="text-secondary text-sm mt-1">Ventas netas (sin IVA ni envio)</div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-6 gap-1.5 mt-3">
-                <BalanceMetricCard label="Venta total" value={formatMoney(gross)} caption="Incluye IVA + envio" />
+                <BalanceMetricCard label="Venta total" value={formatMoney(gross)} caption="Incluye IVA + envío" />
                 <BalanceMetricCard label="IVA por pagar" value={formatMoney(vat)} caption="Impuesto cobrado" />
                 <BalanceMetricCard label="Envio cobrado" value={formatMoney(shipping)} caption="Ingreso operativo" />
                 <BalanceMetricCard label="Costo (COGS)" value={`-${formatMoney(cost)}`} caption="Costo real de producto" valueClassName="text-orange-600" />
                 <BalanceMetricCard label="Utilidad bruta" value={formatMoney(grossProfit)} caption="Venta neta - costo producto" valueClassName={grossProfit >= 0 ? 'text-success' : 'text-red'} />
-                <BalanceMetricCard label="Neta por caja" value={formatMoney(netProfit)} caption="Bruta - gastos pagados" valueClassName={netProfit >= 0 ? 'text-success' : 'text-red'} />
-                <BalanceMetricCard label="Neta comprometida" value={formatMoney(committedNetProfit)} caption="Bruta - pagados - pendientes" valueClassName={committedNetProfit >= 0 ? 'text-success' : 'text-red'} />
+                <BalanceMetricCard label="Utilidad neta" value={formatMoney(netProfit)} caption="Bruta - gastos del período" valueClassName={netProfit >= 0 ? 'text-success' : 'text-red'} />
+                <BalanceMetricCard label="Utilidad neta pagada" value={formatMoney(flowProfit)} caption="Bruta - gastos pagados" valueClassName={flowProfit >= 0 ? 'text-success' : 'text-red'} />
                 <BalanceMetricCard label="Margen bruto" value={`${grossMargin.toFixed(1)}%`} caption="Utilidad bruta / ventas netas" />
-                <BalanceMetricCard label="Margen caja" value={`${netMargin.toFixed(1)}%`} caption="Neta caja / ventas netas" />
-                <BalanceMetricCard label="Margen comp." value={`${committedNetMargin.toFixed(1)}%`} caption="Neta comp. / ventas netas" />
+                <BalanceMetricCard label="Margen neto" value={`${netMargin.toFixed(1)}%`} caption="Utilidad neta / ventas netas" />
+                <BalanceMetricCard label="Margen neto pagado" value={`${flowMargin.toFixed(1)}%`} caption="Utilidad neta pagada / ventas netas" />
                 <BalanceMetricCard label="ROI bruto" value={`${roi.toFixed(1)}%`} caption="Utilidad bruta / costo" />
-                <BalanceMetricCard label="ROI caja" value={`${netRoi.toFixed(1)}%`} caption="Neta caja / costo + pagados" />
-                <BalanceMetricCard label="ROI comp." value={`${committedNetRoi.toFixed(1)}%`} caption="Neta comp. / costo + compromiso" />
-                <BalanceMetricCard label="Gastos pagados" value={`-${formatMoney(paidExpenses)}`} caption="Afectan caja" valueClassName="text-orange-600" />
-                <BalanceMetricCard label="Gastos pendientes" value={`-${formatMoney(pendingExpenses)}`} caption="Compromiso por pagar" valueClassName="text-orange-600" />
-                <BalanceMetricCard label="Gastos vencidos" value={`-${formatMoney(overdueExpenses)}`} caption="Compromiso atrasado" valueClassName="text-red" />
+                <BalanceMetricCard label="ROI neto" value={`${netRoi.toFixed(1)}%`} caption="Utilidad neta / costo + gastos" />
+                <BalanceMetricCard label="ROI neto pagado" value={`${cashNetRoi.toFixed(1)}%`} caption="Neta pagada / costo + gastos pagados" />
+                <BalanceMetricCard label="Gastos del período" value={`-${formatMoney(periodExpenses)}`} caption="Registrados por fecha" valueClassName="text-orange-600" />
+                <BalanceMetricCard label="Gastos pagados" value={`-${formatMoney(paidExpenses)}`} caption="Del período" valueClassName="text-orange-600" />
+                <BalanceMetricCard label="Obligaciones" value={`-${formatMoney(pendingExpenses + overdueExpenses)}`} caption="Pendientes y vencidas" valueClassName={overdueExpenses > 0 ? 'text-red' : 'text-orange-600'} />
                 <BalanceMetricCard label="Ajustes cierre" value={formatMoney(financialAdjustments)} caption="Correcciones posteriores" valueClassName={financialAdjustments <= 0 ? 'text-success' : 'text-red'} />
                 <BalanceMetricCard label="Venta neta" value={formatMoney(net)} caption="Base real de ingresos" />
             </div>

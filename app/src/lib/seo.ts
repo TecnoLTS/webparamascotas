@@ -1,8 +1,15 @@
 import { ProductType } from '@/type/ProductType'
-import { getProductDetailRouteId, getProductReviewCount, getProductSku } from '@/lib/catalog'
+import {
+    getProductCurrentPrice,
+    getProductOriginalPrice,
+    getProductReviewCount,
+    getProductSku,
+    getProductVariants,
+} from '@/lib/catalog'
 import { versionLocalImagePath } from '@/lib/staticAsset'
 import type { SiteConfig } from '@/config/siteConfig'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
+import { getProductSeoPath } from '@/lib/seoUrls'
 
 const toAbsoluteUrl = (baseUrl: string, path?: string | null) => {
     if (!path) return undefined
@@ -18,31 +25,57 @@ export function generateProductJsonLd(
 ) {
     const siteUrl = (options?.baseUrl ?? getCanonicalSiteUrl()).replace(/\/$/, '')
     const brandName = options?.brandName ?? 'ParaMascotasEC'
-
+    const productPath = getProductSeoPath(product)
+    const productUrl = `${siteUrl}${productPath}`
     const reviewCount = getProductReviewCount(product)
+    const price = getProductCurrentPrice(product)
+    const originalPrice = getProductOriginalPrice(product)
+    const variants = getProductVariants(product)
+    const highPrice = Math.max(...variants.map((variant) => Number(variant.price ?? 0)).filter((value) => value > 0), price)
+    const lowPrice = Math.min(...variants.map((variant) => Number(variant.price ?? 0)).filter((value) => value > 0), price)
+    const sku = getProductSku(product) || product.internalId || product.id
+    const imageList = [
+        ...(product.images ?? []),
+        ...(product.thumbImage ?? []),
+    ].map((image) => toAbsoluteUrl(siteUrl, image)).filter(Boolean)
 
     return {
         '@context': 'https://schema.org',
         '@type': 'Product',
-        '@id': `${siteUrl}/product/default?id=${getProductDetailRouteId(product)}#product`,
+        '@id': `${productUrl}#product`,
         name: product.name,
-        sku: getProductSku(product) || product.internalId || product.id,
+        sku,
+        mpn: sku,
         category: product.category,
-        image: product.images.map((image) => toAbsoluteUrl(siteUrl, image)).filter(Boolean),
+        image: imageList,
         description: product.description,
-        url: `${siteUrl}/product/default?id=${getProductDetailRouteId(product)}`,
+        url: productUrl,
         brand: {
             '@type': 'Brand',
             name: product.brand || brandName,
         },
-        offers: {
-            '@type': 'Offer',
-            url: `${siteUrl}/product/default?id=${getProductDetailRouteId(product)}`,
+        offers: variants.length > 1 ? {
+            '@type': 'AggregateOffer',
+            url: productUrl,
             priceCurrency: 'USD',
-            price: product.price,
+            lowPrice,
+            highPrice,
+            offerCount: variants.length,
             availability: product.quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
             itemCondition: 'https://schema.org/NewCondition',
+        } : {
+            '@type': 'Offer',
+            url: productUrl,
+            priceCurrency: 'USD',
+            price,
+            availability: product.quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+            itemCondition: 'https://schema.org/NewCondition',
+            priceValidUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString().slice(0, 10),
         },
+        additionalProperty: [
+            product.gender ? { '@type': 'PropertyValue', name: 'Mascota', value: product.gender === 'cat' ? 'Gato' : product.gender === 'dog' ? 'Perro' : product.gender } : undefined,
+            originalPrice > price && originalPrice > 0 ? { '@type': 'PropertyValue', name: 'Precio anterior', value: originalPrice.toFixed(2) } : undefined,
+        ].filter(Boolean),
         aggregateRating: product.rate > 0 && reviewCount > 0 ? {
             '@type': 'AggregateRating',
             ratingValue: product.rate,
@@ -127,5 +160,47 @@ export function generatePetStoreJsonLd(site: SiteConfig) {
             'salud y cuidado para mascotas',
             'tienda online para mascotas en Ecuador',
         ],
+    }
+}
+
+export function generateBreadcrumbJsonLd(items: Array<{ name: string; url: string }>) {
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: items.map((item, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            name: item.name,
+            item: item.url,
+        })),
+    }
+}
+
+export function generateItemListJsonLd(items: Array<{ name: string; url: string; image?: string | null }>) {
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'ItemList',
+        itemListElement: items.map((item, index) => ({
+            '@type': 'ListItem',
+            position: index + 1,
+            url: item.url,
+            name: item.name,
+            image: item.image,
+        })),
+    }
+}
+
+export function generateFaqJsonLd(faqs: Array<{ question: string; answer: string }>) {
+    return {
+        '@context': 'https://schema.org',
+        '@type': 'FAQPage',
+        mainEntity: faqs.map((faq) => ({
+            '@type': 'Question',
+            name: faq.question,
+            acceptedAnswer: {
+                '@type': 'Answer',
+                text: faq.answer,
+            },
+        })),
     }
 }

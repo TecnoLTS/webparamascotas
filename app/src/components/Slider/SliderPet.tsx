@@ -36,7 +36,7 @@ const slides: SlideContent[] = [
     subtitle:
       'Porque no es solo tu mascota, es parte de tu familia. Dale todo lo que necesita para una vida llena de amor y bienestar.',
     ctaLabel: 'Descubrir ahora',
-    ctaHref: '/shop/breadcrumb1',
+    ctaHref: '/tienda',
   },
   {
     id: 2,
@@ -44,7 +44,7 @@ const slides: SlideContent[] = [
     subtitle:
       'Comparte la pasión con tu peludito y celebren juntos cada gol con la camiseta de la Tri.',
     ctaLabel: 'Consíguela aquí',
-    ctaHref: '/shop/breadcrumb1?category=ropa&query=camiseta',
+    ctaHref: '/tienda/ropa?query=camiseta',
   },
   {
     id: 3,
@@ -52,7 +52,7 @@ const slides: SlideContent[] = [
     subtitle:
       'Pequeños detalles que lo hacen feliz, con la calidad y cuidado que se merece.',
     ctaLabel: 'Explorar tienda',
-    ctaHref: '/shop/breadcrumb1',
+    ctaHref: '/tienda/alimento',
   },
 ]
 

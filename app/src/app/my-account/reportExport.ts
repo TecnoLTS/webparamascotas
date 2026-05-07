@@ -1,4 +1,4 @@
-import { formatDateTimeEcuador, formatMoney } from './formatting'
+import { formatDateTimeEcuador, formatMoney, getLocalSalePaymentMethodLabel } from './formatting'
 import type {
   AdminReportSection,
   DashboardStats,
@@ -7,6 +7,31 @@ import type {
 } from './types'
 import type { InventoryManagementRow } from './adminProductDerivations'
 
+export type ReportFinancialSummary = {
+  scopeLabel: string
+  ordersCount: number
+  gross: number
+  net: number
+  vat: number
+  shipping: number
+  cost: number
+  grossProfit: number
+  periodExpenses: number
+  paidExpenses: number
+  pendingExpenses: number
+  overdueExpenses: number
+  financialAdjustments: number
+  netProfit: number
+  flowProfit: number
+  grossMargin: number
+  netMargin: number
+  flowMargin: number
+  roi: number
+  netRoi: number
+  flowRoi: number
+  averageOrderNet: number
+}
+
 type ExportContext = {
   section: AdminReportSection
   reportTitle: string
@@ -14,11 +39,42 @@ type ExportContext = {
   currentDateLabel: string
   selectedRankingMonth: string
   selectedRankingMonthLabel: string
-  salesRankingView: 'month' | 'historical'
+  salesRankingView: 'month' | 'historical' | 'range'
   dashboardStats: DashboardStats | null
+  financialScopeLabel: string
+  financialSummary: ReportFinancialSummary
+  salesOrders: Array<{
+    id: string
+    created_at: string
+    status: string
+    user_name?: string | null
+    customer_email?: string | null
+    customer_phone?: string | null
+    customer_document_type?: string | null
+    customer_document_number?: string | null
+    payment_method?: string | null
+    delivery_method?: string | null
+    discount_code?: string | null
+    discount_total?: number
+    items_subtotal?: number
+    vat_rate?: number
+    shipping_base?: number
+    shipping_tax_amount?: number
+    item_lines_count?: number
+    units_count?: number
+    items_summary?: string
+    gross: number
+    net: number
+    vat: number
+    shipping: number
+    cost?: number
+    profit?: number
+    margin?: number
+    average_unit_net?: number
+  }>
   salesRankingRows: SalesRankingRow[]
   salesCategories: Array<{ category: string; total: number }>
-  salesTrendRows: Array<{ day: string; total: number }>
+  salesTrendRows: Array<{ day: string; date?: string; total: number }>
   inventoryManagementRows: InventoryManagementRow[]
   recentPurchaseInvoices: PurchaseInvoiceSummary[]
 }
@@ -97,6 +153,26 @@ const metricRow = (label: string, cell: WorkbookCell): WorkbookCell[] => [
 ]
 
 const headerRow = (headers: string[]): WorkbookCell[] => headers.map((header) => textCell(header, 'header'))
+
+const getDeliveryMethodLabel = (method?: string | null): string => {
+  const normalized = String(method || '').trim().toLowerCase()
+  if (normalized === 'pickup') return 'Retiro en tienda'
+  if (normalized === 'delivery') return 'Envío a domicilio'
+  return normalized ? String(method) : 'Por definir'
+}
+
+const getPaymentMethodLabel = (method?: string | null): string => {
+  const raw = String(method || '').trim()
+  if (!raw) return 'Por definir'
+  const label = getLocalSalePaymentMethodLabel(raw)
+  return label === 'Otro' ? raw : label
+}
+
+const getCustomerDocument = (item: { customer_document_type?: string | null; customer_document_number?: string | null }): string => {
+  const type = String(item.customer_document_type || '').trim()
+  const number = String(item.customer_document_number || '').trim()
+  return [type, number].filter(Boolean).join(' ') || '-'
+}
 
 const renderCell = (cell: WorkbookCell): string => {
   const style = cell.styleId ? ` ss:StyleID="${cell.styleId}"` : ''
@@ -207,6 +283,7 @@ const getOrdersByStatusMap = (dashboardStats: DashboardStats | null) => new Map(
 
 const buildCoverSheet = (context: ExportContext): WorksheetDefinition => {
   const generatedAt = formatDateTimeEcuador(context.generatedAt ?? new Date())
+  const periodReport = context.dashboardStats?.businessMetrics?.report
   return {
     name: 'Portada',
     columnWidths: [220, 220, 220, 220, 220, 220, 220],
@@ -218,11 +295,16 @@ const buildCoverSheet = (context: ExportContext): WorksheetDefinition => {
       metricRow('Generado', textCell(generatedAt)),
       metricRow('Fecha visible', textCell(context.currentDateLabel)),
       metricRow('Sección', textCell(context.section)),
+      metricRow('Alcance financiero', textCell(context.financialScopeLabel)),
+      metricRow('Período reportado', textCell(periodReport?.period?.period_key ?? context.selectedRankingMonth)),
+      metricRow('Rango reportado', textCell(periodReport ? `${periodReport.period.start_date} - ${periodReport.period.end_date}` : 'No disponible')),
+      metricRow('Zona horaria contable', textCell(periodReport?.timezone ?? 'America/Guayaquil')),
+      metricRow('Estados de venta incluidos', textCell((periodReport?.realized_statuses ?? ['completed', 'delivered']).join(', '))),
       ...(context.section === 'sales'
         ? [
-            metricRow('Vista de ventas', textCell(context.salesRankingView === 'month' ? 'Mensual' : 'Histórica')),
-            metricRow('Mes seleccionado', textCell(context.selectedRankingMonthLabel)),
-            metricRow('Clave mes', textCell(context.selectedRankingMonth)),
+            metricRow('Vista de ventas', textCell(context.salesRankingView === 'month' ? 'Mensual' : context.salesRankingView === 'range' ? 'Últimos 30 días' : 'Histórica')),
+            metricRow('Mes seleccionado', textCell(context.salesRankingView === 'month' ? context.selectedRankingMonthLabel : 'No aplica')),
+            metricRow('Clave mes', textCell(context.salesRankingView === 'month' ? context.selectedRankingMonth : 'No aplica')),
           ]
         : []),
     ],
@@ -230,23 +312,12 @@ const buildCoverSheet = (context: ExportContext): WorksheetDefinition => {
 }
 
 const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] => {
-  const { dashboardStats, salesTrendRows, salesCategories, salesRankingRows } = context
-  const summary = dashboardStats?.businessMetrics?.salesSummary
-  const profit = dashboardStats?.businessMetrics?.profitStats
+  const { dashboardStats, salesCategories, salesRankingRows } = context
+  const financial = context.financialSummary
   const inventory = dashboardStats?.businessMetrics?.inventoryValue
   const traceability = dashboardStats?.businessMetrics?.traceability
-  const paidExpenses = toPlainNumber(profit?.paid_expenses ?? profit?.operating_expenses)
-  const pendingExpenses = toPlainNumber(profit?.pending_expenses)
-  const overdueExpenses = toPlainNumber(profit?.overdue_expenses)
-  const committedExpenses = toPlainNumber(profit?.committed_expenses ?? (paidExpenses + pendingExpenses + overdueExpenses))
-  const grossProfit = toPlainNumber(profit?.gross_profit ?? profit?.profit)
-  const netProfit = toPlainNumber(profit?.net_cash_profit ?? profit?.net_profit ?? (grossProfit - paidExpenses))
-  const netCommittedProfit = toPlainNumber(profit?.net_committed_profit ?? (grossProfit - committedExpenses))
-  const net = toPlainNumber(summary?.net)
-  const grossMargin = toPlainNumber(profit?.gross_margin ?? profit?.margin)
-  const netMargin = toPlainNumber(profit?.net_cash_margin ?? profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
-  const netCommittedMargin = toPlainNumber(profit?.net_committed_margin ?? (net > 0 ? (netCommittedProfit / net) * 100 : 0))
   const statusMap = getOrdersByStatusMap(dashboardStats)
+  const financialTrendRows = dashboardStats?.businessMetrics?.financialTrends?.monthly ?? []
 
   return [
     {
@@ -257,24 +328,25 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
         subtitleRow('Vista ejecutiva consolidada del negocio.', 4),
         blankRow(),
         headerRow(['Indicador', 'Valor']),
-        metricRow('Venta total', moneyCell(summary?.gross)),
-        metricRow('Venta neta', moneyCell(net)),
-        metricRow('IVA cobrado', moneyCell(summary?.vat)),
-        metricRow('Envío cobrado', moneyCell(summary?.shipping)),
-        metricRow('Costo vendido', moneyCell(profit?.cost)),
-        metricRow('Utilidad bruta', moneyCell(grossProfit)),
-        metricRow('Gastos pagados', moneyCell(paidExpenses)),
-        metricRow('Gastos pendientes', moneyCell(pendingExpenses)),
-        metricRow('Gastos vencidos', moneyCell(overdueExpenses)),
-        metricRow('Gastos comprometidos', moneyCell(committedExpenses)),
-        metricRow('Utilidad neta por caja', moneyCell(netProfit)),
-        metricRow('Utilidad neta comprometida', moneyCell(netCommittedProfit)),
-        metricRow('Margen bruto', percentCell(grossMargin)),
-        metricRow('Margen neto por caja', percentCell(netMargin)),
-        metricRow('Margen neto comprometido', percentCell(netCommittedMargin)),
-        metricRow('ROI bruto', percentCell(profit?.roi)),
-        metricRow('ROI neto por caja', percentCell(profit?.net_roi)),
-        metricRow('ROI neto comprometido', percentCell(profit?.committed_net_roi)),
+        metricRow('Alcance financiero', textCell(financial.scopeLabel)),
+        metricRow('Venta total', moneyCell(financial.gross)),
+        metricRow('Venta neta', moneyCell(financial.net)),
+        metricRow('IVA cobrado', moneyCell(financial.vat)),
+        metricRow('Envío cobrado', moneyCell(financial.shipping)),
+        metricRow('Costo vendido', moneyCell(financial.cost)),
+        metricRow('Utilidad bruta', moneyCell(financial.grossProfit)),
+        metricRow('Gastos del período', moneyCell(financial.periodExpenses)),
+        metricRow('Gastos pagados', moneyCell(financial.paidExpenses)),
+        metricRow('Obligaciones pendientes', moneyCell(financial.pendingExpenses)),
+        metricRow('Obligaciones vencidas', moneyCell(financial.overdueExpenses)),
+        metricRow('Utilidad neta', moneyCell(financial.netProfit)),
+        metricRow('Utilidad neta pagada', moneyCell(financial.flowProfit)),
+        metricRow('Margen bruto', percentCell(financial.grossMargin)),
+        metricRow('Margen neto', percentCell(financial.netMargin)),
+        metricRow('Margen neto pagado', percentCell(financial.flowMargin)),
+        metricRow('ROI bruto', percentCell(financial.roi)),
+        metricRow('ROI neto', percentCell(financial.netRoi)),
+        metricRow('ROI neto pagado', percentCell(financial.flowRoi)),
         metricRow('Valor inventario al costo', moneyCell(inventory?.cost_value)),
         metricRow('Valor inventario a mercado', moneyCell(inventory?.market_value)),
         metricRow('Items en inventario', numberCell(inventory?.total_items, 'integer')),
@@ -286,14 +358,26 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
       ],
     },
     {
-      name: 'Tendencia',
-      columnWidths: [140, 140, 140, 140, 140],
+      name: 'Tendencia financiera',
+      columnWidths: [120, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140],
       rows: [
-        titleRow('Tendencia de ventas', 3),
-        subtitleRow('Comportamiento diario de los últimos 30 días.', 3),
+        titleRow('Tendencia financiera mensual', 6),
+        subtitleRow('Gastos y pagos se muestran por el mes al que pertenece el gasto.', 6),
         blankRow(),
-        headerRow(['Día', 'Total']),
-        ...salesTrendRows.map((item) => [textCell(item.day), moneyCell(item.total)]),
+        headerRow(['Mes', 'Venta neta', 'Costo', 'Utilidad bruta', 'Gastos del período', 'Gastos pagados', 'Pendientes', 'Vencidos', 'Ajustes', 'Utilidad neta', 'Utilidad neta pagada']),
+        ...financialTrendRows.map((item) => [
+          textCell(item.period),
+          moneyCell(item.net_sales),
+          moneyCell(item.product_cost),
+          moneyCell(item.gross_profit),
+          moneyCell(item.period_expenses ?? item.expenses_incurred ?? item.committed_expenses),
+          moneyCell(item.expenses_cash_paid ?? item.expenses_paid),
+          moneyCell(item.expenses_pending),
+          moneyCell(item.expenses_overdue),
+          moneyCell(item.financial_adjustments),
+          moneyCell(item.net_period_profit ?? item.net_committed_profit),
+          moneyCell(item.net_cash_profit),
+        ]),
       ],
     },
     {
@@ -329,9 +413,23 @@ const buildGeneralWorksheets = (context: ExportContext): WorksheetDefinition[] =
 
 const buildSalesWorksheets = (context: ExportContext): WorksheetDefinition[] => {
   const { dashboardStats, salesRankingRows, selectedRankingMonth, selectedRankingMonthLabel, salesRankingView } = context
-  const financial = salesRankingView === 'month'
-    ? dashboardStats?.businessMetrics?.productSalesRanking?.monthlyFinancial
-    : dashboardStats?.businessMetrics?.productSalesRanking?.historicalFinancial
+  const periodReport = dashboardStats?.businessMetrics?.report
+  const financial = salesRankingView === 'month' && periodReport
+    ? {
+        orders_count: periodReport.sales.orders_count,
+        gross: periodReport.sales.total,
+        net: periodReport.sales.net,
+        vat: periodReport.sales.tax,
+        shipping: periodReport.sales.shipping,
+        cost: periodReport.profit.cost,
+        profit: periodReport.profit.gross_profit,
+        margin: periodReport.profit.gross_margin,
+      }
+    : salesRankingView === 'range'
+      ? dashboardStats?.businessMetrics?.productSalesRanking?.rangeFinancial
+      : salesRankingView === 'month'
+        ? dashboardStats?.businessMetrics?.productSalesRanking?.monthlyFinancial
+        : dashboardStats?.businessMetrics?.productSalesRanking?.historicalFinancial
   const deepDive = dashboardStats?.businessMetrics?.salesDeepDive
 
   return [
@@ -343,7 +441,7 @@ const buildSalesWorksheets = (context: ExportContext): WorksheetDefinition[] => 
         subtitleRow('Indicadores del período comercial seleccionado.', 3),
         blankRow(),
         headerRow(['Indicador', 'Valor']),
-        metricRow('Vista activa', textCell(salesRankingView === 'month' ? 'Mensual' : 'Histórica')),
+        metricRow('Vista activa', textCell(salesRankingView === 'month' ? 'Mensual' : salesRankingView === 'range' ? 'Últimos 30 días' : 'Histórica')),
         metricRow('Mes seleccionado', textCell(salesRankingView === 'month' ? selectedRankingMonthLabel : 'No aplica')),
         metricRow('Clave del mes', textCell(salesRankingView === 'month' ? selectedRankingMonth : 'No aplica')),
         metricRow('Pedidos', numberCell(financial?.orders_count, 'integer')),
@@ -357,16 +455,72 @@ const buildSalesWorksheets = (context: ExportContext): WorksheetDefinition[] => 
       ],
     },
     {
-      name: 'Ranking productos',
-      columnWidths: [280, 180, 100, 100, 130, 130, 110, 110, 130, 130, 100],
+      name: 'Ventas del periodo',
+      columnWidths: [260, 120, 100, 220, 220, 130, 140, 150, 130, 320, 80, 130, 130, 120, 120, 120, 120, 120, 100, 120, 120],
       rows: [
-        titleRow('Ranking de productos', 8),
-        subtitleRow('Ordenados por desempeño del período.', 8),
+        titleRow('Ventas del período', 10),
+        subtitleRow('Pedidos completados o entregados incluidos en el reporte seleccionado, con datos de auditoría comercial y financiera.', 10),
         blankRow(),
-        headerRow(['Producto', 'Categoría', 'Pedidos', 'Unidades', 'Venta total', 'Venta neta', 'IVA', 'Envío', 'Costo', 'Utilidad', 'Margen']),
+        headerRow([
+          'Pedido',
+          'Fecha',
+          'Hora',
+          'Cliente',
+          'Email',
+          'Teléfono',
+          'Documento',
+          'Entrega',
+          'Pago',
+          'Productos',
+          'Unidades',
+          'Subtotal items',
+          'Venta total',
+          'Venta neta',
+          'IVA',
+          'Envío',
+          'Descuento',
+          'Costo',
+          'Utilidad',
+          'Margen',
+          'Estado',
+        ]),
+        ...context.salesOrders.map((item) => [
+          textCell(item.id),
+          textCell(formatDateTimeEcuador(item.created_at, { year: 'numeric', month: '2-digit', day: '2-digit' })),
+          textCell(formatDateTimeEcuador(item.created_at, { hour: '2-digit', minute: '2-digit' })),
+          textCell(item.user_name || 'Cliente sin nombre'),
+          textCell(item.customer_email || '-'),
+          textCell(item.customer_phone || '-'),
+          textCell(getCustomerDocument(item)),
+          textCell(getDeliveryMethodLabel(item.delivery_method)),
+          textCell(getPaymentMethodLabel(item.payment_method)),
+          textCell(item.items_summary || '-'),
+          numberCell(item.units_count ?? 0, 'integer'),
+          moneyCell(item.items_subtotal ?? 0),
+          moneyCell(item.gross),
+          moneyCell(item.net),
+          moneyCell(item.vat),
+          moneyCell(item.shipping),
+          moneyCell(item.discount_total ?? 0),
+          moneyCell(item.cost ?? 0),
+          moneyCell(item.profit ?? 0),
+          percentCell(item.margin ?? 0),
+          textCell(item.status),
+        ]),
+      ],
+    },
+    {
+      name: 'Ranking productos',
+      columnWidths: [280, 180, 260, 100, 100, 130, 130, 110, 110, 130, 130, 100],
+      rows: [
+        titleRow('Ranking de productos', 9),
+        subtitleRow('Ordenados por desempeño del período, con pedidos relacionados y desglose financiero.', 9),
+        blankRow(),
+        headerRow(['Producto', 'Categoría', 'Pedidos relacionados', 'Pedidos', 'Unidades', 'Venta total', 'Venta neta', 'IVA', 'Envío', 'Costo', 'Utilidad', 'Margen']),
         ...salesRankingRows.map((item) => [
           textCell(item.product_name),
           textCell(item.category),
+          textCell(Array.isArray(item.order_refs) ? item.order_refs.join(', ') : '-'),
           numberCell(item.orders_count, 'integer'),
           numberCell(item.units_sold, 'integer'),
           moneyCell(item.gross_revenue),
@@ -413,19 +567,8 @@ const buildSalesWorksheets = (context: ExportContext): WorksheetDefinition[] => 
 
 const buildBalanceWorksheets = (context: ExportContext): WorksheetDefinition[] => {
   const { dashboardStats } = context
-  const summary = dashboardStats?.businessMetrics?.salesSummary
-  const profit = dashboardStats?.businessMetrics?.profitStats
-  const paidExpenses = toPlainNumber(profit?.paid_expenses ?? profit?.operating_expenses)
-  const pendingExpenses = toPlainNumber(profit?.pending_expenses)
-  const overdueExpenses = toPlainNumber(profit?.overdue_expenses)
-  const committedExpenses = toPlainNumber(profit?.committed_expenses ?? (paidExpenses + pendingExpenses + overdueExpenses))
-  const grossProfit = toPlainNumber(profit?.gross_profit ?? profit?.profit)
-  const netProfit = toPlainNumber(profit?.net_cash_profit ?? profit?.net_profit ?? (grossProfit - paidExpenses))
-  const netCommittedProfit = toPlainNumber(profit?.net_committed_profit ?? (grossProfit - committedExpenses))
-  const net = toPlainNumber(summary?.net)
-  const grossMargin = toPlainNumber(profit?.gross_margin ?? profit?.margin)
-  const netMargin = toPlainNumber(profit?.net_cash_margin ?? profit?.net_margin ?? (net > 0 ? (netProfit / net) * 100 : 0))
-  const netCommittedMargin = toPlainNumber(profit?.net_committed_margin ?? (net > 0 ? (netCommittedProfit / net) * 100 : 0))
+  const financial = context.financialSummary
+  const financialTrendRows = dashboardStats?.businessMetrics?.financialTrends?.monthly ?? []
 
   return [
     {
@@ -436,24 +579,47 @@ const buildBalanceWorksheets = (context: ExportContext): WorksheetDefinition[] =
         subtitleRow('Resultado económico del período realizado.', 3),
         blankRow(),
         headerRow(['Indicador', 'Valor']),
-        metricRow('Venta total', moneyCell(summary?.gross)),
-        metricRow('Venta neta', moneyCell(net)),
-        metricRow('IVA cobrado', moneyCell(summary?.vat)),
-        metricRow('Envío cobrado', moneyCell(summary?.shipping)),
-        metricRow('Costo vendido', moneyCell(profit?.cost)),
-        metricRow('Utilidad bruta', moneyCell(grossProfit)),
-        metricRow('Gastos pagados', moneyCell(paidExpenses)),
-        metricRow('Gastos pendientes', moneyCell(pendingExpenses)),
-        metricRow('Gastos vencidos', moneyCell(overdueExpenses)),
-        metricRow('Gastos comprometidos', moneyCell(committedExpenses)),
-        metricRow('Utilidad neta por caja', moneyCell(netProfit)),
-        metricRow('Utilidad neta comprometida', moneyCell(netCommittedProfit)),
-        metricRow('Margen bruto', percentCell(grossMargin)),
-        metricRow('Margen neto por caja', percentCell(netMargin)),
-        metricRow('Margen neto comprometido', percentCell(netCommittedMargin)),
-        metricRow('ROI bruto', percentCell(profit?.roi)),
-        metricRow('ROI neto por caja', percentCell(profit?.net_roi)),
-        metricRow('ROI neto comprometido', percentCell(profit?.committed_net_roi)),
+        metricRow('Alcance financiero', textCell(financial.scopeLabel)),
+        metricRow('Venta total', moneyCell(financial.gross)),
+        metricRow('Venta neta', moneyCell(financial.net)),
+        metricRow('IVA cobrado', moneyCell(financial.vat)),
+        metricRow('Envío cobrado', moneyCell(financial.shipping)),
+        metricRow('Costo vendido', moneyCell(financial.cost)),
+        metricRow('Utilidad bruta', moneyCell(financial.grossProfit)),
+        metricRow('Gastos del período', moneyCell(financial.periodExpenses)),
+        metricRow('Gastos pagados', moneyCell(financial.paidExpenses)),
+        metricRow('Obligaciones pendientes', moneyCell(financial.pendingExpenses)),
+        metricRow('Obligaciones vencidas', moneyCell(financial.overdueExpenses)),
+        metricRow('Utilidad neta', moneyCell(financial.netProfit)),
+        metricRow('Utilidad neta pagada', moneyCell(financial.flowProfit)),
+        metricRow('Margen bruto', percentCell(financial.grossMargin)),
+        metricRow('Margen neto', percentCell(financial.netMargin)),
+        metricRow('Margen neto pagado', percentCell(financial.flowMargin)),
+        metricRow('ROI bruto', percentCell(financial.roi)),
+        metricRow('ROI neto', percentCell(financial.netRoi)),
+        metricRow('ROI neto pagado', percentCell(financial.flowRoi)),
+      ],
+    },
+    {
+      name: 'Tendencia financiera',
+      columnWidths: [120, 140, 140, 140, 140, 140, 140, 140, 140, 140, 140],
+      rows: [
+        titleRow('Tendencia financiera mensual', 6),
+        blankRow(),
+        headerRow(['Mes', 'Venta neta', 'Costo', 'Utilidad bruta', 'Gastos del período', 'Gastos pagados', 'Pendientes', 'Vencidos', 'Ajustes', 'Utilidad neta', 'Utilidad neta pagada']),
+        ...financialTrendRows.map((item) => [
+          textCell(item.period),
+          moneyCell(item.net_sales),
+          moneyCell(item.product_cost),
+          moneyCell(item.gross_profit),
+          moneyCell(item.period_expenses ?? item.expenses_incurred ?? item.committed_expenses),
+          moneyCell(item.expenses_cash_paid ?? item.expenses_paid),
+          moneyCell(item.expenses_pending),
+          moneyCell(item.expenses_overdue),
+          moneyCell(item.financial_adjustments),
+          moneyCell(item.net_period_profit ?? item.net_committed_profit),
+          moneyCell(item.net_cash_profit),
+        ]),
       ],
     },
     {

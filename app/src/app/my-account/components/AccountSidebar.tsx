@@ -134,29 +134,29 @@ export default function AccountSidebar({
                             </button>
                             {adminMenuExpanded.reporting && (
                                 <div className="pb-2 px-2 space-y-1.5">
-                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'general'} onClick={() => onOpenAdminReportSection('general')}>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-3 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'general'} onClick={() => onOpenAdminReportSection('general')}>
                                         <ChartPieSlice size={18} />
-                                        <strong className="heading6">General</strong>
+                                        <strong className="heading6">Reporte general</strong>
                                     </PanelNavButton>
-                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'sales'} onClick={() => onOpenAdminReportSection('sales')}>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-3 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'sales'} onClick={() => onOpenAdminReportSection('sales')}>
                                         <ChartLineUp size={18} />
-                                        <strong className="heading6">Ventas</strong>
+                                        <strong className="heading6">Reporte de ventas</strong>
                                     </PanelNavButton>
-                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'balance'} onClick={() => onOpenAdminReportSection('balance')}>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-3 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'balance'} onClick={() => onOpenAdminReportSection('balance')}>
                                         <Bank size={18} />
-                                        <strong className="heading6">Balance General</strong>
+                                        <strong className="heading6">Balance general</strong>
                                     </PanelNavButton>
-                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'inventory'} onClick={() => onOpenAdminReportSection('inventory')}>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-3 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'inventory'} onClick={() => onOpenAdminReportSection('inventory')}>
                                         <Archive size={18} />
-                                        <strong className="heading6">Inventario</strong>
+                                        <strong className="heading6">Reporte de inventario</strong>
                                     </PanelNavButton>
-                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'traceability'} onClick={() => onOpenAdminReportSection('traceability')}>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-3 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'reports' && adminReportSection === 'traceability'} onClick={() => onOpenAdminReportSection('traceability')}>
                                         <Files size={18} />
-                                        <strong className="heading6">Trazabilidad</strong>
+                                        <strong className="heading6">Reporte de trazabilidad</strong>
                                     </PanelNavButton>
-                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-2.5 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'sales-ranking'} onClick={() => onNavigateToPanelTab('sales-ranking')}>
+                                    <PanelNavButton className="item flex items-center gap-3 w-full px-4 py-3 rounded-lg cursor-pointer duration-300 hover:bg-surface" isActive={activeTab === 'sales-ranking'} onClick={() => onNavigateToPanelTab('sales-ranking')}>
                                         <Trophy size={18} />
-                                        <strong className="heading6">Ranking Productos</strong>
+                                        <strong className="heading6">Ranking de productos</strong>
                                     </PanelNavButton>
                                 </div>
                             )}

@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
-import { buildCatalogCategoryCards, getProductDetailRouteId } from '@/lib/catalog'
+import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { fetchProducts } from '@/lib/products'
 import { getCategoryUrl } from '@/data/petCategoryCards'
 import { getSiteConfig } from '@/lib/site'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import type { ProductType } from '@/type/ProductType'
+import { getProductSeoPath } from '@/lib/seoUrls'
+import { SEO_GUIDES } from '@/data/seoGuides'
+import { SEO_SERVICE_PAGES } from '@/data/seoServices'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,12 +20,11 @@ const sanitizeText = (value?: string | null) =>
     .trim()
 
 const getProductUrl = (baseUrl: string, product: ProductType) => {
-  const params = new URLSearchParams({ id: String(getProductDetailRouteId(product)) })
-  return `${baseUrl}/product/default?${params.toString()}`
+  return `${baseUrl}${getProductSeoPath(product)}`
 }
 
 const isPublicProduct = (product: ProductType) =>
-  product.published !== false && Boolean(getProductDetailRouteId(product))
+  product.published !== false && Boolean(product.slug || product.id)
 
 const compareProductsForAi = (left: ProductType, right: ProductType) => {
   if (Number(right.quantity ?? 0) !== Number(left.quantity ?? 0)) {
@@ -88,11 +90,13 @@ export async function GET() {
     `- Contacto: ${site.contact.email}`,
     `- WhatsApp: ${site.contact.whatsappLabel}`,
     `- Sitemap XML: ${baseUrl}/sitemap.xml`,
+    `- Feed Google Merchant: ${baseUrl}/feeds/google-products.xml`,
     '',
     '## Paginas canonicas',
     '',
     `- [Inicio](${baseUrl})`,
-    `- [Catalogo completo](${baseUrl}/shop/breadcrumb1)`,
+    `- [Catalogo completo](${baseUrl}/tienda)`,
+    `- [Servicios](${baseUrl}/servicios)`,
     `- [Contacto y ayuda](${baseUrl}/pages/contact)`,
     `- [Preguntas frecuentes](${baseUrl}/pages/faqs)`,
     `- [Politica de privacidad](${baseUrl}/pages/politica-de-privacidad)`,
@@ -100,7 +104,15 @@ export async function GET() {
     '',
     '## Categorias principales',
     '',
-    ...(categoryLines.length ? categoryLines : ['- [Catalogo completo](' + baseUrl + '/shop/breadcrumb1)']),
+    ...(categoryLines.length ? categoryLines : ['- [Catalogo completo](' + baseUrl + '/tienda)']),
+    '',
+    '## Servicios',
+    '',
+    ...SEO_SERVICE_PAGES.map((service) => `- [${sanitizeText(service.label)}](${baseUrl}${service.path}) - ${sanitizeText(service.description)}.`),
+    '',
+    '## Guias de compra destacadas',
+    '',
+    ...SEO_GUIDES.slice(0, 12).map((guide) => `- [${sanitizeText(guide.title)}](${baseUrl}/guias/${guide.slug}) - ${sanitizeText(guide.description)}.`),
     '',
     '## Productos destacados publicados',
     '',

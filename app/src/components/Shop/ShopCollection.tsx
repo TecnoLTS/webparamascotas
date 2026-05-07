@@ -26,7 +26,7 @@ const ShopCollection: React.FC<Props> = ({ data }) => {
                         <div className="text-content absolute top-1/2 -translate-y-1/2 right-10">
                             <div className="body1 font-semibold uppercase">New Trend 2022</div>
                             <div className="heading1 font-semibold mt-2">Sale Off <br />Up To 30%</div>
-                            <Link href={'/shop/breadcrumb1'} className='button-main lg:mt-10 mt-6'>Explore More</Link>
+                            <Link href={'/tienda'} className='button-main lg:mt-10 mt-6'>Explore More</Link>
                         </div>
                     </div>
                     <div className="list-collection md:py-20 py-10">
@@ -48,7 +48,7 @@ const ShopCollection: React.FC<Props> = ({ data }) => {
                                             <div className="heading3 sm:mt-3 mt-1">Linen Wrap Dresses</div>
                                         </div>
                                         <div className="right">
-                                            <Link href={'/shop/breadcrumb1'} className='button-main bg-white text-black border border-black'>View All Products</Link>
+                                            <Link href={'/tienda'} className='button-main bg-white text-black border border-black'>View All Products</Link>
                                         </div>
                                     </div>
                                     <div className="list-product hide-product-sold grid grid-cols-2 md:gap-[30px] gap-5 md:mt-10 mt-6">
@@ -80,7 +80,7 @@ const ShopCollection: React.FC<Props> = ({ data }) => {
                                             <div className="heading3 sm:mt-3 mt-1">Linen Wrap Dresses</div>
                                         </div>
                                         <div className="right">
-                                            <Link href={'/shop/breadcrumb1'} className='button-main bg-white text-black border border-black'>View All Products</Link>
+                                            <Link href={'/tienda'} className='button-main bg-white text-black border border-black'>View All Products</Link>
                                         </div>
                                     </div>
                                     <div className="list-product hide-product-sold grid grid-cols-2 md:gap-[30px] gap-5 md:mt-10 mt-6">
@@ -112,7 +112,7 @@ const ShopCollection: React.FC<Props> = ({ data }) => {
                                             <div className="heading3 sm:mt-3 mt-1">Linen Wrap Dresses</div>
                                         </div>
                                         <div className="right">
-                                            <Link href={'/shop/breadcrumb1'} className='button-main bg-white text-black border border-black'>View All Products</Link>
+                                            <Link href={'/tienda'} className='button-main bg-white text-black border border-black'>View All Products</Link>
                                         </div>
                                     </div>
                                     <div className="list-product hide-product-sold grid grid-cols-2 md:gap-[30px] gap-5 md:mt-10 mt-6">

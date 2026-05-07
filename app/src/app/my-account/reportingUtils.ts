@@ -9,6 +9,21 @@ type ProductSalesRanking = DashboardStats['businessMetrics'] extends infer BM
   ? BM extends { productSalesRanking?: infer PR } ? PR : never
   : never
 
+type SalesTrendRow = { day: string; date?: string; total: number }
+
+const formatTrendDateLabel = (row: SalesTrendRow, options: Intl.DateTimeFormatOptions) => {
+  const rawDate = String(row.date || row.day || '').trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    const [year, month, day] = rawDate.split('-').map(Number)
+    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).toLocaleDateString('es-EC', {
+      timeZone: 'UTC',
+      ...options,
+    })
+  }
+
+  return String(row.day || '-')
+}
+
 export const summarizeStrategicAlerts = (
   strategicAlerts: Array<{ type: 'critical' | 'warning' | 'info'; message: string; action: string }>,
 ) => {
@@ -30,25 +45,32 @@ export const filterStrategicAlerts = (
 
 export const buildSalesRankingRows = (
   productSalesRanking: ProductSalesRanking | undefined,
-  salesRankingView: 'month' | 'historical',
+  salesRankingView: 'month' | 'historical' | 'range',
 ): SalesRankingRow[] => {
   if (!productSalesRanking) return []
   const source = salesRankingView === 'month'
     ? productSalesRanking.monthlyRanking
-    : productSalesRanking.historicalRanking
+    : salesRankingView === 'range'
+      ? (productSalesRanking.rangeRanking ?? [])
+      : productSalesRanking.historicalRanking
+  const prefix = salesRankingView === 'month'
+    ? 'month'
+    : salesRankingView === 'range'
+      ? 'range'
+      : 'historical'
   return source.map((item) => ({
     product_id: item.product_id,
     product_name: item.product_name,
     category: item.category,
-    orders_count: salesRankingView === 'month' ? Number(item.month_orders_count ?? 0) : Number(item.historical_orders_count ?? 0),
-    units_sold: salesRankingView === 'month' ? Number(item.month_units_sold ?? 0) : Number(item.historical_units_sold ?? 0),
-    gross_revenue: salesRankingView === 'month' ? Number(item.month_gross_revenue ?? 0) : Number(item.historical_gross_revenue ?? 0),
-    net_revenue: salesRankingView === 'month' ? Number(item.month_net_revenue ?? 0) : Number(item.historical_net_revenue ?? 0),
-    vat_amount: salesRankingView === 'month' ? Number(item.month_vat_amount ?? 0) : Number(item.historical_vat_amount ?? 0),
-    shipping_amount: salesRankingView === 'month' ? Number(item.month_shipping_amount ?? 0) : Number(item.historical_shipping_amount ?? 0),
-    cost: salesRankingView === 'month' ? Number(item.month_cost ?? 0) : Number(item.historical_cost ?? 0),
-    profit: salesRankingView === 'month' ? Number(item.month_profit ?? 0) : Number(item.historical_profit ?? 0),
-    margin: salesRankingView === 'month' ? Number(item.month_margin ?? 0) : Number(item.historical_margin ?? 0),
+    orders_count: Number(item[`${prefix}_orders_count` as keyof typeof item] ?? 0),
+    units_sold: Number(item[`${prefix}_units_sold` as keyof typeof item] ?? 0),
+    gross_revenue: Number(item[`${prefix}_gross_revenue` as keyof typeof item] ?? 0),
+    net_revenue: Number(item[`${prefix}_net_revenue` as keyof typeof item] ?? 0),
+    vat_amount: Number(item[`${prefix}_vat_amount` as keyof typeof item] ?? 0),
+    shipping_amount: Number(item[`${prefix}_shipping_amount` as keyof typeof item] ?? 0),
+    cost: Number(item[`${prefix}_cost` as keyof typeof item] ?? 0),
+    profit: Number(item[`${prefix}_profit` as keyof typeof item] ?? 0),
+    margin: Number(item[`${prefix}_margin` as keyof typeof item] ?? 0),
     month_orders_count: Number(item.month_orders_count ?? 0),
     month_units_sold: Number(item.month_units_sold ?? 0),
     month_gross_revenue: Number(item.month_gross_revenue ?? 0),
@@ -58,6 +80,15 @@ export const buildSalesRankingRows = (
     month_cost: Number(item.month_cost ?? 0),
     month_profit: Number(item.month_profit ?? 0),
     month_margin: Number(item.month_margin ?? 0),
+    range_orders_count: Number(item.range_orders_count ?? 0),
+    range_units_sold: Number(item.range_units_sold ?? 0),
+    range_gross_revenue: Number(item.range_gross_revenue ?? 0),
+    range_net_revenue: Number(item.range_net_revenue ?? 0),
+    range_vat_amount: Number(item.range_vat_amount ?? 0),
+    range_shipping_amount: Number(item.range_shipping_amount ?? 0),
+    range_cost: Number(item.range_cost ?? 0),
+    range_profit: Number(item.range_profit ?? 0),
+    range_margin: Number(item.range_margin ?? 0),
     historical_orders_count: Number(item.historical_orders_count ?? 0),
     historical_units_sold: Number(item.historical_units_sold ?? 0),
     historical_gross_revenue: Number(item.historical_gross_revenue ?? 0),
@@ -70,9 +101,12 @@ export const buildSalesRankingRows = (
   }))
 }
 
-export const buildSalesTrendPreview = (salesTrendRows: Array<{ day: string; total: number }>) => {
-  const rows = salesTrendRows.slice(-8)
-  const max = Math.max(...rows.map((item) => Number(item.total ?? 0)), 1)
+export const buildSalesTrendPreview = (salesTrendRows: SalesTrendRow[]) => {
+  const rows = salesTrendRows.slice(-8).map((item) => ({
+    ...item,
+    displayDay: formatTrendDateLabel(item, { day: '2-digit', month: 'short' }),
+  }))
+  const max = Math.max(...rows.map((item) => Number(item.total ?? 0)), 0)
   return { rows, max }
 }
 
@@ -123,30 +157,31 @@ export const buildProductBreakdownMeta = (
   dashboardStats: DashboardStats | null,
   selectedProductMetric: ProductDetailMetric,
 ) => {
+  const report = dashboardStats?.businessMetrics?.report
   switch (selectedProductMetric) {
     case 'gross':
       return {
         title: 'Venta Total por Producto',
         subtitle: 'Incluye IVA y prorrateo de envío según participación en ventas netas.',
-        total: Number(dashboardStats?.businessMetrics?.salesSummary?.gross ?? 0),
+        total: Number(report?.sales?.total ?? dashboardStats?.businessMetrics?.salesSummary?.gross ?? 0),
       }
     case 'vat':
       return {
         title: 'IVA Cobrado por Producto',
         subtitle: 'Calculado con el IVA real aplicado a cada producto, incluyendo exentos.',
-        total: Number(dashboardStats?.businessMetrics?.salesSummary?.vat ?? 0),
+        total: Number(report?.sales?.tax ?? dashboardStats?.businessMetrics?.salesSummary?.vat ?? 0),
       }
     case 'shipping':
       return {
         title: 'Envío Cobrado por Producto',
         subtitle: 'Distribución proporcional al peso de cada producto en ventas netas.',
-        total: Number(dashboardStats?.businessMetrics?.salesSummary?.shipping ?? 0),
+        total: Number(report?.sales?.shipping ?? dashboardStats?.businessMetrics?.salesSummary?.shipping ?? 0),
       }
     case 'profit':
       return {
         title: 'Utilidad Bruta por Producto',
         subtitle: 'Utilidad estimada = venta neta del producto - costo acumulado vendido.',
-        total: Number(dashboardStats?.businessMetrics?.profitStats?.profit ?? 0),
+        total: Number(report?.profit?.gross_profit ?? dashboardStats?.businessMetrics?.profitStats?.profit ?? 0),
       }
     case 'inventory':
       return {
@@ -159,7 +194,7 @@ export const buildProductBreakdownMeta = (
       return {
         title: 'Venta Neta por Producto',
         subtitle: 'Sin IVA ni envío. Basado solo en pedidos completados o entregados.',
-        total: Number(dashboardStats?.businessMetrics?.salesSummary?.net ?? 0),
+        total: Number(report?.sales?.net ?? dashboardStats?.businessMetrics?.salesSummary?.net ?? 0),
       }
   }
 }
@@ -180,9 +215,9 @@ export const buildSalesProductBreakdown = (
     }
     return false
   }
-  const products = dashboardStats?.businessMetrics?.traceability?.products || []
+  const products = dashboardStats?.businessMetrics?.report?.products || dashboardStats?.businessMetrics?.traceability?.products || []
   const totalNet = products.reduce((acc, item) => acc + Number(item.net_revenue ?? 0), 0)
-  const totalShipping = Number(dashboardStats?.businessMetrics?.salesSummary?.shipping ?? 0)
+  const totalShipping = Number(dashboardStats?.businessMetrics?.report?.sales?.shipping ?? dashboardStats?.businessMetrics?.salesSummary?.shipping ?? 0)
 
   const productMetaEntries = (adminProductsList || []).flatMap((product: any) => {
       const productIds = Array.from(new Set([
@@ -224,8 +259,12 @@ export const buildSalesProductBreakdown = (
       const vat = Number(item.vat_amount ?? Math.max(fallbackGrossItems - net, 0))
       const units = Number(item.units_sold ?? 0)
       const unitCost = productMeta?.cost ?? 0
-      const cost = Math.max(unitCost * units, 0)
-      const profit = net - cost
+      const cost = Number.isFinite(Number(item.cost))
+        ? Math.max(Number(item.cost), 0)
+        : Math.max(unitCost * units, 0)
+      const profit = Number.isFinite(Number(item.profit))
+        ? Number(item.profit)
+        : net - cost
       const metricValue = selectedProductMetric === 'gross'
         ? gross
         : selectedProductMetric === 'vat'

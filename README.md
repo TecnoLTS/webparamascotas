@@ -39,3 +39,17 @@ cd /home/admincenter/contenedores/paramascotasec
     ./scripts/recommend-allowlist.sh
     ```
     Te mostrará la IP que debes inyectar en `PANEL_IP_ALLOWLIST`.
+
+## 🔎 4. SEO y Google
+
+La arquitectura publica usa URLs canonicas limpias:
+
+* Catalogo: `https://paramascotasec.com/tienda`
+* Categorias: `/tienda/alimento`, `/tienda/alimento-perros`, `/tienda/alimento-gatos`
+* Categorias futuras publicadas desde productos: `/tienda/[categoria]`
+* Productos: `/productos/[slug]`
+* Marcas: `/tienda/marcas/[marca]`
+* Servicios: `/servicios/[slug]`
+* Feed Merchant: `https://paramascotasec.com/feeds/google-products.xml`
+
+Para Search Console, Merchant Center y Business Profile revisa `SEO-GOOGLE-SETUP.md`.

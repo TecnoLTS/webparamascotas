@@ -3,22 +3,22 @@ import type { AdminReportSection } from './types'
 export const REPORT_SECTION_META: Record<AdminReportSection, { title: string; subtitle: string }> = {
   general: {
     title: 'Reporte general',
-    subtitle: 'Resumen ejecutivo del negocio con ventas, utilidad, inventario y señales de operación.',
+    subtitle: 'Vista ejecutiva con salud operativa, ventas netas, utilidad e inventario crítico.',
   },
   sales: {
     title: 'Reporte de ventas',
-    subtitle: 'Comportamiento comercial, mix por categoría y ranking de productos vendidos.',
+    subtitle: 'Corte comercial con pedidos vendidos, ventas brutas y netas, mix por categoría y productos líderes.',
   },
   balance: {
     title: 'Balance general',
-    subtitle: 'Lectura financiera de ingresos, IVA, costos, utilidad y margen operativo.',
+    subtitle: 'Lectura financiera de ingresos, IVA, costo de venta, gastos y utilidad neta.',
   },
   inventory: {
     title: 'Reporte de inventario',
-    subtitle: 'Capital inmovilizado, riesgos de stock y productos críticos para reposición.',
+    subtitle: 'Capital en inventario, valor potencial de venta, disponibilidad, stock crítico y vencimientos.',
   },
   traceability: {
     title: 'Reporte de trazabilidad',
-    subtitle: 'Soporte de cifras por pedido, producto y categoría para auditar resultados.',
+    subtitle: 'Auditoría de soporte por pedido, producto y categoría para validar ventas y rentabilidad.',
   },
 }

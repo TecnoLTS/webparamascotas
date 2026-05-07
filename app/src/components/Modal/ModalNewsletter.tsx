@@ -7,7 +7,7 @@ import InlineSpinner from '@/components/Other/InlineSpinner'
 import { useModalQuickviewContext } from '@/context/ModalQuickviewContext';
 import Image from '@/components/Common/AppImage';
 import useProducts from '@/hooks/useProducts'
-import { getProductDetailRouteId } from '@/lib/catalog'
+import { getProductSeoPath } from '@/lib/seoUrls'
 
 const ModalNewsletter = () => {
     const [open, setOpen] = useState<boolean>(false)
@@ -16,7 +16,7 @@ const ModalNewsletter = () => {
     const { products, loading, error } = useProducts()
 
     const handleDetailProduct = (product: any) => {
-        router.push(`/product/default?id=${getProductDetailRouteId(product)}`);
+        router.push(getProductSeoPath(product));
     };
 
     useEffect(() => {

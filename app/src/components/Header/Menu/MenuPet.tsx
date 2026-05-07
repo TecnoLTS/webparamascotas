@@ -26,7 +26,7 @@ import { useModalCartContext } from '@/context/ModalCartContext';
 import { useCart } from '@/context/CartContext';
 import { getCategoryLabel, getCategoryUrl } from '@/data/petCategoryCards'
 import { useSite } from '@/context/SiteContext'
-import { getProductDetailRouteId } from '@/lib/catalog'
+import { getProductSeoPath } from '@/lib/seoUrls'
 import { buildProductSearchIndex, filterProductsBySearch, sanitizeProductSearchQuery } from '@/lib/productSearch'
 import { ProductType } from '@/type/ProductType'
 import { clearStoredSession, getStoredSessionUser } from '@/lib/authSession'
@@ -81,7 +81,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
     const handleSearch = (value: string) => {
         const trimmedValue = sanitizeProductSearchQuery(value)
 
-        if (pathname.startsWith('/shop/')) {
+        if (pathname.startsWith('/shop/') || pathname.startsWith('/tienda')) {
             const nextParams = new URLSearchParams(searchParams.toString())
 
             if (trimmedValue) {
@@ -199,7 +199,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
     }, [])
 
     const handleGenderClick = (gender: string) => {
-        router.push(`/shop/breadcrumb1?gender=${gender}`);
+        router.push(gender === 'cat' ? '/tienda/gatos' : '/tienda/perros');
     };
 
     const handleCategoryClick = (category: string, gender?: string) => {
@@ -214,7 +214,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
         setIsSearchFocused(false)
         closeMenuMobile()
         setOpenSubNavMobile(null)
-        router.push(`/product/default?id=${getProductDetailRouteId(product)}`)
+        router.push(getProductSeoPath(product))
     }
 
     type CategoryLink = {
@@ -272,9 +272,9 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
         {
             key: 'shop',
             label: 'Tienda',
-            href: '/shop/breadcrumb1',
+            href: '/tienda',
             icon: Icon.Storefront,
-            isActive: hasMounted && pathname === '/shop/breadcrumb1',
+            isActive: hasMounted && pathname.startsWith('/tienda'),
         },
         {
             key: 'about',
@@ -345,7 +345,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                     ? 'min-h-[220px]'
                                     : ''
                                 }`}
-                            onClick={() => router.push('/shop/breadcrumb1')}
+                            onClick={() => router.push('/tienda')}
                         >
                             <div className="text-content py-14 pl-8 relative z-[1]">
                                 <div className="heading6 mt-2">{banner.title}</div>

@@ -527,7 +527,7 @@ const ShopSidebarList: React.FC<Props> = ({ data, productPerPage, dataType, cate
                             <div className="filter-heading flex items-center justify-between gap-5 flex-wrap">
                                 <div className="left flex has-line items-center flex-wrap gap-5">
                                     <div className="choose-layout flex items-center gap-2">
-                                        <Link href={'/shop/breadcrumb1'} className="item three-col w-8 h-8 border border-line rounded flex items-center justify-center cursor-pointer">
+                                        <Link href={'/tienda'} className="item three-col w-8 h-8 border border-line rounded flex items-center justify-center cursor-pointer">
                                             <div className='flex items-center gap-0.5'>
                                                 <span className='w-[3px] h-4 bg-secondary2 rounded-sm'></span>
                                                 <span className='w-[3px] h-4 bg-secondary2 rounded-sm'></span>

@@ -106,18 +106,26 @@ const Footer = ({ categoryIds }: FooterProps) => {
                             </div>
 
                             <div className="list-social mt-7 flex items-center gap-5">
-                                <Link href={site.social.facebook ?? 'https://www.facebook.com/'} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="Facebook">
-                                    <FacebookIcon />
-                                </Link>
-                                <Link href={site.social.instagram ?? 'https://www.instagram.com/'} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="Instagram">
-                                    <InstagramIcon />
-                                </Link>
-                                <Link href={site.social.twitter ?? 'https://www.twitter.com/'} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="Twitter">
-                                    <TwitterIcon />
-                                </Link>
-                                <Link href={site.social.youtube ?? 'https://www.youtube.com/'} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="YouTube">
-                                    <YoutubeIcon />
-                                </Link>
+                                {site.social.facebook ? (
+                                    <Link href={site.social.facebook} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="Facebook">
+                                        <FacebookIcon />
+                                    </Link>
+                                ) : null}
+                                {site.social.instagram ? (
+                                    <Link href={site.social.instagram} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="Instagram">
+                                        <InstagramIcon />
+                                    </Link>
+                                ) : null}
+                                {site.social.twitter ? (
+                                    <Link href={site.social.twitter} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="Twitter">
+                                        <TwitterIcon />
+                                    </Link>
+                                ) : null}
+                                {site.social.youtube ? (
+                                    <Link href={site.social.youtube} target='_blank' className="text-[24px] text-black transition-opacity hover:opacity-70" aria-label="YouTube">
+                                        <YoutubeIcon />
+                                    </Link>
+                                ) : null}
                             </div>
                         </div>
 
@@ -126,6 +134,7 @@ const Footer = ({ categoryIds }: FooterProps) => {
                             <div className="flex flex-col items-start gap-3 text-[14px] leading-[1.45]">
                                 <Link className='hover:text-green-600 duration-300' href={'/pages/about'}>Conócenos</Link>
                                 <Link className='hover:text-green-600 duration-300' href={'/pages/contact'}>Contáctanos</Link>
+                                <Link className='hover:text-green-600 duration-300' href={'/servicios'}>Servicios</Link>
                                 <Link className='hover:text-green-600 duration-300' href={'/pages/preguntas-frecuentes'}>Preguntas frecuentes</Link>
                             </div>
                         </div>
@@ -151,7 +160,7 @@ const Footer = ({ categoryIds }: FooterProps) => {
                                 <Link className='hover:text-green-600 duration-300' href={'/my-account'} prefetch={false}>Mi cuenta</Link>
                                 <Link 
                                     className='hover:text-green-600 duration-300' 
-                                    href={'/pages/terminos-y-condiciones#envios'}
+                                    href={'/servicios/envios-productos-para-mascotas-ecuador'}
                                 >
                                     Envíos
                                 </Link>

@@ -148,7 +148,8 @@ import {
     ADMIN_TABS_WITH_VAT_SETTINGS,
 } from './adminDataScopes'
 import { REPORT_SECTION_META } from './reportSections'
-import { buildReportExport, downloadReportExport } from './reportExport'
+import { buildReportExport, downloadReportExport, type ReportFinancialSummary } from './reportExport'
+import type { FinancialTrendRangeMode, FinancialTrendSummaryScope } from './components/FinancialTrendsPanel'
 import {
     buildInventoryManagementRows,
     buildLocalSaleCatalog,
@@ -191,6 +192,7 @@ import type {
     FinancialAdjustment,
     FinancialPeriod,
     FinancialPeriodPreview,
+    FinancialTrendPoint,
     LocalSaleLineItem,
     LocalSaleQuotationResult,
     LocalSaleQuote,
@@ -205,10 +207,26 @@ import type {
     ProductPublicationFilter,
     PurchaseInvoiceDetail,
     PurchaseInvoiceSummary,
+    ReportPeriodSummary,
     SalesRankingRow,
     ShippingPickup,
     ShippingProvider,
 } from './types'
+
+type ReportSalesOrder = ReportPeriodSummary['orders'][number]
+
+type ReportCompactMetricProps = {
+    label: string
+    value: React.ReactNode
+    tone?: string
+}
+
+const ReportCompactMetric = ({ label, value, tone = 'text-black' }: ReportCompactMetricProps) => (
+    <div className="min-w-0 rounded-lg border border-line bg-surface px-2.5 py-2">
+        <div className="text-[10px] uppercase font-bold leading-tight text-secondary">{label}</div>
+        <div className={`mt-1 text-sm font-bold leading-tight tabular-nums break-words ${tone}`}>{value}</div>
+    </div>
+)
 
 const escapeHtml = (value: unknown) =>
     String(value ?? '')
@@ -409,6 +427,181 @@ const buildLocalSaleQuotationResult = (quotation: AdminLocalQuotation): LocalSal
     whatsappMessage: null,
 })
 
+const toFinancialNumber = (value: unknown): number => {
+    const number = Number(value ?? 0)
+    return Number.isFinite(number) ? number : 0
+}
+
+const percentOf = (value: number, base: number): number => (base > 0 ? (value / base) * 100 : 0)
+
+const trendPeriodExpenses = (row: FinancialTrendPoint): number => (
+    toFinancialNumber(row.period_expenses ?? row.expenses_incurred ?? row.committed_expenses)
+)
+
+const trendPaidExpenses = (row: FinancialTrendPoint): number => (
+    toFinancialNumber(row.expenses_cash_paid ?? row.expenses_paid)
+)
+
+const trendNetPeriodProfit = (row: FinancialTrendPoint): number => (
+    toFinancialNumber(row.net_period_profit ?? row.net_committed_profit ?? (
+        toFinancialNumber(row.gross_profit) - trendPeriodExpenses(row) - toFinancialNumber(row.financial_adjustments)
+    ))
+)
+
+const trendNetCashProfit = (row: FinancialTrendPoint): number => (
+    toFinancialNumber(row.net_cash_profit ?? (
+        toFinancialNumber(row.gross_profit) - trendPaidExpenses(row) - toFinancialNumber(row.financial_adjustments)
+    ))
+)
+
+const hasFinancialTrendActivity = (row: FinancialTrendPoint): boolean => (
+    toFinancialNumber(row.gross_sales) !== 0
+    || toFinancialNumber(row.net_sales) !== 0
+    || toFinancialNumber(row.product_cost) !== 0
+    || trendPeriodExpenses(row) !== 0
+    || trendPaidExpenses(row) !== 0
+    || toFinancialNumber(row.expenses_pending) !== 0
+    || toFinancialNumber(row.expenses_overdue) !== 0
+    || toFinancialNumber(row.financial_adjustments) !== 0
+)
+
+const summarizeReportFinancialRows = (
+    rows: FinancialTrendPoint[],
+    fallbackSalesSummary: any,
+    fallbackProfitStats: any,
+    scopeLabel: string,
+): ReportFinancialSummary => {
+    const sourceRows = Array.isArray(rows) ? rows : []
+
+    if (sourceRows.length === 0) {
+        const gross = toFinancialNumber(fallbackSalesSummary?.gross)
+        const net = toFinancialNumber(fallbackSalesSummary?.net)
+        const vat = toFinancialNumber(fallbackSalesSummary?.vat)
+        const shipping = toFinancialNumber(fallbackSalesSummary?.shipping)
+        const cost = toFinancialNumber(fallbackProfitStats?.cost)
+        const grossProfit = toFinancialNumber(fallbackProfitStats?.gross_profit ?? fallbackProfitStats?.profit)
+        const periodExpenses = toFinancialNumber(fallbackProfitStats?.period_expenses ?? fallbackProfitStats?.operating_expenses)
+        const paidExpenses = toFinancialNumber(fallbackProfitStats?.paid_expenses)
+        const pendingExpenses = toFinancialNumber(fallbackProfitStats?.pending_expenses)
+        const overdueExpenses = toFinancialNumber(fallbackProfitStats?.overdue_expenses)
+        const financialAdjustments = toFinancialNumber(fallbackProfitStats?.financial_adjustments)
+        const netProfit = toFinancialNumber(fallbackProfitStats?.net_profit ?? fallbackProfitStats?.net_period_profit ?? (grossProfit - periodExpenses - financialAdjustments))
+        const flowProfit = toFinancialNumber(fallbackProfitStats?.net_cash_profit ?? (grossProfit - paidExpenses - financialAdjustments))
+        return {
+            scopeLabel,
+            ordersCount: toFinancialNumber(fallbackSalesSummary?.orders_count),
+            gross,
+            net,
+            vat,
+            shipping,
+            cost,
+            grossProfit,
+            periodExpenses,
+            paidExpenses,
+            pendingExpenses,
+            overdueExpenses,
+            financialAdjustments,
+            netProfit,
+            flowProfit,
+            grossMargin: toFinancialNumber(fallbackProfitStats?.gross_margin ?? fallbackProfitStats?.margin ?? percentOf(grossProfit, net)),
+            netMargin: toFinancialNumber(fallbackProfitStats?.net_margin ?? fallbackProfitStats?.net_period_margin ?? percentOf(netProfit, net)),
+            flowMargin: toFinancialNumber(fallbackProfitStats?.net_cash_margin ?? percentOf(flowProfit, net)),
+            roi: toFinancialNumber(fallbackProfitStats?.roi ?? percentOf(grossProfit, cost)),
+            netRoi: toFinancialNumber(fallbackProfitStats?.net_roi ?? percentOf(netProfit, cost + periodExpenses + Math.abs(financialAdjustments))),
+            flowRoi: toFinancialNumber(fallbackProfitStats?.cash_net_roi ?? percentOf(flowProfit, cost + paidExpenses + Math.abs(financialAdjustments))),
+            averageOrderNet: toFinancialNumber(fallbackSalesSummary?.average_order_net),
+        }
+    }
+
+    const totals = sourceRows.reduce((acc, row) => {
+        acc.ordersCount += toFinancialNumber(row.orders_count)
+        acc.gross += toFinancialNumber(row.gross_sales)
+        acc.net += toFinancialNumber(row.net_sales)
+        acc.vat += toFinancialNumber(row.tax_collected)
+        acc.shipping += toFinancialNumber(row.shipping_collected)
+        acc.cost += toFinancialNumber(row.product_cost)
+        acc.grossProfit += toFinancialNumber(row.gross_profit)
+        acc.periodExpenses += trendPeriodExpenses(row)
+        acc.paidExpenses += trendPaidExpenses(row)
+        acc.pendingExpenses += toFinancialNumber(row.expenses_pending)
+        acc.overdueExpenses += toFinancialNumber(row.expenses_overdue)
+        acc.financialAdjustments += toFinancialNumber(row.financial_adjustments)
+        acc.netProfit += trendNetPeriodProfit(row)
+        acc.flowProfit += trendNetCashProfit(row)
+        return acc
+    }, {
+        ordersCount: 0,
+        gross: 0,
+        net: 0,
+        vat: 0,
+        shipping: 0,
+        cost: 0,
+        grossProfit: 0,
+        periodExpenses: 0,
+        paidExpenses: 0,
+        pendingExpenses: 0,
+        overdueExpenses: 0,
+        financialAdjustments: 0,
+        netProfit: 0,
+        flowProfit: 0,
+    })
+
+    return {
+        ...totals,
+        scopeLabel,
+        grossMargin: percentOf(totals.grossProfit, totals.net),
+        netMargin: percentOf(totals.netProfit, totals.net),
+        flowMargin: percentOf(totals.flowProfit, totals.net),
+        roi: percentOf(totals.grossProfit, totals.cost),
+        netRoi: percentOf(totals.netProfit, totals.cost + totals.periodExpenses + Math.abs(totals.financialAdjustments)),
+        flowRoi: percentOf(totals.flowProfit, totals.cost + totals.paidExpenses + Math.abs(totals.financialAdjustments)),
+        averageOrderNet: totals.ordersCount > 0 ? totals.net / totals.ordersCount : 0,
+    }
+}
+
+const summarizeReportPeriod = (
+    report: ReportPeriodSummary | null | undefined,
+    scopeLabel: string,
+): ReportFinancialSummary | null => {
+    if (!report) return null
+    const sales = report.sales ?? {}
+    const profit = report.profit ?? {}
+    const gross = toFinancialNumber(sales.total)
+    const net = toFinancialNumber(sales.net)
+    const cost = toFinancialNumber(profit.cost)
+    const grossProfit = toFinancialNumber(profit.gross_profit)
+    const periodExpenses = toFinancialNumber(profit.period_expenses)
+    const paidExpenses = toFinancialNumber(profit.paid_expenses)
+    const financialAdjustments = toFinancialNumber(profit.financial_adjustments)
+    const netProfit = toFinancialNumber(profit.net_period_profit ?? profit.net_committed_profit ?? (grossProfit - periodExpenses - financialAdjustments))
+    const flowProfit = toFinancialNumber(profit.net_cash_profit ?? (grossProfit - paidExpenses - financialAdjustments))
+
+    return {
+        scopeLabel,
+        ordersCount: toFinancialNumber(sales.orders_count),
+        gross,
+        net,
+        vat: toFinancialNumber(sales.tax),
+        shipping: toFinancialNumber(sales.shipping),
+        cost,
+        grossProfit,
+        periodExpenses,
+        paidExpenses,
+        pendingExpenses: toFinancialNumber(profit.pending_expenses),
+        overdueExpenses: toFinancialNumber(profit.overdue_expenses),
+        financialAdjustments,
+        netProfit,
+        flowProfit,
+        grossMargin: toFinancialNumber(profit.gross_margin ?? percentOf(grossProfit, net)),
+        netMargin: toFinancialNumber(profit.net_period_margin ?? profit.net_committed_margin ?? percentOf(netProfit, net)),
+        flowMargin: toFinancialNumber(profit.net_cash_margin ?? percentOf(flowProfit, net)),
+        roi: percentOf(grossProfit, cost),
+        netRoi: percentOf(netProfit, cost + periodExpenses + Math.abs(financialAdjustments)),
+        flowRoi: percentOf(flowProfit, cost + paidExpenses + Math.abs(financialAdjustments)),
+        averageOrderNet: toFinancialNumber(sales.orders_count) > 0 ? net / toFinancialNumber(sales.orders_count) : 0,
+    }
+}
+
 const UsersManagementPanel = dynamic(() => import('./components/UsersManagementPanel'), {
     ssr: false,
 })
@@ -454,6 +647,9 @@ const DiscountCodesPanel = dynamic(() => import('./components/DiscountCodesPanel
 const BusinessExpensesPanel = dynamic(() => import('./components/BusinessExpensesPanel'), {
     ssr: false,
 })
+const FinancialTrendsPanel = dynamic(() => import('./components/FinancialTrendsPanel'), {
+    ssr: false,
+})
 const LocalSalesPanel = dynamic(() => import('./components/LocalSalesPanel'), {
     ssr: false,
 })
@@ -481,6 +677,7 @@ type DiscountFormState = {
 type BusinessExpenseFilters = {
     status: string
     category: string
+    period: string
     from: string
     to: string
 }
@@ -488,6 +685,7 @@ type BusinessExpenseFilters = {
 const createDefaultBusinessExpenseFilters = (): BusinessExpenseFilters => ({
     status: 'all',
     category: 'all',
+    period: '',
     from: '',
     to: '',
 })
@@ -505,6 +703,40 @@ const createEmptyDiscountForm = (): DiscountFormState => ({
     endsAt: '',
     isActive: true,
 })
+
+const formatDashboardTrendLabel = (
+    point: { day?: string; date?: string },
+    options: Intl.DateTimeFormatOptions,
+) => {
+    const rawDate = String(point.date || point.day || '').trim()
+    if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+        return formatDateEcuador(rawDate, options)
+    }
+    return String(point.day || '-')
+}
+
+const getReportDeliveryMethodLabel = (method?: string | null) => {
+    const normalized = String(method || '').trim().toLowerCase()
+    if (normalized === 'pickup') return 'Retiro en tienda'
+    if (normalized === 'delivery') return 'Envío a domicilio'
+    return normalized ? String(method) : 'Por definir'
+}
+
+const getReportPaymentMethodLabel = (method?: string | null) => {
+    const raw = String(method || '').trim()
+    if (!raw) return 'Por definir'
+    const label = getLocalSalePaymentMethodLabel(raw)
+    return label === 'Otro' ? raw : label
+}
+
+const getReportCustomerDocument = (order: {
+    customer_document_type?: string | null
+    customer_document_number?: string | null
+}) => {
+    const type = String(order.customer_document_type || '').trim()
+    const number = String(order.customer_document_number || '').trim()
+    return [type, number].filter(Boolean).join(' ') || '-'
+}
 
 const mapDiscountToForm = (discount?: AdminDiscountCode | null): DiscountFormState => {
     if (!discount) return createEmptyDiscountForm()
@@ -597,6 +829,11 @@ const MyAccount = () => {
     const [trendRange, setTrendRange] = useState<7 | 30>(7)
     const [salesRankingView, setSalesRankingView] = useState<'month' | 'historical'>('month')
     const [salesRankingMonth, setSalesRankingMonth] = useState<string>(getCurrentMonthKey())
+    const [financialTrendMode, setFinancialTrendMode] = useState<FinancialTrendRangeMode>('monthly')
+    const [financialTrendScope, setFinancialTrendScope] = useState<FinancialTrendSummaryScope>('selected')
+    const [selectedFinancialPeriod, setSelectedFinancialPeriod] = useState('')
+    const [salesOrderSearch, setSalesOrderSearch] = useState('')
+    const [salesOrderStatusFilter, setSalesOrderStatusFilter] = useState<'all' | 'completed' | 'delivered'>('all')
     const [adminReportSection, setAdminReportSection] = useState<AdminReportSection>('general')
     const [selectedDeepDive, setSelectedDeepDive] = useState<DeepDiveView | null>(null)
     const [selectedProductMetric, setSelectedProductMetric] = useState<ProductDetailMetric>('net')
@@ -901,6 +1138,7 @@ const MyAccount = () => {
             const params = new URLSearchParams()
             if (businessExpenseFilters.status && businessExpenseFilters.status !== 'all') params.set('status', businessExpenseFilters.status)
             if (businessExpenseFilters.category && businessExpenseFilters.category !== 'all') params.set('category', businessExpenseFilters.category)
+            if (businessExpenseFilters.period && /^\d{4}-(0[1-9]|1[0-2])$/.test(businessExpenseFilters.period)) params.set('period', businessExpenseFilters.period)
             if (businessExpenseFilters.from) params.set('from', businessExpenseFilters.from)
             if (businessExpenseFilters.to) params.set('to', businessExpenseFilters.to)
             const query = params.toString()
@@ -1112,7 +1350,7 @@ const MyAccount = () => {
             await Promise.allSettled([
                 reloadBusinessExpensesPanel(true),
                 requestApi<Order[]>('/api/orders').then((res) => setAdminOrdersList(res.body)),
-                requestApi<DashboardStats>(`/api/admin/dashboard/stats${/^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth) ? `?month=${encodeURIComponent(salesRankingMonth)}` : ''}`).then((res) => setDashboardStats(res.body)),
+                requestApi<DashboardStats>(`/api/admin/dashboard/stats${/^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth) ? `?period=${encodeURIComponent(salesRankingMonth)}` : ''}`).then((res) => setDashboardStats(res.body)),
             ])
             invalidateAdminPanelData()
         } catch (error) {
@@ -2486,11 +2724,119 @@ const MyAccount = () => {
     const salesProgressPercentage = Number(dashboardStats?.totalSales?.progress?.percentage ?? 0)
     const salesTrendIsPositive = salesProgressPercentage >= 0
     const productSalesRanking = dashboardStats?.businessMetrics?.productSalesRanking
+    const periodReport = dashboardStats?.businessMetrics?.report
     const selectedRankingMonth = productSalesRanking?.selectedMonth || salesRankingMonth
     const selectedRankingMonthLabel = formatMonthKeyLabel(selectedRankingMonth)
     const salesRankingRows = React.useMemo<SalesRankingRow[]>(() => {
         return buildSalesRankingRows(productSalesRanking, salesRankingView)
     }, [productSalesRanking, salesRankingView])
+    const reportSalesRankingView = financialTrendMode === 'daily'
+        ? 'range'
+        : (financialTrendScope === 'total' ? 'historical' : 'month')
+    const reportSalesRankingRows = React.useMemo<SalesRankingRow[]>(() => {
+        const reportPeriodKey = periodReport?.period?.period_key
+        if (reportSalesRankingView === 'month' && reportPeriodKey === selectedFinancialPeriod) {
+            return (periodReport?.products ?? []).map((item) => ({
+                product_id: item.product_id,
+                product_name: item.product_name,
+                category: item.category,
+                orders_count: Number(item.orders_count ?? 0),
+                units_sold: Number(item.units_sold ?? 0),
+                gross_revenue: Number(item.gross_revenue ?? 0),
+                net_revenue: Number(item.net_revenue ?? 0),
+                vat_amount: Number(item.vat_amount ?? 0),
+                shipping_amount: Number(item.shipping_amount ?? 0),
+                cost: Number(item.cost ?? 0),
+                profit: Number(item.profit ?? 0),
+                margin: Number(item.margin ?? 0),
+                order_refs: Array.isArray(item.order_refs) ? item.order_refs : [],
+                month_orders_count: Number(item.orders_count ?? 0),
+                month_units_sold: Number(item.units_sold ?? 0),
+                month_gross_revenue: Number(item.gross_revenue ?? 0),
+                month_net_revenue: Number(item.net_revenue ?? 0),
+                month_vat_amount: Number(item.vat_amount ?? 0),
+                month_shipping_amount: Number(item.shipping_amount ?? 0),
+                month_cost: Number(item.cost ?? 0),
+                month_profit: Number(item.profit ?? 0),
+                month_margin: Number(item.margin ?? 0),
+                range_orders_count: Number(item.orders_count ?? 0),
+                range_units_sold: Number(item.units_sold ?? 0),
+                range_gross_revenue: Number(item.gross_revenue ?? 0),
+                range_net_revenue: Number(item.net_revenue ?? 0),
+                range_vat_amount: Number(item.vat_amount ?? 0),
+                range_shipping_amount: Number(item.shipping_amount ?? 0),
+                range_cost: Number(item.cost ?? 0),
+                range_profit: Number(item.profit ?? 0),
+                range_margin: Number(item.margin ?? 0),
+                historical_orders_count: Number(item.orders_count ?? 0),
+                historical_units_sold: Number(item.units_sold ?? 0),
+                historical_gross_revenue: Number(item.gross_revenue ?? 0),
+                historical_net_revenue: Number(item.net_revenue ?? 0),
+                historical_vat_amount: Number(item.vat_amount ?? 0),
+                historical_shipping_amount: Number(item.shipping_amount ?? 0),
+                historical_cost: Number(item.cost ?? 0),
+                historical_profit: Number(item.profit ?? 0),
+                historical_margin: Number(item.margin ?? 0),
+            }))
+        }
+        return buildSalesRankingRows(productSalesRanking, reportSalesRankingView)
+    }, [periodReport, productSalesRanking, reportSalesRankingView, selectedFinancialPeriod])
+    const reportSalesUnitsSold = reportSalesRankingRows.reduce((acc, item) => acc + Number(item.units_sold ?? 0), 0)
+    const reportSalesCategories = React.useMemo(() => {
+        const totals = new Map<string, number>()
+        reportSalesRankingRows.forEach((item) => {
+            const category = String(item.category || 'Sin categoría')
+            totals.set(category, (totals.get(category) ?? 0) + Number(item.net_revenue ?? 0))
+        })
+        if (reportSalesRankingView === 'month' && periodReport?.period?.period_key === selectedFinancialPeriod) {
+            return (periodReport.categories ?? [])
+                .map((item) => ({ category: item.category, total: Number(item.net_revenue ?? 0) }))
+                .sort((a, b) => b.total - a.total)
+        }
+        return Array.from(totals.entries())
+            .map(([category, total]) => ({ category, total }))
+            .sort((a, b) => b.total - a.total)
+    }, [periodReport, reportSalesRankingRows, reportSalesRankingView, selectedFinancialPeriod])
+    const reportSalesCategoriesTotal = reportSalesCategories.reduce((acc, item) => acc + Number(item.total ?? 0), 0)
+    const reportSalesOrders = React.useMemo(() => {
+        if (periodReport?.period?.period_key === selectedRankingMonth) {
+            return periodReport.orders ?? []
+        }
+        return []
+    }, [periodReport, selectedRankingMonth])
+    const filteredReportSalesOrders = React.useMemo(() => {
+        const query = salesOrderSearch.trim().toLowerCase()
+        return reportSalesOrders.filter((order) => {
+            const status = normalizeStatus(order.status)
+            if (salesOrderStatusFilter !== 'all' && status !== salesOrderStatusFilter) return false
+            if (!query) return true
+
+            return [
+                order.id,
+                order.user_name || '',
+                order.customer_email || '',
+                order.customer_phone || '',
+                getReportCustomerDocument(order),
+                getReportDeliveryMethodLabel(order.delivery_method),
+                getReportPaymentMethodLabel(order.payment_method),
+                order.discount_code || '',
+                order.items_summary || '',
+                order.status,
+                formatDateEcuador(order.created_at),
+                formatDateTimeEcuador(order.created_at, { hour: '2-digit', minute: '2-digit' }),
+                formatMoney(order.gross),
+                formatMoney(order.net),
+                formatMoney(order.vat),
+                formatMoney(order.shipping),
+                formatMoney(order.discount_total ?? 0),
+                formatMoney(order.cost ?? 0),
+                formatMoney(order.profit ?? 0),
+            ].some((value) => String(value).toLowerCase().includes(query))
+        })
+    }, [reportSalesOrders, salesOrderSearch, salesOrderStatusFilter])
+    const reportSalesPeriodLabel = periodReport?.period?.period_key === selectedRankingMonth
+        ? `${periodReport.period.start_date} → ${periodReport.period.end_date}`
+        : (productSalesRanking?.period ? `${productSalesRanking.period.start || '-'} → ${productSalesRanking.period.end || '-'}` : '-')
     const selectedProcurementSalesProduct = React.useMemo(() => {
         if (!selectedProductProcurementDetail) return null
         return salesRankingRows.find((item) => item.product_id === selectedProductProcurementDetail.product_id) || null
@@ -2503,7 +2849,66 @@ const MyAccount = () => {
     const salesRankingFinancial = salesRankingView === 'month' ? monthlySalesFinancial : historicalSalesFinancial
     const activeReportMeta = REPORT_SECTION_META[adminReportSection]
     const salesSummary = dashboardStats?.businessMetrics?.salesSummary
+    const financialTrends = dashboardStats?.businessMetrics?.financialTrends
     const profitStats = dashboardStats?.businessMetrics?.profitStats
+    const financialTrendRows = React.useMemo<FinancialTrendPoint[]>(() => {
+        const source = financialTrendMode === 'monthly' ? financialTrends?.monthly : financialTrends?.daily
+        const rows = Array.isArray(source) ? source : []
+        return financialTrendMode === 'daily' ? rows.slice(-30) : rows
+    }, [financialTrendMode, financialTrends])
+    React.useEffect(() => {
+        if (financialTrendRows.length === 0) {
+            if (selectedFinancialPeriod) setSelectedFinancialPeriod('')
+            return
+        }
+        if (selectedFinancialPeriod && financialTrendRows.some((row) => row.period === selectedFinancialPeriod)) return
+        const latestActivity = [...financialTrendRows].reverse().find(hasFinancialTrendActivity) ?? financialTrendRows[financialTrendRows.length - 1]
+        setSelectedFinancialPeriod(latestActivity.period)
+    }, [financialTrendRows, selectedFinancialPeriod])
+    React.useEffect(() => {
+        if (
+            activeTab === 'reports'
+            && financialTrendMode === 'monthly'
+            && financialTrendScope === 'selected'
+            && /^\d{4}-\d{2}$/.test(selectedFinancialPeriod)
+            && selectedFinancialPeriod !== salesRankingMonth
+        ) {
+            setSalesRankingMonth(selectedFinancialPeriod)
+            setSalesRankingView('month')
+        }
+    }, [activeTab, financialTrendMode, financialTrendScope, salesRankingMonth, selectedFinancialPeriod])
+    const selectReportMonth = React.useCallback((month?: string) => {
+        const nextMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(month || ''))
+            ? String(month)
+            : getCurrentMonthKey()
+        setSalesRankingMonth(nextMonth)
+        setSelectedFinancialPeriod(nextMonth)
+        setFinancialTrendMode('monthly')
+        setFinancialTrendScope('selected')
+        setSalesRankingView('month')
+    }, [])
+    const selectedFinancialTrendRow = financialTrendRows.find((row) => row.period === selectedFinancialPeriod)
+        ?? financialTrendRows.find(hasFinancialTrendActivity)
+        ?? financialTrendRows[financialTrendRows.length - 1]
+    const reportFinancialScopeLabel = financialTrendMode === 'daily'
+        ? 'Últimos 30 días'
+        : (financialTrendScope === 'total'
+            ? 'Total histórico visible'
+            : (selectedFinancialTrendRow?.period ? `Período ${selectedFinancialTrendRow.period}` : 'Período seleccionado'))
+    const reportFinancialRows = financialTrendMode === 'daily' || financialTrendScope === 'total'
+        ? financialTrendRows
+        : (selectedFinancialTrendRow ? [selectedFinancialTrendRow] : [])
+    const reportFinancialSummary = React.useMemo(() => {
+        if (
+            financialTrendMode === 'monthly'
+            && financialTrendScope === 'selected'
+            && periodReport?.period?.period_key === selectedFinancialTrendRow?.period
+        ) {
+            const canonical = summarizeReportPeriod(periodReport, reportFinancialScopeLabel)
+            if (canonical) return canonical
+        }
+        return summarizeReportFinancialRows(reportFinancialRows, salesSummary, profitStats, reportFinancialScopeLabel)
+    }, [financialTrendMode, financialTrendScope, periodReport, profitStats, reportFinancialRows, reportFinancialScopeLabel, salesSummary, selectedFinancialTrendRow?.period])
     const inventoryValue = dashboardStats?.businessMetrics?.inventoryValue
     const inventoryDeepDive = dashboardStats?.businessMetrics?.inventoryDeepDive
     const inventoryHealth = inventoryDeepDive?.health
@@ -2548,24 +2953,26 @@ const MyAccount = () => {
     const riskInventoryItems = inventoryDeepDive?.riskItems ?? []
     const expiringInventoryItems = inventoryDeepDive?.expiringItems ?? []
     const expiredInventoryItems = inventoryDeepDive?.expiredItems ?? []
-    const reportBalanceNet = Number(salesSummary?.net ?? 0)
-    const reportBalanceGross = Number(salesSummary?.gross ?? 0)
-    const reportBalanceVat = Number(salesSummary?.vat ?? 0)
-    const reportBalanceShipping = Number(salesSummary?.shipping ?? 0)
-    const reportBalanceCost = Number(profitStats?.cost ?? 0)
-    const reportBalanceGrossProfit = Number(profitStats?.gross_profit ?? profitStats?.profit ?? 0)
-    const reportBalanceGrossMargin = Number(profitStats?.gross_margin ?? profitStats?.margin ?? 0)
-    const reportBalancePaidExpenses = Number(profitStats?.paid_expenses ?? profitStats?.operating_expenses ?? 0)
-    const reportBalancePendingExpenses = Number(profitStats?.pending_expenses ?? 0)
-    const reportBalanceOverdueExpenses = Number(profitStats?.overdue_expenses ?? 0)
-    const reportBalanceCommittedExpenses = Number(profitStats?.committed_expenses ?? (reportBalancePaidExpenses + reportBalancePendingExpenses + reportBalanceOverdueExpenses))
-    const reportBalanceNetProfit = Number(profitStats?.net_cash_profit ?? profitStats?.net_profit ?? reportBalanceGrossProfit - reportBalancePaidExpenses)
-    const reportBalanceNetMargin = Number(profitStats?.net_cash_margin ?? profitStats?.net_margin ?? (reportBalanceNet > 0 ? (reportBalanceNetProfit / reportBalanceNet) * 100 : 0))
-    const reportBalanceCommittedNetProfit = Number(profitStats?.net_committed_profit ?? reportBalanceGrossProfit - reportBalanceCommittedExpenses)
-    const reportBalanceCommittedNetMargin = Number(profitStats?.net_committed_margin ?? (reportBalanceNet > 0 ? (reportBalanceCommittedNetProfit / reportBalanceNet) * 100 : 0))
-    const reportBalanceRoi = Number(profitStats?.roi ?? 0)
-    const reportOrdersCount = Number(salesSummary?.orders_count ?? 0)
-    const reportAverageOrderNet = Number(salesSummary?.average_order_net ?? dashboardStats?.businessMetrics?.averageOrderValue ?? 0)
+    const reportBalanceNet = reportFinancialSummary.net
+    const reportBalanceGross = reportFinancialSummary.gross
+    const reportBalanceVat = reportFinancialSummary.vat
+    const reportBalanceShipping = reportFinancialSummary.shipping
+    const reportBalanceCost = reportFinancialSummary.cost
+    const reportBalanceGrossProfit = reportFinancialSummary.grossProfit
+    const reportBalanceGrossMargin = reportFinancialSummary.grossMargin
+    const reportBalancePeriodExpenses = reportFinancialSummary.periodExpenses
+    const reportBalancePaidExpenses = reportFinancialSummary.paidExpenses
+    const reportBalancePendingExpenses = reportFinancialSummary.pendingExpenses
+    const reportBalanceOverdueExpenses = reportFinancialSummary.overdueExpenses
+    const reportBalanceNetProfit = reportFinancialSummary.netProfit
+    const reportBalanceNetMargin = reportFinancialSummary.netMargin
+    const reportBalanceFlowProfit = reportFinancialSummary.flowProfit
+    const reportBalanceFlowMargin = reportFinancialSummary.flowMargin
+    const reportBalanceRoi = reportFinancialSummary.roi
+    const reportBalanceNetRoi = reportFinancialSummary.netRoi
+    const reportBalanceFlowRoi = reportFinancialSummary.flowRoi
+    const reportOrdersCount = reportFinancialSummary.ordersCount
+    const reportAverageOrderNet = reportFinancialSummary.averageOrderNet || Number(dashboardStats?.businessMetrics?.averageOrderValue ?? 0)
     const productWeightedMargin = Number(dashboardStats?.productAnalysis?.weightedMargin ?? dashboardStats?.productAnalysis?.averageMargin ?? 0)
     const productMarginSampleCount = Number(dashboardStats?.productAnalysis?.pricedCostedProducts ?? 0)
     const productMissingCostCount = Number(dashboardStats?.productAnalysis?.missingCostCount ?? 0)
@@ -2632,10 +3039,13 @@ const MyAccount = () => {
                 currentDateLabel,
                 selectedRankingMonth,
                 selectedRankingMonthLabel,
-                salesRankingView,
+                salesRankingView: reportSalesRankingView,
                 dashboardStats,
-                salesRankingRows,
-                salesCategories,
+                financialScopeLabel: reportFinancialScopeLabel,
+                financialSummary: reportFinancialSummary,
+                salesOrders: filteredReportSalesOrders,
+                salesRankingRows: reportSalesRankingRows,
+                salesCategories: reportSalesCategories,
                 salesTrendRows,
                 inventoryManagementRows,
                 recentPurchaseInvoices,
@@ -2652,9 +3062,12 @@ const MyAccount = () => {
         dashboardStats,
         inventoryManagementRows,
         recentPurchaseInvoices,
-        salesCategories,
-        salesRankingRows,
-        salesRankingView,
+        reportFinancialScopeLabel,
+        reportFinancialSummary,
+        filteredReportSalesOrders,
+        reportSalesCategories,
+        reportSalesRankingRows,
+        reportSalesRankingView,
         salesTrendRows,
         selectedRankingMonth,
         selectedRankingMonthLabel,
@@ -3435,7 +3848,7 @@ const MyAccount = () => {
             setLocalSaleQuoteHistory((prev) => prev.map((item) => item.id === updatedQuotation.id ? updatedQuotation : item))
             showNotification(createdOrderId ? `Venta creada desde cotización: ${createdOrderId}` : 'Cotización convertida a venta.')
             const monthQuery = /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
-                ? `?month=${encodeURIComponent(salesRankingMonth)}`
+                ? `?period=${encodeURIComponent(salesRankingMonth)}`
                 : ''
             const [productsResult, ordersResult, statsResult] = await Promise.allSettled([
                 requestApi<any[]>(ADMIN_PRODUCTS_ENDPOINT),
@@ -3596,7 +4009,7 @@ const MyAccount = () => {
             // El XML del SRI se genera automáticamente en el backend
             // No es necesario hacer una llamada adicional
             const monthQuery = /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
-                ? `?month=${encodeURIComponent(salesRankingMonth)}`
+                ? `?period=${encodeURIComponent(salesRankingMonth)}`
                 : ''
             const [productsResult, ordersResult, statsResult] = await Promise.allSettled([
                 requestApi<any[]>(ADMIN_PRODUCTS_ENDPOINT),
@@ -3857,7 +4270,7 @@ const MyAccount = () => {
                                         {salesDeepDive?.categories.slice(0, 4).map((cat, i) => {
                                             const revenue = Number(cat.current);
                                             const maxRevenue = Math.max(...(salesDeepDive?.categories || []).map((item) => Number(item.current || 0)), 1)
-                                            const revenueShare = Math.max(2, (revenue / maxRevenue) * 100)
+                                            const revenueShare = maxRevenue > 0 && revenue > 0 ? Math.max(2, (revenue / maxRevenue) * 100) : 0
                                             return (
                                                 <div key={i} className="bg-surface p-4 rounded-lg border border-line">
                                                     <div className="flex justify-between items-center mb-3">
@@ -3893,10 +4306,10 @@ const MyAccount = () => {
                                                         <div className="text-xl font-bold text-white/80">${Number(dashboardStats.businessMetrics?.profitStats?.shipping_collected ?? reportBalanceShipping).toLocaleString()}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-white/50 mb-1">Gastos pagados</div>
-                                                        <div className="text-xl font-bold text-orange-400">-${reportBalancePaidExpenses.toLocaleString()}</div>
+                                                        <div className="text-xs text-white/50 mb-1">Gastos del período</div>
+                                                        <div className="text-xl font-bold text-orange-400">-${reportBalancePeriodExpenses.toLocaleString()}</div>
                                                     </div>
-                                                    <div className="col-span-2 text-[10px] text-white/40">Pendientes/vencidos: -${(reportBalancePendingExpenses + reportBalanceOverdueExpenses).toLocaleString()} comprometidos.</div>
+                                                    <div className="col-span-2 text-[10px] text-white/40">Gastos pagados: -${reportBalancePaidExpenses.toLocaleString()}. Pendientes/vencidos: -${(reportBalancePendingExpenses + reportBalanceOverdueExpenses).toLocaleString()}.</div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-3">
                                                     <div>
@@ -3904,7 +4317,7 @@ const MyAccount = () => {
                                                         <div className="text-2xl font-bold text-success">${Number(dashboardStats.businessMetrics?.profitStats?.gross_profit ?? dashboardStats.businessMetrics?.profitStats?.profit ?? 0).toLocaleString()}</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-white/50 mb-1">Neta por caja</div>
+                                                        <div className="text-xs text-white/50 mb-1">Utilidad neta</div>
                                                         <div className={`text-2xl font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>${reportBalanceNetProfit.toLocaleString()}</div>
                                                     </div>
                                                     <div>
@@ -3912,14 +4325,14 @@ const MyAccount = () => {
                                                         <div className="text-xl font-bold">{reportBalanceGrossMargin.toFixed(1)}%</div>
                                                     </div>
                                                     <div>
-                                                        <div className="text-xs text-white/50 mb-1">Margen caja</div>
+                                                        <div className="text-xs text-white/50 mb-1">Margen neto</div>
                                                         <div className="text-xl font-bold">{reportBalanceNetMargin.toFixed(1)}%</div>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="mt-4 p-3 bg-white/5 rounded-lg border border-white/5 text-[10px] text-white/40 leading-relaxed italic">
-                                            * Neto por caja descuenta gastos pagados; comprometido incluye pendientes y vencidos.
+                                            * La utilidad neta descuenta gastos registrados por período; la utilidad neta pagada descuenta solo gastos ya pagados de ese período.
                                         </div>
                                     </div>
                                 </div>
@@ -4034,7 +4447,7 @@ const MyAccount = () => {
                                             <div className="p-6 bg-success/5 border border-success/10 rounded-2xl flex flex-col justify-center items-center text-center">
                                                 <div className="text-3xl font-bold text-success mb-1">{inventoryHealth?.overstock}</div>
                                                 <div className="text-[10px] font-bold text-secondary uppercase">Productos en Sobre-Stock</div>
-                                                <p className="text-[9px] text-secondary mt-2">Sugerencia: Liquidar para liberar flujo de caja</p>
+                                                <p className="text-[9px] text-secondary mt-2">Sugerencia: Liquidar para liberar capital operativo</p>
                                             </div>
                                         </div>
 
@@ -4108,7 +4521,7 @@ const MyAccount = () => {
                                                 </div>
                                                 <div className="pt-6 border-t border-white/10 flex justify-between items-center">
                                                     <span className="text-sm font-bold">Inversión Total</span>
-                                                    <span className="text-xl font-bold text-success">${Number(dashboardStats.businessMetrics?.inventoryValue?.cost_value).toLocaleString()}</span>
+                                                    <span className="text-xl font-bold text-success">{formatMoney(Number(dashboardStats.businessMetrics?.inventoryValue?.cost_value ?? 0))}</span>
                                                 </div>
                                             </div>
                                         </div>
@@ -4488,6 +4901,26 @@ const MyAccount = () => {
                                             <div>
                                                 <div className="heading5">{activeReportMeta.title}</div>
                                                 <p className="text-secondary text-xs mt-1">{activeReportMeta.subtitle}</p>
+                                                {adminReportSection === 'balance' && (
+                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                        Alcance del balance: <span className="ml-1 text-black">{reportFinancialScopeLabel}</span>
+                                                    </div>
+                                                )}
+                                                {adminReportSection === 'sales' && (
+                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                        Periodo de ventas: <span className="ml-1 text-black">{salesRankingView === 'month' ? selectedRankingMonthLabel : 'Histórico total'}</span>
+                                                    </div>
+                                                )}
+                                                {adminReportSection === 'inventory' && (
+                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                        Disponibilidad: <span className="ml-1 text-black">{Number(inventoryHealth?.low_stock ?? 0)} bajo stock / {Number(inventoryHealth?.out_of_stock ?? 0)} sin stock</span>
+                                                    </div>
+                                                )}
+                                                {adminReportSection === 'traceability' && (
+                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                        Soporte auditado: <span className="ml-1 text-black">{traceabilityOrders.length.toLocaleString('es-EC')} pedidos</span>
+                                                    </div>
+                                                )}
                                             </div>
                                             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
                                                 <button
@@ -4503,56 +4936,14 @@ const MyAccount = () => {
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-2.5 mb-4">
-                                            <button
-                                                type="button"
-                                                className={`p-3.5 rounded-lg border text-left transition-all ${(adminReportSection === 'general') ? 'border-black bg-surface' : 'border-line bg-white hover:border-black'}`}
-                                                onClick={() => openAdminReportSection('general')}
-                                            >
-                                                <div className="text-[10px] uppercase font-bold text-secondary mb-1">General</div>
-                                                <div className="text-lg font-bold">{formatMoney(reportBalanceNet)}</div>
-                                                <div className="text-xs text-secondary mt-1">Vista ejecutiva del negocio</div>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`p-3.5 rounded-lg border text-left transition-all ${(adminReportSection === 'sales') ? 'border-black bg-surface' : 'border-line bg-white hover:border-black'}`}
-                                                onClick={() => openAdminReportSection('sales')}
-                                            >
-                                                <div className="text-[10px] uppercase font-bold text-secondary mb-1">Ventas</div>
-                                                <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0).toLocaleString('es-EC')} uds</div>
-                                                <div className="text-xs text-secondary mt-1">{formatMoney(Number(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0))} netos</div>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`p-3.5 rounded-lg border text-left transition-all ${(adminReportSection === 'balance') ? 'border-black bg-surface' : 'border-line bg-white hover:border-black'}`}
-                                                onClick={() => openAdminReportSection('balance')}
-                                            >
-                                                <div className="text-[10px] uppercase font-bold text-secondary mb-1">Balance</div>
-                                                <div className={`text-lg font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceNetProfit)}</div>
-                                                <div className="text-xs text-secondary mt-1">Neto {reportBalanceNetMargin.toFixed(1)}% • Bruto {reportBalanceGrossMargin.toFixed(1)}%</div>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`p-3.5 rounded-lg border text-left transition-all ${(adminReportSection === 'inventory') ? 'border-black bg-surface' : 'border-line bg-white hover:border-black'}`}
-                                                onClick={() => openAdminReportSection('inventory')}
-                                            >
-                                                <div className="text-[10px] uppercase font-bold text-secondary mb-1">Inventario</div>
-                                                <div className="text-lg font-bold">{formatMoney(Number(inventoryValue?.cost_value ?? 0))}</div>
-                                                <div className="text-xs text-secondary mt-1">{Number(inventoryHealth?.low_stock ?? 0)} bajo stock • {Number(inventoryHealth?.out_of_stock ?? 0)} sin stock</div>
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={`p-3.5 rounded-lg border text-left transition-all ${(adminReportSection === 'traceability') ? 'border-black bg-surface' : 'border-line bg-white hover:border-black'}`}
-                                                onClick={() => openAdminReportSection('traceability')}
-                                            >
-                                                <div className="text-[10px] uppercase font-bold text-secondary mb-1">Trazabilidad</div>
-                                                <div className="text-lg font-bold">{traceabilityOrders.length.toLocaleString('es-EC')} pedidos</div>
-                                                <div className="text-xs text-secondary mt-1">{traceabilityProducts.length.toLocaleString('es-EC')} productos • {traceabilityCategories.length.toLocaleString('es-EC')} categorías</div>
-                                            </button>
-                                        </div>
-
                                         {adminReportSection === 'general' && (
                                             <>
+                                        <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
+                                            <div className="text-sm font-bold">Resumen ejecutivo</div>
+                                            <p className="mt-1 text-xs text-secondary">
+                                                Lectura rápida para decidir qué atender primero. Los detalles completos viven en Ventas, Balance, Inventario y Trazabilidad.
+                                            </p>
+                                        </div>
                                         <div className="mb-4 grid grid-cols-1 xl:grid-cols-[1.12fr_0.88fr] gap-3">
                                             <button
                                                 type="button"
@@ -4565,7 +4956,7 @@ const MyAccount = () => {
                                             >
                                                 <div className="flex h-full flex-col justify-between gap-3 lg:flex-row lg:items-start">
                                                     <div className="min-w-0">
-                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Atención operativa</div>
+                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Pedidos por atender</div>
                                                         <div className="flex items-center gap-3 flex-wrap">
                                                             <div className={`heading5 ${pendingOperationalOrders > 0 ? 'text-[#B45309]' : 'text-black'}`}>
                                                                 {pendingOperationalOrders.toLocaleString('es-EC')} pedidos por atender
@@ -4577,7 +4968,7 @@ const MyAccount = () => {
                                                             )}
                                                         </div>
                                                         <p className="text-secondary text-xs mt-2 max-w-2xl">
-                                                            Este bloque es solo operativo. No entra en ventas, utilidad ni trazabilidad hasta que el pedido se complete o entregue.
+                                                            Seguimiento operativo. Estos pedidos aun no cuentan como venta realizada hasta completarse o entregarse.
                                                         </p>
                                                     </div>
                                                     <div className="grid grid-cols-3 gap-2.5 text-sm min-w-full sm:min-w-[320px] lg:min-w-[332px]">
@@ -4604,9 +4995,9 @@ const MyAccount = () => {
                                             >
                                                 <div className="flex h-full flex-col justify-between gap-3">
                                                     <div>
-                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">IVA configurado</div>
+                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">IVA vigente</div>
                                                         <div className="heading4">{vatRateLabel}%</div>
-                                                        <p className="text-secondary text-xs mt-2">Los productos gravados incluyen IVA; los exentos conservan precio final sin IVA.</p>
+                                                        <p className="text-secondary text-xs mt-2">Tasa usada para separar ventas brutas, ventas netas e IVA cobrado.</p>
                                                     </div>
                                                     <div className="grid grid-cols-2 gap-2.5 text-sm">
                                                         <div className="rounded-lg bg-white border border-line px-2.5 py-2.5">
@@ -4614,7 +5005,7 @@ const MyAccount = () => {
                                                             <div className="text-lg font-bold text-black">{vatMultiplierLabel}x</div>
                                                         </div>
                                                         <div className="rounded-lg bg-white border border-line px-2.5 py-2.5">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Ejemplo gravado</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Precio gravado</div>
                                                             <div className="text-lg font-bold text-black">${vatExampleTotal}</div>
                                                             <div className="text-[11px] text-secondary">$100 base</div>
                                                         </div>
@@ -4623,16 +5014,22 @@ const MyAccount = () => {
                                             </button>
                                         </div>
 
+                                        <div className="mb-3 mt-5">
+                                            <div className="text-sm font-bold">Indicadores clave del negocio</div>
+                                            <p className="mt-1 text-xs text-secondary">Métricas principales para ubicar ventas, impuestos, envíos y unidades vendidas sin entrar al detalle contable.</p>
+                                        </div>
+
                                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
                                             {(() => {
-                                                const summary = dashboardStats?.businessMetrics?.salesSummary
-                                                const ranking = dashboardStats?.businessMetrics?.productSalesRanking
-                                                const gross = Number(summary?.gross ?? 0)
-                                                const net = Number(summary?.net ?? 0)
-                                                const vat = Number(summary?.vat ?? 0)
-                                                const shipping = Number(summary?.shipping ?? 0)
-                                                const monthUnits = Number(ranking?.monthlyTotals?.units_sold ?? 0)
-                                                const histUnits = Number(ranking?.historicalTotals?.units_sold ?? 0)
+                                                const gross = reportBalanceGross
+                                                const net = reportBalanceNet
+                                                const vat = reportBalanceVat
+                                                const shipping = reportBalanceShipping
+                                                const unitLabel = financialTrendMode === 'daily'
+                                                    ? reportFinancialScopeLabel
+                                                    : financialTrendScope === 'total'
+                                                    ? 'Total visible'
+                                                    : reportFinancialScopeLabel
                                                 return (
                                                     <>
                                                         <button
@@ -4640,16 +5037,16 @@ const MyAccount = () => {
                                                             className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
                                                             onClick={() => openProductBreakdown('gross')}
                                                         >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Venta Total</div>
+                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Ventas brutas</div>
                                                             <div className="heading5">${gross.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Incluye IVA + Envío • Ver productos</div>
+                                                            <div className="text-secondary text-xs mt-1">Incluyen IVA y envío • Ver productos</div>
                                                         </button>
                                                         <button
                                                             type="button"
                                                             className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
                                                             onClick={() => openProductBreakdown('net')}
                                                         >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Venta Neta</div>
+                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Ventas netas</div>
                                                             <div className="heading5">${net.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                                                             <div className="text-secondary text-xs mt-1">Sin IVA ni envío • Ver productos</div>
                                                         </button>
@@ -4658,33 +5055,38 @@ const MyAccount = () => {
                                                             className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
                                                             onClick={() => openProductBreakdown('vat')}
                                                         >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">IVA Cobrado</div>
+                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">IVA cobrado</div>
                                                             <div className="heading5">${vat.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Impuesto del cliente • Ver productos</div>
+                                                            <div className="text-secondary text-xs mt-1">Impuesto separado de la venta • Ver productos</div>
                                                         </button>
                                                         <button
                                                             type="button"
                                                             className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
                                                             onClick={() => openProductBreakdown('shipping')}
                                                         >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Envío Cobrado</div>
+                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Envío cobrado</div>
                                                             <div className="heading5">${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Cobro al cliente • Ver productos</div>
+                                                            <div className="text-secondary text-xs mt-1">Cobro de entrega al cliente • Ver productos</div>
                                                         </button>
                                                         <button
                                                             type="button"
                                                             className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
                                                             onClick={() => openAdminReportSection('sales')}
                                                         >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Productos Vendidos (uds)</div>
-                                                            <div className="heading5">{monthUnits.toLocaleString('es-EC')}</div>
+                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Unidades vendidas</div>
+                                                            <div className="heading5">{reportSalesUnitsSold.toLocaleString('es-EC')}</div>
                                                             <div className="text-secondary text-xs mt-1">
-                                                                Mes actual • Hist: {histUnits.toLocaleString('es-EC')}
+                                                                {unitLabel}
                                                             </div>
                                                         </button>
                                                     </>
                                                 )
                                             })()}
+                                        </div>
+
+                                        <div className="mb-3 mt-5">
+                                            <div className="text-sm font-bold">Accesos rápidos por área</div>
+                                            <p className="mt-1 text-xs text-secondary">Tarjetas para abrir el detalle correcto sin mezclar lectura comercial, financiera e inventario.</p>
                                         </div>
 
                                         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
@@ -4693,10 +5095,10 @@ const MyAccount = () => {
                                                 onClick={() => openProductBreakdown('net')}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Ventas (Mes, netas)</div>
+                                                    <div className="text-secondary text-sm font-medium">Ventas netas</div>
                                                     <Icon.CurrencyDollar className="text-success" size={20} />
                                                 </div>
-                                                <div className="heading5">${dashboardStats?.totalSales?.amount ? Number(dashboardStats.totalSales.amount).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}</div>
+                                                <div className="heading5">{formatMoney(reportBalanceNet)}</div>
                                                 <div className={`${salesTrendIsPositive ? 'text-success' : 'text-red'} text-xs mt-2 font-bold flex items-center gap-1`}>
                                                     {salesTrendIsPositive ? <Icon.TrendUp weight="bold" /> : <Icon.TrendDown weight="bold" />}
                                                     {salesTrendIsPositive ? '+' : ''}{salesProgressPercentage.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
@@ -4709,7 +5111,7 @@ const MyAccount = () => {
                                                 onClick={() => setSelectedDeepDive('aov')}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Ticket Promedio</div>
+                                                    <div className="text-secondary text-sm font-medium">Ticket promedio neto</div>
                                                     <Icon.Receipt className="text-blue-500" size={20} />
                                                 </div>
                                                         <div className="heading5">{formatMoney(reportAverageOrderNet)}</div>
@@ -4743,10 +5145,10 @@ const MyAccount = () => {
                                                 onClick={() => openAdminReportSection('inventory')}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Valor Inventario</div>
+                                                    <div className="text-secondary text-sm font-medium">Capital en inventario</div>
                                                     <Icon.Archive className="text-purple-500" size={20} />
                                                 </div>
-                                                <div className="heading5">${dashboardStats?.businessMetrics?.inventoryValue?.cost_value?.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00'}</div>
+                                                <div className="heading5">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0))}</div>
                                                 <div className="text-secondary text-xs mt-2">{Number(dashboardStats?.businessMetrics?.inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock <span className="underline">ver riesgos <Icon.ArrowRight size={10} className="inline ml-1" /></span></div>
                                             </div>
 
@@ -4755,7 +5157,7 @@ const MyAccount = () => {
                                                 onClick={() => navigateToPanelTab('products')}
                                             >
                                                 <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Productos Activos</div>
+                                                    <div className="text-secondary text-sm font-medium">Productos activos</div>
                                                     <Icon.ShoppingBag className="text-primary" size={20} />
                                                 </div>
                                                 <div className="heading5">{Number(dashboardStats?.productAnalysis?.totalMonitored ?? 0).toLocaleString('es-EC')}</div>
@@ -4767,8 +5169,8 @@ const MyAccount = () => {
                                             <div className="bg-white p-5 rounded-xl border border-line shadow-sm relative overflow-hidden">
                                                 <div className="flex items-center justify-between mb-5">
                                                     <div>
-                                                        <div className="heading6">Tendencia de Ventas</div>
-                                                        <p className="text-secondary text-xs mt-1">Comparativa de ingresos diarios</p>
+                                                        <div className="heading6">Tendencia de ventas netas</div>
+                                                        <p className="text-secondary text-xs mt-1">Comparativa diaria para detectar aceleración o caída comercial.</p>
                                                     </div>
                                                     <div className="flex bg-surface p-1 rounded-lg border border-line">
                                                         <button
@@ -4791,33 +5193,31 @@ const MyAccount = () => {
                                                         trendRange === 7 ? (
                                                             <div className="flex items-end gap-3 h-full justify-between pt-6 px-2">
                                                                 {(dashboardStats.monthlyPerformance || []).slice(-7).map((item, i) => {
-                                                                    // Calculate max value dynamically or default to 1 to avoid division by zero
-                                                                    // Use the max of the visible slice for better scaling
                                                                     const currentData = (dashboardStats.monthlyPerformance || []).slice(-7);
-                                                                    const maxVal = Math.max(...currentData.map(p => Number(p.total))) || 100;
-                                                                    const rawHeight = (Number(item.total) / maxVal) * 100;
-                                                                    const height = Math.max(rawHeight, 4); // Min height for visibility
+                                                                    const maxVal = Math.max(...currentData.map(p => Number(p.total))) || 1;
+                                                                    const value = Number(item.total) || 0
+                                                                    const rawHeight = (value / maxVal) * 100;
+                                                                    const height = value > 0 ? Math.max(rawHeight, 4) : 0;
+                                                                    const dayLabel = formatDashboardTrendLabel(item, { weekday: 'short' })
 
                                                                     return (
                                                                         <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-3 group relative cursor-pointer">
-                                                                            {/* Tooltip positioned absolutely relative to the bar column */}
-                                                                            <div className="absolute bottom-[calc(100%+8px)] left-1/2 -translate-x-1/2 bg-black text-white text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap z-20 font-bold shadow-xl pointer-events-none mb-1">
-                                                                                Ventas: ${Number(item.total).toLocaleString()}
+                                                                            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap z-20 font-bold shadow-xl pointer-events-none">
+                                                                                Ventas: {formatMoney(value)}
                                                                                 <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black rotate-45"></div>
                                                                             </div>
 
-                                                                            {/* The Bar */}
                                                                             <div className="w-full max-w-[60px] bg-secondary/5 rounded-t-xl relative flex items-end h-full overflow-visible group-hover:bg-secondary/10 transition-colors duration-300">
                                                                                 <motion.div
                                                                                     initial={{ height: 0 }}
                                                                                     animate={{ height: `${height}%` }}
                                                                                     transition={{ duration: 0.8, ease: "easeOut" }}
-                                                                                    className={`w-full relative rounded-t-xl ${i === 6 ? 'bg-black' : 'bg-black/80 group-hover:bg-black'}`}
+                                                                                    className={`w-full relative rounded-t-xl ${i === currentData.length - 1 ? 'bg-black' : 'bg-black/80 group-hover:bg-black'}`}
                                                                                 >
                                                                                 </motion.div>
                                                                             </div>
 
-                                                                            <span className={`text-[11px] font-bold uppercase tracking-wider ${i === 6 ? 'text-black' : 'text-secondary group-hover:text-black'}`}>{item.day}</span>
+                                                                            <span className={`text-[11px] font-bold uppercase ${i === currentData.length - 1 ? 'text-black' : 'text-secondary group-hover:text-black'}`}>{dayLabel}</span>
                                                                         </div>
                                                                     )
                                                                 })}
@@ -4844,17 +5244,14 @@ const MyAccount = () => {
                                                                     {(() => {
                                                                         const data = dashboardStats.salesTrend30Days || [];
                                                                         const maxVal = Math.max(...data.map(p => Number(p.total))) || 1;
+                                                                        if (data.length === 0) return null
 
-                                                                        // Create smooth curve using cubic bezier
                                                                         const points = data.map((d, i) => {
-                                                                            const x = (i / (data.length - 1)) * 1000;
-                                                                            const y = 200 - (Number(d.total) / maxVal) * 180; // Leave 20px padding at top
-                                                                            return { x, y, val: d.total, date: d.day };
+                                                                            const x = (i / Math.max(data.length - 1, 1)) * 1000;
+                                                                            const value = Number(d.total) || 0
+                                                                            const y = 200 - (value / maxVal) * 180;
+                                                                            return { x, y, val: value, date: formatDashboardTrendLabel(d, { day: '2-digit', month: 'short' }) };
                                                                         });
-
-                                                                        // Generate smooth path command (Catmull-Rom to Bezier conversion or similar simple smoothing)
-                                                                        // For simplicity and robustness in this specialized constraint, we'll use straight lines but with a slight curve effect logic or just high quality polyline
-                                                                        // Actually, let's use a simple line for 30 days to avoid over-smoothing artifacts, but style it elegantly
 
                                                                         const pathData = points.reduce((acc, p, i) =>
                                                                             acc + (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`), "");
@@ -4881,10 +5278,8 @@ const MyAccount = () => {
                                                                                     strokeLinecap="round"
                                                                                     strokeLinejoin="round"
                                                                                 />
-                                                                                {/* Interactive Points - Only show some points to avoid clutter */}
                                                                                 {points.map((p, i) => (
                                                                                     <g key={i} className="group/point">
-                                                                                        {/* larger invisible target for easier hovering */}
                                                                                         <rect x={p.x - 10} y="0" width="20" height="200" fill="transparent" className="cursor-pointer" />
 
                                                                                         <circle
@@ -4894,12 +5289,10 @@ const MyAccount = () => {
                                                                                             className="fill-white stroke-black stroke-[3px] opacity-0 group-hover/point:opacity-100 transition-all duration-200"
                                                                                         />
 
-                                                                                        {/* Tooltip */}
-                                                                                        <foreignObject x={Math.min(p.x - 40, 920)} y={Math.max(p.y - 60, 0)} width="80" height="50" className="opacity-0 group-hover/point:opacity-100 pointer-events-none transition-all duration-200 z-50 overflow-visible">
+                                                                                        <foreignObject x={Math.min(Math.max(p.x - 50, 0), 900)} y={Math.max(p.y - 60, 0)} width="100" height="50" className="opacity-0 group-hover/point:opacity-100 pointer-events-none transition-all duration-200 z-50 overflow-visible">
                                                                                             <div className="bg-black text-white text-[10px] py-2 px-3 rounded-lg text-center shadow-xl transform translate-y-1">
                                                                                                 <div className="font-bold mb-0.5">{p.date}</div>
-                                                                                                <div>${Number(p.val).toLocaleString()}</div>
-                                                                                                {/* Little triangle arrow at bottom */}
+                                                                                                <div>{formatMoney(p.val)}</div>
                                                                                                 <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black rotate-45"></div>
                                                                                             </div>
                                                                                         </foreignObject>
@@ -4910,25 +5303,30 @@ const MyAccount = () => {
                                                                     })()}
                                                                 </svg>
 
-                                                                {/* X-Axis Labels - Better distributed */}
                                                                 <div className="flex justify-between w-full mt-4 border-t border-line pt-4">
                                                                     {(() => {
                                                                         const data = dashboardStats.salesTrend30Days || [];
-                                                                        // Show ~5 labels evenly distributed
                                                                         const step = Math.max(1, Math.floor(data.length / 5));
-                                                                        const labels: Array<{ day: string; total: number }> = [];
+                                                                        const labels: Array<{ day: string; total: number; index: number }> = [];
                                                                         for (let i = 0; i < data.length; i += step) {
-                                                                            if (labels.length < 5) labels.push(data[i]);
+                                                                            if (labels.length < 5) labels.push({ ...data[i], index: i });
                                                                         }
-                                                                        if (data.length > 0 && labels[labels.length - 1] !== data[data.length - 1]) {
-                                                                            labels[4] = data[data.length - 1]; // Ensure last one is last day
+                                                                        if (data.length > 0 && labels[labels.length - 1]?.index !== data.length - 1) {
+                                                                            const lastLabel = { ...data[data.length - 1], index: data.length - 1 }
+                                                                            if (labels.length >= 5) {
+                                                                                labels[labels.length - 1] = lastLabel
+                                                                            } else {
+                                                                                labels.push(lastLabel)
+                                                                            }
                                                                         }
 
-                                                                        return labels.map((item, idx) => (
+                                                                        return labels.map((item, idx) => {
+                                                                            return (
                                                                             <span key={idx} className="text-[10px] font-bold text-secondary uppercase tracking-widest">
-                                                                                {idx === labels.length - 1 ? 'HOY' : item?.day}
+                                                                                {idx === labels.length - 1 ? 'HOY' : formatDashboardTrendLabel(item, { day: '2-digit', month: 'short' })}
                                                                             </span>
-                                                                        ));
+                                                                            )
+                                                                        });
                                                                     })()}
                                                                 </div>
                                                             </div>
@@ -4941,7 +5339,7 @@ const MyAccount = () => {
 
                                             <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
                                                 <div className="bg-white p-8 rounded-2xl border border-line shadow-sm">
-                                                    <div className="heading6 mb-2">Distribución de Ventas Realizadas</div>
+                                                    <div className="heading6 mb-2">Distribución de ventas realizadas</div>
                                                     <div className="text-[11px] text-secondary mb-6">Solo cuenta pedidos completados o entregados.</div>
                                                     <div className="space-y-6">
                                                         {(dashboardStats?.businessMetrics?.ordersByStatus || [])
@@ -4950,6 +5348,11 @@ const MyAccount = () => {
                                                             const total = realizedStatuses.reduce((acc, curr) => acc + Number(curr.count), 0) || 1;
                                                             const perc = Math.round((Number(status.count) / total) * 100);
                                                             const normalizedStatus = normalizeStatus(status.status)
+                                                            const realizedStatusLabel = normalizedStatus === 'delivered'
+                                                                ? 'Entregado'
+                                                                : normalizedStatus === 'completed'
+                                                                    ? 'Completado'
+                                                                    : getStatusBadge(status.status).label
                                                             const barColorClass = ['completed', 'delivered'].includes(normalizedStatus)
                                                                 ? 'bg-success'
                                                                 : ['processing', 'in_process', 'in-process'].includes(normalizedStatus)
@@ -4964,7 +5367,7 @@ const MyAccount = () => {
                                                             return (
                                                                 <div key={i} className="cursor-pointer group hover:bg-surface -mx-2 p-2 rounded-lg transition-colors" onClick={() => navigateToPanelTab('admin-orders')}>
                                                                     <div className="flex justify-between text-sm mb-2">
-                                                                        <span className="capitalize font-bold text-secondary group-hover:text-black transition-colors">{getStatusBadge(status.status).label}</span>
+                                                                        <span className="capitalize font-bold text-secondary group-hover:text-black transition-colors">{realizedStatusLabel}</span>
                                                                         <span className="font-bold">{status.count} ({perc}%)</span>
                                                                     </div>
                                                                     <div className="w-full h-2 bg-line rounded-full overflow-hidden">
@@ -4982,7 +5385,7 @@ const MyAccount = () => {
 
                                                 <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-8">
                                                     <div className="bg-white p-8 rounded-2xl border border-line shadow-sm overflow-hidden">
-                                                        <div className="heading6 mb-2">Ventas Completadas Recientes</div>
+                                                        <div className="heading6 mb-2">Ventas completadas recientes</div>
                                                         <div className="text-[11px] text-secondary mb-6">Últimos pedidos que ya cuentan como venta realizada.</div>
                                                         <div className="w-full">
                                                             <table className="w-full text-left text-sm table-fixed">
@@ -5014,22 +5417,25 @@ const MyAccount = () => {
                                                     </div>
 
                                                     <div className="bg-white p-8 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-2">Top 5 Productos Vendidos</div>
+                                                        <div className="heading6 mb-2">Top 5 productos vendidos</div>
                                                         <div className="text-[11px] text-secondary mb-6">Ranking basado solo en pedidos completados o entregados.</div>
                                                         <div className="space-y-4">
-                                                            {dashboardStats?.topProducts?.map((prod, i) => (
+                                                            {reportSalesRankingRows.slice(0, 5).map((prod, i) => (
                                                                 <div key={i}
                                                                     className="flex items-center gap-4 p-3 bg-surface rounded-xl hover:shadow-md transition-all cursor-pointer hover:bg-white border border-transparent hover:border-line"
                                                                     onClick={() => openAdminReportSection('sales')}
                                                                 >
                                                                     <div className="flex-shrink-0 w-8 h-8 rounded-full bg-black text-white flex items-center justify-center font-bold text-xs">{i + 1}</div>
                                                                     <div className="flex-1 min-w-0">
-                                                                        <div className="text-xs font-bold truncate group-hover:text-primary">{prod.name}</div>
-                                                                        <div className="text-[10px] text-secondary">{prod.sold} unidades</div>
+                                                                        <div className="text-xs font-bold truncate group-hover:text-primary">{prod.product_name}</div>
+                                                                        <div className="text-[10px] text-secondary">{Number(prod.units_sold ?? 0).toLocaleString('es-EC')} unidades</div>
                                                                     </div>
-                                                                    <div className="text-xs font-bold text-success whitespace-nowrap">${Number(prod.revenue).toLocaleString()}</div>
+                                                                    <div className="text-xs font-bold text-success whitespace-nowrap">{formatMoney(prod.net_revenue)}</div>
                                                                 </div>
                                                             ))}
+                                                            {reportSalesRankingRows.length === 0 && (
+                                                                <div className="text-sm text-secondary">No hay productos vendidos en este alcance.</div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 </div>
@@ -5039,12 +5445,11 @@ const MyAccount = () => {
                                                 <div className="bg-surface rounded-lg border border-line p-4">
                                                     <div className="flex items-center gap-2 mb-3">
                                                         <Icon.Tag size={20} className="text-primary" />
-                                                        <div className="font-bold">Categorías Estrella</div>
+                                                        <div className="font-bold">Categorías líderes</div>
                                                     </div>
                                                     <div className="space-y-2">
-                                                        {dashboardStats?.salesByCategory?.slice(0, 4).map((cat, i) => {
-                                                            const total = dashboardStats.salesByCategory?.reduce((acc, curr) => acc + Number(curr.total), 0) || 1;
-                                                            const perc = Math.round((Number(cat.total) / total) * 100);
+                                                        {reportSalesCategories.slice(0, 4).map((cat, i) => {
+                                                            const perc = reportSalesCategoriesTotal > 0 ? Math.round((Number(cat.total) / reportSalesCategoriesTotal) * 100) : 0;
                                                             return (
                                                                 <div key={i} className="cursor-pointer group hover:bg-white -mx-2 p-2 rounded-lg transition-colors" onClick={() => navigateToPanelTab('products')}>
                                                                     <div className="flex justify-between text-[10px] mb-1">
@@ -5057,28 +5462,31 @@ const MyAccount = () => {
                                                                 </div>
                                                             )
                                                         })}
+                                                        {reportSalesCategories.length === 0 && (
+                                                            <div className="text-xs text-secondary">Sin categorías vendidas en este alcance.</div>
+                                                        )}
                                                     </div>
                                                 </div>
 
                                                 <div className="bg-surface rounded-lg border border-line p-4">
                                                     <div className="flex items-center gap-2 mb-3">
                                                         <Icon.Lightbulb size={24} className="text-yellow" />
-                                                        <div className="font-bold">Análisis de Stock</div>
+                                                        <div className="font-bold">Lectura de inventario</div>
                                                     </div>
                                                     <div className="space-y-3">
                                                         <div
                                                             className="p-3 bg-white rounded-lg border border-line cursor-pointer hover:border-black transition-colors shadow-sm group"
                                                             onClick={() => openAdminReportSection('inventory')}
                                                         >
-                                                            <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Valor de Mercado</div>
-                                                            <div className="text-lg font-bold">${Number(dashboardStats?.businessMetrics?.inventoryValue?.market_value ?? 0).toLocaleString()}</div>
+                                                            <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Valor potencial de venta</div>
+                                                            <div className="text-lg font-bold">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.market_value ?? 0))}</div>
                                                         </div>
                                                         <div
                                                             className="p-3 bg-white rounded-lg border border-line cursor-pointer hover:border-black transition-colors shadow-sm group"
                                                             onClick={() => openAdminReportSection('inventory')}
                                                         >
-                                                            <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Inversión en Almacén</div>
-                                                            <div className="text-lg font-bold">${Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0).toLocaleString()}</div>
+                                                            <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Capital en inventario</div>
+                                                            <div className="text-lg font-bold">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0))}</div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -5086,28 +5494,28 @@ const MyAccount = () => {
                                                 <div className="bg-surface rounded-lg border border-line p-4">
                                                     <div className="flex items-center gap-2 mb-3">
                                                         <Icon.TrendUp size={24} className="text-success" />
-                                                        <div className="font-bold">KPIs Financieros</div>
+                                                        <div className="font-bold">Indicadores financieros</div>
                                                     </div>
                                                     <div className="space-y-2 cursor-pointer" onClick={() => setSelectedDeepDive('profit')}>
                                                     <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
                                                             <span className="text-xs text-secondary font-bold">Margen bruto sobre venta neta</span>
-                                                            <span className="font-bold text-success text-sm">{dashboardStats?.businessMetrics?.profitStats?.gross_margin ?? dashboardStats?.businessMetrics?.profitStats?.margin}%</span>
+                                                            <span className={`font-bold text-sm ${reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceGrossMargin.toFixed(1)}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Margen neto por caja</span>
+                                                            <span className="text-xs text-secondary font-bold">Margen neto del negocio</span>
                                                             <span className={`font-bold text-sm ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceNetMargin.toFixed(1)}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Margen neto comprometido</span>
-                                                            <span className={`font-bold text-sm ${reportBalanceCommittedNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceCommittedNetMargin.toFixed(1)}%</span>
+                                                            <span className="text-xs text-secondary font-bold">Margen neto pagado</span>
+                                                            <span className={`font-bold text-sm ${reportBalanceFlowProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceFlowMargin.toFixed(1)}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
                                                             <span className="text-xs text-secondary font-bold">ROI bruto sobre costo vendido</span>
-                                                            <span className="font-bold text-sm">{Number(dashboardStats?.businessMetrics?.profitStats?.roi ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                                                            <span className="font-bold text-sm">{reportBalanceRoi.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
                                                         </div>
                                                         <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">ROI neto por caja</span>
-                                                            <span className="font-bold text-sm">{Number(dashboardStats?.businessMetrics?.profitStats?.net_roi ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                                                            <span className="text-xs text-secondary font-bold">ROI neto del negocio</span>
+                                                            <span className="font-bold text-sm">{reportBalanceNetRoi.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
                                                         </div>
                                                         <div className="text-[9px] text-secondary text-center mt-2 group-hover:text-black">Bruto descuenta producto; neto descuenta gastos registrados.</div>
                                                     </div>
@@ -5122,13 +5530,13 @@ const MyAccount = () => {
                                                 <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-6">
                                                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
                                                         <div>
-                                                            <div className="heading6">Corte comercial</div>
+                                                            <div className="heading6">Corte comercial de ventas</div>
                                                             <p className="text-secondary text-xs mt-1">
-                                                                Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'}.
+                                                                Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con pedidos completados o entregados.
                                                             </p>
                                                             <p className="text-secondary text-xs mt-1">
                                                                 Periodo: {salesRankingView === 'month'
-                                                                    ? `${productSalesRanking?.period?.start || '-'} → ${productSalesRanking?.period?.end || '-'}`
+                                                                    ? reportSalesPeriodLabel
                                                                     : `${productSalesRanking?.historicalPeriod?.start || '-'} → ${productSalesRanking?.historicalPeriod?.end || '-'}`}
                                                             </p>
                                                         </div>
@@ -5138,11 +5546,7 @@ const MyAccount = () => {
                                                                 <input
                                                                     type="month"
                                                                     value={salesRankingMonth}
-                                                                    onChange={(event) => {
-                                                                        const nextMonth = event.target.value
-                                                                        setSalesRankingMonth(nextMonth || getCurrentMonthKey())
-                                                                        setSalesRankingView('month')
-                                                                    }}
+                                                                    onChange={(event) => selectReportMonth(event.target.value)}
                                                                     className="px-3 py-1.5 text-sm font-semibold rounded-md border border-line bg-white text-black focus:border-black outline-none"
                                                                 />
                                                             </label>
@@ -5167,46 +5571,166 @@ const MyAccount = () => {
 
                                                     <div className="grid grid-cols-2 xl:grid-cols-8 gap-3">
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Pedidos</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
                                                             <div className="text-lg font-bold">{Number(salesRankingFinancial?.orders_count ?? 0).toLocaleString('es-EC')}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Unidades</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
                                                             <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0).toLocaleString('es-EC')}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Bruto</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
                                                             <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.gross ?? 0))}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Neto</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
                                                             <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0))}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">IVA</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
                                                             <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.vat ?? 0))}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Envío</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
                                                             <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.shipping ?? 0))}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Costo</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
                                                             <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.cost ?? 0))}</div>
                                                         </div>
                                                         <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Margen</div>
+                                                            <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
                                                             <div className="text-lg font-bold">{Number(salesRankingFinancial?.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
                                                         </div>
                                                     </div>
-                                                </div>
+	                                                </div>
 
-                                                <div className="grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6 mb-6">
+                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-6">
+                                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+                                                            <div>
+                                                                <div className="heading6">Pedidos vendidos del período</div>
+                                                                <p className="text-secondary text-xs mt-1">
+                                                                    Listado de soporte con fecha, cliente, forma de entrega/pago y desglose comercial de cada venta realizada dentro de {reportSalesPeriodLabel}.
+                                                                </p>
+                                                            </div>
+                                                            <div className="text-xs font-bold text-secondary bg-surface border border-line rounded-lg px-3 py-2">
+                                                                {filteredReportSalesOrders.length.toLocaleString('es-EC')} de {reportSalesOrders.length.toLocaleString('es-EC')} venta{reportSalesOrders.length === 1 ? '' : 's'}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex flex-col md:flex-row gap-2 mb-4">
+                                                            <input
+                                                                type="search"
+                                                                value={salesOrderSearch}
+                                                                onChange={(event) => setSalesOrderSearch(event.target.value)}
+                                                                placeholder="Buscar pedido, cliente, fecha o monto"
+                                                                className="w-full md:flex-1 px-3 py-2 text-sm rounded-lg border border-line bg-white text-black focus:border-black outline-none"
+                                                            />
+                                                            <select
+                                                                value={salesOrderStatusFilter}
+                                                                onChange={(event) => setSalesOrderStatusFilter(event.target.value as 'all' | 'completed' | 'delivered')}
+                                                                className="px-3 py-2 text-sm font-semibold rounded-lg border border-line bg-white text-black focus:border-black outline-none"
+                                                            >
+                                                                <option value="all">Todos los estados</option>
+                                                                <option value="completed">Completado</option>
+                                                                <option value="delivered">Entregado</option>
+                                                            </select>
+                                                            {(salesOrderSearch || salesOrderStatusFilter !== 'all') && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setSalesOrderSearch('')
+                                                                        setSalesOrderStatusFilter('all')
+                                                                    }}
+                                                                    className="px-3 py-2 rounded-lg border border-line text-xs font-bold text-secondary hover:text-black hover:bg-surface"
+                                                                >
+                                                                    Limpiar
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                        <div className="space-y-3">
+                                                            {filteredReportSalesOrders.map((order: ReportSalesOrder) => {
+                                                                const status = getStatusBadge(order.status)
+                                                                const profit = Number(order.profit ?? 0)
+                                                                return (
+                                                                    <article key={order.id} className="rounded-xl border border-line bg-white p-4 shadow-sm transition-colors hover:bg-surface/30">
+                                                                        <div className="grid gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.05fr)_minmax(0,0.75fr)_minmax(0,1.15fr)_minmax(0,1.45fr)]">
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-[10px] uppercase font-bold text-secondary">Pedido</div>
+                                                                                <button type="button" className="mt-1 text-left text-sm font-bold break-all hover:underline" onClick={() => handleViewOrder(order.id)}>
+                                                                                    #{order.id}
+                                                                                </button>
+                                                                                <div className="mt-2 text-xs text-secondary">
+                                                                                    {formatDateEcuador(order.created_at)} · {formatDateTimeEcuador(order.created_at, { hour: '2-digit', minute: '2-digit' })}
+                                                                                </div>
+                                                                                <span className={`mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-bold ${status.className}`}>
+                                                                                    {status.label}
+                                                                                </span>
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-[10px] uppercase font-bold text-secondary">Cliente y contacto</div>
+                                                                                <div className="mt-1 text-sm font-bold break-words">{order.user_name || 'Cliente sin nombre'}</div>
+                                                                                <div className="mt-1 text-xs text-secondary break-all">{order.customer_email || '-'}</div>
+                                                                                <div className="text-xs text-secondary">{order.customer_phone || '-'}</div>
+                                                                                <div className="mt-2 text-xs font-semibold break-words">{getReportCustomerDocument(order)}</div>
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-[10px] uppercase font-bold text-secondary">Entrega / pago</div>
+                                                                                <div className="mt-1 text-sm font-semibold">{getReportDeliveryMethodLabel(order.delivery_method)}</div>
+                                                                                <div className="text-xs text-secondary">{getReportPaymentMethodLabel(order.payment_method)}</div>
+                                                                                {order.discount_code && (
+                                                                                    <div className="mt-2 rounded-md bg-surface px-2 py-1 text-[11px] font-bold text-secondary break-words">
+                                                                                        Cupón: {order.discount_code}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-[10px] uppercase font-bold text-secondary">Productos</div>
+                                                                                <div className="mt-1 text-sm leading-5 break-words">{order.items_summary || '-'}</div>
+                                                                                <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-secondary">
+                                                                                    <span className="rounded-full bg-surface px-2 py-1">
+                                                                                        {Number(order.item_lines_count ?? 0).toLocaleString('es-EC')} línea{Number(order.item_lines_count ?? 0) === 1 ? '' : 's'}
+                                                                                    </span>
+                                                                                    <span className="rounded-full bg-surface px-2 py-1">
+                                                                                        {Number(order.units_count ?? 0).toLocaleString('es-EC')} uds
+                                                                                    </span>
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-4">
+                                                                                    <ReportCompactMetric label="Bruta" value={formatMoney(order.gross)} />
+                                                                                    <ReportCompactMetric label="Neta" value={formatMoney(order.net)} />
+                                                                                    <ReportCompactMetric label="IVA" value={formatMoney(order.vat)} />
+                                                                                    <ReportCompactMetric label="Envío" value={formatMoney(order.shipping)} />
+                                                                                    <ReportCompactMetric label="Desc." value={formatMoney(order.discount_total ?? 0)} />
+                                                                                    <ReportCompactMetric label="Costo" value={formatMoney(order.cost ?? 0)} />
+                                                                                    <ReportCompactMetric label="Utilidad" value={formatMoney(order.profit ?? 0)} tone={profit >= 0 ? 'text-success' : 'text-red'} />
+                                                                                    <ReportCompactMetric label="Margen" value={`${Number(order.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </article>
+                                                                )
+                                                            })}
+                                                            {filteredReportSalesOrders.length === 0 && (
+                                                                <div className="rounded-xl border border-line bg-surface px-4 py-8 text-center text-sm text-secondary">
+                                                                    {reportSalesOrders.length === 0
+                                                                        ? 'No hay ventas completadas o entregadas para este período.'
+                                                                        : 'No hay ventas que coincidan con los filtros activos.'}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+	                                                <div className="grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6 mb-6">
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
                                                         <div className="flex items-center justify-between mb-4">
                                                             <div>
-                                                                <div className="heading6">Tendencia reciente</div>
-                                                                <p className="text-secondary text-xs mt-1">Últimos {salesTrendPreview.length} cortes diarios disponibles.</p>
+                                                                <div className="heading6">Tendencia reciente de ventas</div>
+                                                                <p className="text-secondary text-xs mt-1">Últimos {salesTrendPreview.length} cortes diarios disponibles para comparar ritmo comercial.</p>
                                                             </div>
                                                             <button
                                                                 type="button"
@@ -5218,11 +5742,14 @@ const MyAccount = () => {
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                             {salesTrendPreview.map((item, index) => {
-                                                                const ratio = Math.max((Number(item.total ?? 0) / salesTrendPreviewMax) * 100, 8)
+                                                                const value = Number(item.total ?? 0)
+                                                                const ratio = salesTrendPreviewMax > 0 && value > 0
+                                                                    ? Math.max((value / salesTrendPreviewMax) * 100, 8)
+                                                                    : 0
                                                                 return (
                                                                     <div key={`${item.day}-${index}`} className="rounded-xl border border-line bg-surface p-3">
-                                                                        <div className="text-[10px] uppercase font-bold text-secondary">{item.day}</div>
-                                                                        <div className="font-bold mt-2">{formatMoney(Number(item.total ?? 0))}</div>
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary">{item.displayDay ?? item.day}</div>
+                                                                        <div className="font-bold mt-2">{formatMoney(value)}</div>
                                                                         <div className="mt-3 h-2 rounded-full bg-white overflow-hidden">
                                                                             <div className="h-full bg-black rounded-full" style={{ width: `${ratio}%` }}></div>
                                                                         </div>
@@ -5236,11 +5763,11 @@ const MyAccount = () => {
                                                     </div>
 
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Mix por categoría</div>
+                                                        <div className="heading6 mb-4">Mix de ventas por categoría</div>
                                                         <div className="space-y-4">
-                                                            {salesCategories.slice(0, 6).map((cat, index) => {
+                                                            {reportSalesCategories.slice(0, 6).map((cat, index) => {
                                                                 const value = Number(cat.total ?? 0)
-                                                                const ratio = salesCategoriesTotal > 0 ? Math.max((value / salesCategoriesTotal) * 100, 4) : 0
+                                                                const ratio = reportSalesCategoriesTotal > 0 && value > 0 ? Math.max((value / reportSalesCategoriesTotal) * 100, 4) : 0
                                                                 return (
                                                                     <div key={`${cat.category}-${index}`}>
                                                                         <div className="flex items-center justify-between gap-3 text-sm mb-1">
@@ -5253,7 +5780,7 @@ const MyAccount = () => {
                                                                     </div>
                                                                 )
                                                             })}
-                                                            {salesCategories.length === 0 && (
+                                                            {reportSalesCategories.length === 0 && (
                                                                 <div className="text-sm text-secondary">No hay categorías con ventas registradas.</div>
                                                             )}
                                                         </div>
@@ -5263,8 +5790,8 @@ const MyAccount = () => {
                                                 <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
                                                     <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
                                                         <div>
-                                                            <div className="heading6">Productos líderes del periodo</div>
-                                                            <p className="text-secondary text-xs mt-1">Resumen compacto de lo más vendido y su rentabilidad.</p>
+                                                            <div className="heading6">Productos líderes del período</div>
+                                                            <p className="text-secondary text-xs mt-1">Ranking compacto por unidades, ventas netas, utilidad bruta y margen bruto.</p>
                                                         </div>
                                                         <button
                                                             type="button"
@@ -5274,48 +5801,55 @@ const MyAccount = () => {
                                                             Ver ranking detallado
                                                         </button>
                                                     </div>
-                                                    <div className="overflow-x-auto border border-line rounded-xl">
-                                                        <table className="w-full min-w-[900px] text-left">
-                                                            <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
-                                                                <tr>
-                                                                    <th className="px-4 py-3 text-right">#</th>
-                                                                    <th className="px-4 py-3">Producto</th>
-                                                                    <th className="px-4 py-3">Categoría</th>
-                                                                    <th className="px-4 py-3 text-right">Pedidos</th>
-                                                                    <th className="px-4 py-3 text-right">Unidades</th>
-                                                                    <th className="px-4 py-3 text-right">Venta neta</th>
-                                                                    <th className="px-4 py-3 text-right">Costo</th>
-                                                                    <th className="px-4 py-3 text-right">Utilidad</th>
-                                                                    <th className="px-4 py-3 text-right">Margen</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-line">
-                                                                {salesRankingRows.slice(0, 10).map((item, index) => (
-                                                                    <tr key={`${item.product_id}-${index}`} className="hover:bg-surface/40">
-                                                                        <td className="px-4 py-3 text-right font-semibold text-sm">{index + 1}</td>
-                                                                        <td className="px-4 py-3 text-sm font-semibold">
-                                                                            <button type="button" className="text-left hover:underline" onClick={() => openSalesProductDetail(item)}>
+                                                    <div className="space-y-3">
+                                                        {reportSalesRankingRows.slice(0, 10).map((item, index) => {
+                                                            const refs = Array.isArray(item.order_refs) ? item.order_refs : []
+                                                            return (
+                                                                <article key={`${item.product_id}-${index}`} className="rounded-xl border border-line bg-white p-4 shadow-sm transition-colors hover:bg-surface/30">
+                                                                    <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1.65fr)]">
+                                                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-sm font-bold text-white">
+                                                                            {index + 1}
+                                                                        </div>
+
+                                                                        <div className="min-w-0">
+                                                                            <div className="text-[10px] uppercase font-bold text-secondary">Producto</div>
+                                                                            <button type="button" className="mt-1 text-left text-sm font-bold leading-5 break-words hover:underline" onClick={() => openSalesProductDetail(item)}>
                                                                                 {item.product_name}
                                                                             </button>
-                                                                        </td>
-                                                                        <td className="px-4 py-3 text-sm capitalize">{item.category || 'Sin categoría'}</td>
-                                                                        <td className="px-4 py-3 text-sm text-right">{item.orders_count}</td>
-                                                                        <td className="px-4 py-3 text-sm text-right font-semibold">{item.units_sold}</td>
-                                                                        <td className="px-4 py-3 text-sm text-right">{formatMoney(item.net_revenue)}</td>
-                                                                        <td className="px-4 py-3 text-sm text-right">{formatMoney(item.cost)}</td>
-                                                                        <td className={`px-4 py-3 text-sm text-right font-semibold ${item.profit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(item.profit)}</td>
-                                                                        <td className="px-4 py-3 text-sm text-right">{item.margin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</td>
-                                                                    </tr>
-                                                                ))}
-                                                                {salesRankingRows.length === 0 && (
-                                                                    <tr>
-                                                                        <td colSpan={9} className="px-4 py-6 text-center text-secondary text-sm">
-                                                                            No hay datos de ventas para construir el reporte.
-                                                                        </td>
-                                                                    </tr>
-                                                                )}
-                                                            </tbody>
-                                                        </table>
+                                                                            <div className="mt-2 inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold capitalize text-secondary">
+                                                                                {item.category || 'Sin categoría'}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="min-w-0">
+                                                                            <div className="text-[10px] uppercase font-bold text-secondary">Pedidos relacionados</div>
+                                                                            <div className="mt-1 text-xs leading-5 text-secondary break-words">
+                                                                                {refs.length > 0 ? refs.join(', ') : '-'}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="min-w-0">
+                                                                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                                                                <ReportCompactMetric label="Pedidos" value={item.orders_count.toLocaleString('es-EC')} />
+                                                                                <ReportCompactMetric label="Unidades" value={item.units_sold.toLocaleString('es-EC')} />
+                                                                                <ReportCompactMetric label="Bruta" value={formatMoney(item.gross_revenue)} />
+                                                                                <ReportCompactMetric label="Neta" value={formatMoney(item.net_revenue)} />
+                                                                                <ReportCompactMetric label="IVA" value={formatMoney(item.vat_amount)} />
+                                                                                <ReportCompactMetric label="Envío" value={formatMoney(item.shipping_amount)} />
+                                                                                <ReportCompactMetric label="Costo" value={formatMoney(item.cost)} />
+                                                                                <ReportCompactMetric label="Utilidad" value={formatMoney(item.profit)} tone={item.profit >= 0 ? 'text-success' : 'text-red'} />
+                                                                                <ReportCompactMetric label="Margen" value={`${item.margin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} />
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                </article>
+                                                            )
+                                                        })}
+                                                        {reportSalesRankingRows.length === 0 && (
+                                                            <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-secondary">
+                                                                No hay datos de ventas para construir el reporte.
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </>
@@ -5323,11 +5857,22 @@ const MyAccount = () => {
 
                                         {adminReportSection === 'balance' && (
                                             <>
+                                                <FinancialTrendsPanel
+                                                    trends={financialTrends}
+                                                    formatMoney={formatMoney}
+                                                    mode={financialTrendMode}
+                                                    scope={financialTrendScope}
+                                                    selectedPeriod={selectedFinancialPeriod}
+                                                    onModeChange={setFinancialTrendMode}
+                                                    onScopeChange={setFinancialTrendScope}
+                                                    onSelectedPeriodChange={setSelectedFinancialPeriod}
+                                                />
+
                                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                                     <div>
-                                                        <div className="text-gray-400 text-sm">Balance general consolidado para decisiones operativas y financieras.</div>
+                                                        <div className="text-gray-400 text-sm">Estado financiero operativo para leer ingresos, costos, gastos y utilidad neta.</div>
                                                         <div className="heading3 mt-1">{formatMoney(reportBalanceNet)}</div>
-                                                        <div className="text-secondary text-xs mt-0.5">Ventas netas acumuladas, sin IVA ni envío</div>
+                                                        <div className="text-secondary text-xs mt-0.5">Ventas netas de {reportFinancialScopeLabel.toLowerCase()}, sin IVA ni envío.</div>
                                                     </div>
                                                     <div className="text-xs text-secondary sm:text-right">{reportOrdersCount.toLocaleString('es-EC')} pedidos realizados • promedio {formatMoney(reportAverageOrderNet)}</div>
                                                 </div>
@@ -5335,39 +5880,39 @@ const MyAccount = () => {
                                                 <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
                                                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-line">
                                                         <div className="px-3 py-2">
-                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Ventas e impuestos</div>
+                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Ingresos e impuestos</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Total</span><strong>{formatMoney(reportBalanceGross)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Neta</span><strong>{formatMoney(reportBalanceNet)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">IVA</span><strong className="text-orange-600">{formatMoney(reportBalanceVat)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Envío</span><strong>{formatMoney(reportBalanceShipping)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Ventas brutas</span><strong>{formatMoney(reportBalanceGross)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Ventas netas</span><strong>{formatMoney(reportBalanceNet)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">IVA cobrado</span><strong className="text-orange-600">{formatMoney(reportBalanceVat)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Envío cobrado</span><strong>{formatMoney(reportBalanceShipping)}</strong></div>
                                                             </div>
                                                         </div>
                                                         <div className="px-3 py-2">
-                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Utilidad en dólares</div>
+                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Utilidad y gastos</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Bruta</span><strong className={reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceGrossProfit)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Caja</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Comp.</span><strong className={reportBalanceCommittedNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceCommittedNetProfit)}</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Costo -{formatMoney(reportBalanceCost)} • pagados -{formatMoney(reportBalancePaidExpenses)}</div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad bruta</span><strong className={reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceGrossProfit)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad neta</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad neta pagada</span><strong className={reportBalanceFlowProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceFlowProfit)}</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Costo de venta -{formatMoney(reportBalanceCost)} • gastos del período -{formatMoney(reportBalancePeriodExpenses)}</div>
                                                             </div>
                                                         </div>
                                                         <div className="px-3 py-2">
                                                             <div className="text-[10px] uppercase text-secondary font-bold mb-1">Márgenes</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Bruto</span><strong>{reportBalanceGrossMargin.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Caja</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Comp.</span><strong className={reportBalanceCommittedNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceCommittedNetMargin.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Margen bruto</span><strong>{reportBalanceGrossMargin.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Margen neto</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Margen de flujo</span><strong className={reportBalanceFlowProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceFlowMargin.toFixed(1)}%</strong></div>
                                                                 <div className="col-span-2 text-[11px] text-secondary">Sobre ventas netas.</div>
                                                             </div>
                                                         </div>
                                                         <div className="px-3 py-2">
                                                             <div className="text-[10px] uppercase text-secondary font-bold mb-1">ROI</div>
                                                             <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Bruto</span><strong>{reportBalanceRoi.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Caja</span><strong>{Number(profitStats?.net_roi ?? 0).toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Comp.</span><strong>{Number(profitStats?.committed_net_roi ?? 0).toFixed(1)}%</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Caja: pagados. Comp.: pagados + pendientes.</div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">ROI bruto</span><strong>{reportBalanceRoi.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">ROI neto</span><strong>{reportBalanceNetRoi.toFixed(1)}%</strong></div>
+                                                                <div className="flex justify-between gap-2"><span className="text-secondary">ROI neto pagado</span><strong>{reportBalanceFlowRoi.toFixed(1)}%</strong></div>
+                                                                <div className="col-span-2 text-[11px] text-secondary">Neto: gastos del período. Neto pagado: solo gastos pagados del mismo período.</div>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -5375,10 +5920,10 @@ const MyAccount = () => {
 
                                                 <div className="mt-4 grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
                                                     <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
-                                                        <div className="font-bold mb-3">Lectura del balance</div>
+                                                        <div className="font-bold mb-3">Lectura paso a paso del balance</div>
                                                         <div className="space-y-2 text-sm">
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Venta bruta facturada</span>
+                                                                <span>Ventas brutas facturadas</span>
                                                                 <strong>{formatMoney(reportBalanceGross)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
@@ -5386,32 +5931,36 @@ const MyAccount = () => {
                                                                 <strong className="text-orange-600">-{formatMoney(reportBalanceVat)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Base neta del negocio</span>
+                                                                <span>Ventas netas del negocio</span>
                                                                 <strong>{formatMoney(reportBalanceNet)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Menos costo histórico vendido</span>
+                                                                <span>Menos costo de venta</span>
                                                                 <strong className="text-orange-600">-{formatMoney(reportBalanceCost)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Resultado bruto</span>
+                                                                <span>Utilidad bruta</span>
                                                                 <strong>{formatMoney(reportBalanceGrossProfit)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Menos gastos pagados</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePaidExpenses)}</strong>
+                                                                <span>Menos gastos del período</span>
+                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePeriodExpenses)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Resultado neto por caja</span>
+                                                                <span>Utilidad neta del negocio</span>
                                                                 <strong>{formatMoney(reportBalanceNetProfit)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Gastos pendientes y vencidos</span>
+                                                                <span>Gastos pagados del período</span>
+                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePaidExpenses)}</strong>
+                                                            </div>
+                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                <span>Obligaciones pendientes/vencidas</span>
                                                                 <strong className="text-orange-600">-{formatMoney(reportBalancePendingExpenses + reportBalanceOverdueExpenses)}</strong>
                                                             </div>
                                                             <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Resultado neto comprometido</span>
-                                                                <strong>{formatMoney(reportBalanceCommittedNetProfit)}</strong>
+                                                                <span>Utilidad neta pagada</span>
+                                                                <strong>{formatMoney(reportBalanceFlowProfit)}</strong>
                                                             </div>
                                                         </div>
                                                     </div>
@@ -5461,7 +6010,7 @@ const MyAccount = () => {
                                                     </div>
                                                 </div>
 
-                                                <div className="heading6 mb-4 mt-10">Movimientos recientes (neto, IVA, envío)</div>
+                                                <div className="heading6 mb-4 mt-10">Movimientos recientes del balance</div>
                                                 <div className="flex flex-col gap-4">
                                                     {(dashboardStats?.businessMetrics?.recentOrders || []).slice(0, 6).map((order: any) => {
                                                         const net = Number(order.vat_subtotal ?? (Number(order.total ?? 0) - Number(order.vat_amount ?? 0) - Number(order.shipping ?? 0)))
@@ -5511,36 +6060,42 @@ const MyAccount = () => {
 
                                         {adminReportSection === 'inventory' && (
                                             <>
+                                                <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
+                                                    <div className="text-sm font-bold">Valorización, disponibilidad y vencimientos</div>
+                                                    <p className="mt-1 text-xs text-secondary">
+                                                        Primero se muestra el capital en inventario; luego los productos que requieren reposición o revisión por fecha de vencimiento.
+                                                    </p>
+                                                </div>
                                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-6">
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Valor costo</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Capital en inventario</div>
                                                         <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.cost_value ?? 0))}</div>
-                                                        <div className="text-xs text-secondary mt-1">Capital comprometido</div>
+                                                        <div className="text-xs text-secondary mt-1">Costo actual del stock disponible</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Potencial PVP</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Valor potencial de venta</div>
                                                         <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.market_value ?? 0))}</div>
-                                                        <div className="text-xs text-secondary mt-1">Stock valorizado a PVP</div>
+                                                        <div className="text-xs text-secondary mt-1">Stock valorizado al precio de venta</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Unidades en stock</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Stock disponible</div>
                                                         <div className="text-2xl font-bold">{Number(inventoryValue?.total_items ?? 0).toLocaleString('es-EC')}</div>
                                                         <div className="text-xs text-secondary mt-1">{Number(inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Sin stock</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Stock crítico</div>
                                                         <div className="text-2xl font-bold text-red">{Number(inventoryHealth?.out_of_stock ?? 0)}</div>
-                                                        <div className="text-xs text-secondary mt-1">Reposición urgente</div>
+                                                        <div className="text-xs text-secondary mt-1">Productos sin unidades disponibles</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
                                                         <div className="text-[10px] uppercase font-bold text-secondary mb-1">Bajo stock</div>
                                                         <div className="text-2xl font-bold text-amber-700">{Number(inventoryHealth?.low_stock ?? 0)}</div>
-                                                        <div className="text-xs text-secondary mt-1">Atención preventiva</div>
+                                                        <div className="text-xs text-secondary mt-1">Requieren reposición preventiva</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Riesgo sanitario</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Vencimientos</div>
                                                         <div className="text-2xl font-bold text-red">{Number(inventoryHealth?.expired_products ?? 0) + Number(inventoryHealth?.expiring_products ?? 0)}</div>
-                                                        <div className="text-xs text-secondary mt-1">Vencidos + por vencer</div>
+                                                        <div className="text-xs text-secondary mt-1">Productos vencidos o próximos a vencer</div>
                                                     </div>
                                                 </div>
 
@@ -5548,8 +6103,8 @@ const MyAccount = () => {
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
                                                         <div className="flex items-center justify-between mb-4">
                                                             <div>
-                                                                <div className="heading6">Productos de mayor inversión</div>
-                                                                <p className="text-secondary text-xs mt-1">Stock que concentra más capital en bodega.</p>
+                                                                <div className="heading6">Productos con más capital invertido</div>
+                                                                <p className="text-secondary text-xs mt-1">Stock que concentra más costo en inventario.</p>
                                                             </div>
                                                             <button
                                                                 type="button"
@@ -5567,7 +6122,7 @@ const MyAccount = () => {
                                                                         <div className="text-xs text-secondary">Stock: {Number(item.quantity ?? 0).toLocaleString('es-EC')} • Costo unitario: {formatMoney(Number(item.cost ?? 0))}</div>
                                                                     </div>
                                                                     <div className="text-right">
-                                                                        <div className="text-xs text-secondary uppercase">Valor</div>
+                                                                        <div className="text-xs text-secondary uppercase">Capital</div>
                                                                         <div className="font-bold">{formatMoney(Number(item.total_cost ?? 0))}</div>
                                                                     </div>
                                                                 </div>
@@ -5579,7 +6134,7 @@ const MyAccount = () => {
                                                     </div>
 
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Riesgos de stock</div>
+                                                        <div className="heading6 mb-4">Stock crítico y bajo stock</div>
                                                         <div className="space-y-3">
                                                             {riskInventoryItems.slice(0, 8).map((item, index) => (
                                                                 <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
@@ -5596,7 +6151,7 @@ const MyAccount = () => {
                                                                 </div>
                                                             ))}
                                                             {riskInventoryItems.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay productos en riesgo inmediato de desabastecimiento.</div>
+                                                            <div className="text-sm text-secondary">No hay productos con riesgo inmediato de desabastecimiento.</div>
                                                             )}
                                                         </div>
                                                     </div>
@@ -5604,7 +6159,7 @@ const MyAccount = () => {
 
                                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Próximos a vencer</div>
+                                                        <div className="heading6 mb-4">Productos próximos a vencer</div>
                                                         <div className="space-y-3">
                                                             {expiringInventoryItems.slice(0, 8).map((item, index) => (
                                                                 <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
@@ -5648,123 +6203,168 @@ const MyAccount = () => {
 
                                         {adminReportSection === 'traceability' && (
                                             <>
-                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                                                <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
+                                                    <div className="text-sm font-bold">Cómo leer este reporte</div>
+                                                    <p className="mt-1 text-xs text-secondary">
+                                                        Trazabilidad no es un resumen de ventas; es la evidencia que permite revisar de qué pedidos, productos y categorías salen las cifras comerciales.
+                                                    </p>
+                                                    <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
+                                                        <div className="rounded-md border border-line bg-white px-3 py-2">
+                                                            <span className="font-bold">1. Pedidos fuente:</span> comprueba los pedidos que respaldan las ventas.
+                                                        </div>
+                                                        <div className="rounded-md border border-line bg-white px-3 py-2">
+                                                            <span className="font-bold">2. Productos:</span> identifica qué productos explican el ingreso.
+                                                        </div>
+                                                        <div className="rounded-md border border-line bg-white px-3 py-2">
+                                                            <span className="font-bold">3. Categorías:</span> valida el mix comercial agrupado.
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Pedidos trazados</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Pedidos auditados</div>
                                                         <div className="text-2xl font-bold">{traceabilityOrders.length.toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Pedidos que explican la venta</div>
+                                                        <div className="text-xs text-secondary mt-1">Pedidos fuente incluidos</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Productos con venta</div>
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Ventas netas auditadas</div>
+                                                        <div className="text-2xl font-bold">{formatMoney(traceabilityOrders.reduce((acc, order) => acc + Number(order.net ?? 0), 0))}</div>
+                                                        <div className="text-xs text-secondary mt-1">Sin IVA ni envío</div>
+                                                    </div>
+                                                    <div className="p-4 rounded-xl border border-line bg-white">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Productos auditados</div>
                                                         <div className="text-2xl font-bold">{traceabilityProducts.length.toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Ítems ligados a ingresos netos</div>
+                                                        <div className="text-xs text-secondary mt-1">Productos ligados a pedidos fuente</div>
                                                     </div>
                                                     <div className="p-4 rounded-xl border border-line bg-white">
                                                         <div className="text-[10px] uppercase font-bold text-secondary mb-1">Categorías auditadas</div>
                                                         <div className="text-2xl font-bold">{traceabilityCategories.length.toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Agrupaciones que soportan el resultado</div>
+                                                        <div className="text-xs text-secondary mt-1">Agrupaciones para validar el mix</div>
                                                     </div>
                                                 </div>
 
-                                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                                                    <div className="bg-white border border-line rounded-2xl p-5">
-                                                        <div className="flex items-center justify-between gap-3 mb-4">
-                                                            <div className="heading6">Pedidos fuente</div>
-                                                            <button
-                                                                type="button"
-                                                                className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
-                                                                onClick={() => navigateToPanelTab('admin-orders')}
-                                                            >
-                                                                Ver todos
-                                                            </button>
+                                                <div className="bg-white border border-line rounded-2xl p-5 mb-6">
+                                                    <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                                                        <div>
+                                                            <div className="heading6">Pedidos fuente que respaldan el reporte</div>
+                                                            <p className="text-secondary text-xs mt-1">Cada fila permite abrir el pedido y revisar su desglose comercial.</p>
                                                         </div>
-                                                        <div className="flex flex-col gap-3">
-                                                            {traceabilityOrders.slice(0, 8).map((order) => (
-                                                                <button
-                                                                    key={order.id}
-                                                                    type="button"
-                                                                    className="text-left p-3 rounded-lg border border-line hover:bg-surface transition-colors"
-                                                                    onClick={() => handleViewOrder(order.id)}
-                                                                >
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <span className="font-bold text-sm">#{order.id}</span>
-                                                                        <span className="text-xs text-secondary">{formatDateEcuador(order.created_at)}</span>
-                                                                    </div>
-                                                                    <div className="grid grid-cols-4 gap-2 mt-2 text-[11px]">
-                                                                        <div>
-                                                                            <div className="text-secondary uppercase">Neto</div>
-                                                                            <div className="font-bold tabular-nums">{formatMoney(order.net)}</div>
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className="text-secondary uppercase">IVA</div>
-                                                                            <div className="font-bold tabular-nums">{formatMoney(order.vat)}</div>
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className="text-secondary uppercase">Envío</div>
-                                                                            <div className="font-bold tabular-nums">{formatMoney(order.shipping)}</div>
-                                                                        </div>
-                                                                        <div>
-                                                                            <div className="text-secondary uppercase">Total</div>
-                                                                            <div className="font-bold tabular-nums">{formatMoney(order.gross)}</div>
-                                                                        </div>
-                                                                    </div>
-                                                                </button>
-                                                            ))}
-                                                            {traceabilityOrders.length === 0 && (
-                                                                <div className="text-sm text-secondary">Sin pedidos para trazabilidad.</div>
-                                                            )}
+                                                        <button
+                                                            type="button"
+                                                            className="w-fit px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
+                                                            onClick={() => navigateToPanelTab('admin-orders')}
+                                                        >
+                                                            Ver todos los pedidos
+                                                        </button>
+                                                    </div>
+                                                    <div className="overflow-x-auto rounded-xl border border-line">
+                                                        <table className="w-full min-w-[920px] text-left text-sm">
+                                                            <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
+                                                                <tr>
+                                                                    <th className="px-4 py-3">Pedido</th>
+                                                                    <th className="px-4 py-3">Fecha</th>
+                                                                    <th className="px-4 py-3 text-right">Ventas brutas</th>
+                                                                    <th className="px-4 py-3 text-right">Ventas netas</th>
+                                                                    <th className="px-4 py-3 text-right">IVA cobrado</th>
+                                                                    <th className="px-4 py-3 text-right">Envío cobrado</th>
+                                                                    <th className="px-4 py-3 text-right">Acción</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-line">
+                                                                {traceabilityOrders.slice(0, 12).map((order) => (
+                                                                    <tr key={order.id} className="hover:bg-surface/40">
+                                                                        <td className="px-4 py-3 font-bold">#{order.id}</td>
+                                                                        <td className="px-4 py-3">{formatDateEcuador(order.created_at)}</td>
+                                                                        <td className="px-4 py-3 text-right font-semibold">{formatMoney(order.gross)}</td>
+                                                                        <td className="px-4 py-3 text-right">{formatMoney(order.net)}</td>
+                                                                        <td className="px-4 py-3 text-right">{formatMoney(order.vat)}</td>
+                                                                        <td className="px-4 py-3 text-right">{formatMoney(order.shipping)}</td>
+                                                                        <td className="px-4 py-3 text-right">
+                                                                            <button type="button" className="text-xs font-bold underline" onClick={() => handleViewOrder(order.id)}>
+                                                                                Ver pedido
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                                {traceabilityOrders.length === 0 && (
+                                                                    <tr>
+                                                                        <td colSpan={7} className="px-4 py-8 text-center text-secondary">No hay pedidos fuente para auditar en este periodo.</td>
+                                                                    </tr>
+                                                                )}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
+                                                    <div className="bg-white border border-line rounded-2xl p-5">
+                                                        <div className="heading6 mb-1">Productos que explican el resultado</div>
+                                                        <p className="text-secondary text-xs mb-4">Lista de productos vendidos, su categoría, unidades y pedidos relacionados.</p>
+                                                        <div className="overflow-x-auto rounded-xl border border-line">
+                                                            <table className="w-full min-w-[820px] text-left text-sm">
+                                                                <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
+                                                                    <tr>
+                                                                        <th className="px-4 py-3">Producto</th>
+                                                                        <th className="px-4 py-3">Categoría</th>
+                                                                        <th className="px-4 py-3 text-right">Unidades</th>
+                                                                        <th className="px-4 py-3 text-right">Ventas netas</th>
+                                                                        <th className="px-4 py-3">Pedidos asociados</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody className="divide-y divide-line">
+                                                                    {traceabilityProducts.slice(0, 10).map((product, idx) => {
+                                                                        const refs = Array.isArray(product.order_refs)
+                                                                            ? product.order_refs
+                                                                            : String(product.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
+                                                                        return (
+                                                                            <tr key={`${product.product_id || product.product_name}-${idx}`} className="hover:bg-surface/40">
+                                                                                <td className="px-4 py-3 font-semibold">{product.product_name}</td>
+                                                                                <td className="px-4 py-3 capitalize">{product.category || 'Sin categoría'}</td>
+                                                                                <td className="px-4 py-3 text-right">{Number(product.units_sold || 0).toLocaleString('es-EC')}</td>
+                                                                                <td className="px-4 py-3 text-right font-semibold">{formatMoney(product.net_revenue)}</td>
+                                                                                <td className="px-4 py-3 text-xs text-secondary break-words">{refs.length > 0 ? refs.join(', ') : 'Sin referencia'}</td>
+                                                                            </tr>
+                                                                        )
+                                                                    })}
+                                                                    {traceabilityProducts.length === 0 && (
+                                                                        <tr>
+                                                                            <td colSpan={5} className="px-4 py-8 text-center text-secondary">No hay productos vendidos para auditar.</td>
+                                                                        </tr>
+                                                                    )}
+                                                                </tbody>
+                                                            </table>
                                                         </div>
                                                     </div>
 
                                                     <div className="bg-white border border-line rounded-2xl p-5">
-                                                        <div className="heading6 mb-4">Productos explicativos</div>
-                                                        <div className="flex flex-col gap-3">
-                                                            {traceabilityProducts.slice(0, 8).map((product, idx) => {
-                                                                const refs = Array.isArray(product.order_refs)
-                                                                    ? product.order_refs
-                                                                    : String(product.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
-                                                                return (
-                                                                    <div key={`${product.product_id || product.product_name}-${idx}`} className="p-3 rounded-lg border border-line">
-                                                                        <div className="flex items-center justify-between gap-3">
-                                                                            <div className="font-semibold text-sm">{product.product_name}</div>
-                                                                            <div className="font-bold tabular-nums">{formatMoney(product.net_revenue)}</div>
-                                                                        </div>
-                                                                        <div className="text-xs text-secondary mt-1">
-                                                                            Categoría: <span className="font-semibold capitalize">{product.category || 'Sin categoría'}</span> | Unidades: <span className="font-semibold">{Number(product.units_sold || 0)}</span>
-                                                                        </div>
-                                                                        <div className="text-xs text-secondary mt-1 break-words">
-                                                                            Pedidos: {refs.length > 0 ? refs.join(', ') : 'Sin referencia'}
-                                                                        </div>
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                            {traceabilityProducts.length === 0 && (
-                                                                <div className="text-sm text-secondary">Sin productos vendidos para trazabilidad.</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="bg-white border border-line rounded-2xl p-5">
-                                                        <div className="heading6 mb-4">Categorías auditadas</div>
-                                                        <div className="flex flex-col gap-3">
-                                                            {traceabilityCategories.slice(0, 8).map((category, idx) => {
+                                                        <div className="heading6 mb-1">Categorías auditadas</div>
+                                                        <p className="text-secondary text-xs mb-4">Agrupación simple para revisar qué categorías explican las ventas netas.</p>
+                                                        <div className="space-y-3">
+                                                            {traceabilityCategories.slice(0, 10).map((category, idx) => {
                                                                 const refs = Array.isArray(category.order_refs)
                                                                     ? category.order_refs
                                                                     : String(category.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
+                                                                const categoryNet = Number(category.net_revenue ?? 0)
+                                                                const totalNet = traceabilityCategories.reduce((acc, item) => acc + Number(item.net_revenue ?? 0), 0)
+                                                                const ratio = totalNet > 0 && categoryNet > 0 ? Math.max((categoryNet / totalNet) * 100, 4) : 0
                                                                 return (
                                                                     <div key={`${category.category}-${idx}`} className="p-3 rounded-lg border border-line bg-surface">
                                                                         <div className="flex items-center justify-between gap-3">
                                                                             <div className="font-semibold text-sm capitalize">{category.category || 'Sin categoría'}</div>
-                                                                            <div className="font-bold">{formatMoney(category.net_revenue)}</div>
+                                                                            <div className="font-bold">{formatMoney(categoryNet)}</div>
                                                                         </div>
-                                                                        <div className="text-xs text-secondary mt-1 break-words">
+                                                                        <div className="mt-2 h-2 rounded-full bg-white overflow-hidden">
+                                                                            <div className="h-full bg-black rounded-full" style={{ width: `${ratio}%` }}></div>
+                                                                        </div>
+                                                                        <div className="text-xs text-secondary mt-2 break-words">
                                                                             Pedidos asociados: {refs.length > 0 ? refs.join(', ') : 'Sin referencia'}
                                                                         </div>
                                                                     </div>
                                                                 )
                                                             })}
                                                             {traceabilityCategories.length === 0 && (
-                                                                <div className="text-sm text-secondary">Sin categorías para la trazabilidad.</div>
+                                                                <div className="text-sm text-secondary">No hay categorías para auditar.</div>
                                                             )}
                                                         </div>
                                                     </div>
@@ -5779,7 +6379,7 @@ const MyAccount = () => {
                                             <div>
                                                 <div className="heading5">Ranking de productos vendidos</div>
                                                 <p className="text-secondary text-xs mt-1">
-                                                    Ranking completo del producto más vendido al menos vendido.
+                                                    Orden completo por desempeño comercial: unidades vendidas, ventas netas, utilidad bruta y margen bruto.
                                                 </p>
                                             </div>
                                             <div className="text-sm font-bold text-secondary bg-surface px-4 py-2 rounded-lg border border-line">
@@ -5790,9 +6390,9 @@ const MyAccount = () => {
                                         <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-8">
                                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
                                                 <div>
-                                                    <div className="heading6">Resumen y orden de ventas</div>
+                                                    <div className="heading6">Resumen y orden comercial</div>
                                                     <p className="text-secondary text-xs mt-1">
-                                                        Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'}.
+                                                        Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con ventas completadas o entregadas.
                                                     </p>
                                                     <p className="text-secondary text-xs mt-1">
                                                         Haz clic en el nombre del producto para ver su detalle (mes e histórico).
@@ -5804,11 +6404,7 @@ const MyAccount = () => {
                                                         <input
                                                             type="month"
                                                             value={salesRankingMonth}
-                                                            onChange={(event) => {
-                                                                const nextMonth = event.target.value
-                                                                setSalesRankingMonth(nextMonth || getCurrentMonthKey())
-                                                                setSalesRankingView('month')
-                                                            }}
+                                                            onChange={(event) => selectReportMonth(event.target.value)}
                                                             className="px-3 py-1.5 text-sm font-semibold rounded-md border border-line bg-white text-black focus:border-black outline-none"
                                                         />
                                                     </label>
@@ -5842,41 +6438,41 @@ const MyAccount = () => {
                                                     </div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Pedidos</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
                                                     <div className="text-lg font-bold">{Number(salesRankingFinancial?.orders_count ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Unidades</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
                                                     <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Venta bruta</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
                                                     <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.gross ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Venta neta</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
                                                     <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">IVA</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
                                                     <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.vat ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Envío</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
                                                     <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.shipping ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Costo</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
                                                     <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.cost ?? 0)}</div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Utilidad</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Utilidad bruta</div>
                                                     <div className={`text-lg font-bold ${(Number(salesRankingFinancial?.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
                                                         {formatMoney(salesRankingFinancial?.profit ?? 0)}
                                                     </div>
                                                 </div>
                                                 <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen</div>
+                                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
                                                     <div className="text-lg font-bold">{Number(salesRankingFinancial?.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
                                                 </div>
                                             </div>
@@ -5889,14 +6485,14 @@ const MyAccount = () => {
                                                             <th className="px-4 py-3">Producto</th>
                                                             <th className="px-4 py-3">Categoría</th>
                                                             <th className="px-4 py-3 text-right">Pedidos ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Vendidos ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Venta bruta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Venta neta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">IVA ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Envío ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Costo ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Utilidad ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Margen ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Unidades vendidas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Ventas brutas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Ventas netas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">IVA cobrado ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Envío cobrado ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Costo de venta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Utilidad bruta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                            <th className="px-4 py-3 text-right">Margen bruto ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="divide-y divide-line">

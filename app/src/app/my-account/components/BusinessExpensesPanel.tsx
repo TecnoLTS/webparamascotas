@@ -6,6 +6,7 @@ import type { BusinessExpense, BusinessExpenseRecurrence, BusinessExpenseStatus,
 type ExpenseFilters = {
     status: string
     category: string
+    period: string
     from: string
     to: string
 }
@@ -59,6 +60,12 @@ type HistoricalSaleFormState = {
     customerName: string
     affectInventory: boolean
     lines: HistoricalSaleLine[]
+}
+
+type ExpenseAdjustmentDraft = {
+    expense: BusinessExpense
+    reason: string
+    confirmed: boolean
 }
 
 type BusinessExpensesPanelProps = {
@@ -133,19 +140,20 @@ const createHistoricalSaleForm = (): HistoricalSaleFormState => ({
 
 const parseAmount = (value: string) => {
     const raw = String(value || '').trim()
-    const hasComma = raw.includes(',')
-    const hasDot = raw.includes('.')
-    let normalized = raw
+    const cleaned = raw.replace(/%/g, '')
+    const hasComma = cleaned.includes(',')
+    const hasDot = cleaned.includes('.')
+    let normalized = cleaned
     if (hasComma && hasDot) {
-        normalized = raw.lastIndexOf(',') > raw.lastIndexOf('.')
-            ? raw.replace(/\./g, '').replace(',', '.')
-            : raw.replace(/,/g, '')
+        normalized = cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')
+            ? cleaned.replace(/\./g, '').replace(',', '.')
+            : cleaned.replace(/,/g, '')
     } else if (hasComma) {
-        normalized = raw.replace(',', '.')
+        normalized = cleaned.replace(',', '.')
     } else if (hasDot) {
-        const dotParts = raw.split('.')
+        const dotParts = cleaned.split('.')
         const decimalCandidate = dotParts.length === 2 ? dotParts[1] : ''
-        normalized = decimalCandidate.length === 3 ? raw.replace(/\./g, '') : raw
+        normalized = decimalCandidate.length === 3 ? cleaned.replace(/\./g, '') : cleaned
     }
     const parsed = Number(normalized)
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
@@ -161,6 +169,91 @@ const sanitizeMoneyInput = (value: string) => {
 const formatInputAmount = (value: number) => {
     const rounded = Math.max(0, Math.round(value * 100) / 100)
     return rounded.toFixed(2)
+}
+
+const toMoneyNumber = (value: number) => parseAmount(formatInputAmount(value))
+
+const TAX_RATE_AMOUNT_RATIO_THRESHOLD = 0.2
+
+const isLikelyTaxRateInput = (taxInput: string, baseAmount: number) => {
+    const taxValue = parseAmount(taxInput)
+    return hasAmountInput(taxInput)
+        && taxValue > 0
+        && taxValue <= 100
+        && baseAmount > 0
+        && taxValue > baseAmount * TAX_RATE_AMOUNT_RATIO_THRESHOLD
+}
+
+const calculateFromSubtotalAndTaxInput = (subtotal: number, taxInput: string) => {
+    const taxValue = parseAmount(taxInput)
+    const taxAmount = isLikelyTaxRateInput(taxInput, subtotal)
+        ? subtotal * (taxValue / 100)
+        : taxValue
+
+    return {
+        subtotal: toMoneyNumber(subtotal),
+        taxAmount: toMoneyNumber(taxAmount),
+        total: toMoneyNumber(subtotal + taxAmount),
+    }
+}
+
+const calculateFromTotalAndTaxInput = (total: number, taxInput: string) => {
+    const taxValue = parseAmount(taxInput)
+
+    if (isLikelyTaxRateInput(taxInput, total)) {
+        const subtotal = total / (1 + taxValue / 100)
+        return {
+            subtotal: toMoneyNumber(subtotal),
+            taxAmount: toMoneyNumber(Math.max(total - subtotal, 0)),
+            total: toMoneyNumber(total),
+        }
+    }
+
+    const taxAmount = Math.min(taxValue, total)
+    return {
+        subtotal: toMoneyNumber(Math.max(total - taxAmount, 0)),
+        taxAmount: toMoneyNumber(taxAmount),
+        total: toMoneyNumber(total),
+    }
+}
+
+const resolveExpenseMoney = (form: ExpenseFormState) => {
+    const subtotal = parseAmount(form.subtotal)
+    const total = parseAmount(form.total)
+    const hasSubtotal = hasAmountInput(form.subtotal)
+    const hasTax = hasAmountInput(form.taxAmount)
+    const hasTotal = hasAmountInput(form.total)
+
+    if (hasTotal && hasTax) {
+        return calculateFromTotalAndTaxInput(total, form.taxAmount)
+    }
+
+    if (hasSubtotal && hasTax) {
+        return calculateFromSubtotalAndTaxInput(subtotal, form.taxAmount)
+    }
+
+    if (hasTotal && hasSubtotal) {
+        const cappedSubtotal = Math.min(subtotal, total)
+        return {
+            subtotal: toMoneyNumber(cappedSubtotal),
+            taxAmount: toMoneyNumber(Math.max(total - cappedSubtotal, 0)),
+            total: toMoneyNumber(total),
+        }
+    }
+
+    if (hasTotal) {
+        return {
+            subtotal: toMoneyNumber(total),
+            taxAmount: 0,
+            total: toMoneyNumber(total),
+        }
+    }
+
+    return {
+        subtotal: toMoneyNumber(subtotal),
+        taxAmount: 0,
+        total: toMoneyNumber(subtotal),
+    }
 }
 
 const statusLabel: Record<BusinessExpenseStatus, string> = {
@@ -219,6 +312,8 @@ export default function BusinessExpensesPanel({
     const [periodPreview, setPeriodPreview] = React.useState<FinancialPeriodPreview | null>(null)
     const [periodPreviewNotes, setPeriodPreviewNotes] = React.useState('')
     const [periodPreviewLoading, setPeriodPreviewLoading] = React.useState(false)
+    const [expenseAdjustmentDraft, setExpenseAdjustmentDraft] = React.useState<ExpenseAdjustmentDraft | null>(null)
+    const [historicalSaleError, setHistoricalSaleError] = React.useState('')
     const categoryOptions = React.useMemo(() => {
         const values = [...categories, 'Otros'].map((category) => String(category || '').trim()).filter(Boolean)
         return Array.from(new Set(values))
@@ -264,43 +359,44 @@ export default function BusinessExpensesPanel({
         setExpenseForm((previous) => {
             if (field === 'subtotal') {
                 const subtotal = parseAmount(value)
-                const taxAmount = parseAmount(previous.taxAmount)
+                const amounts = calculateFromSubtotalAndTaxInput(subtotal, previous.taxAmount)
                 return {
                     ...previous,
                     subtotal: value,
-                    total: formatInputAmount(subtotal + taxAmount),
+                    total: formatInputAmount(amounts.total),
                     lastMoneyInput: 'subtotal',
                 }
             }
 
             if (field === 'taxAmount') {
-                const taxAmount = parseAmount(value)
                 const total = parseAmount(previous.total)
                 const subtotal = parseAmount(previous.subtotal)
 
                 if (hasAmountInput(previous.total)) {
+                    const amounts = calculateFromTotalAndTaxInput(total, value)
                     return {
                         ...previous,
                         taxAmount: value,
-                        subtotal: formatInputAmount(Math.max(total - taxAmount, 0)),
+                        subtotal: formatInputAmount(amounts.subtotal),
                         lastMoneyInput: 'taxAmount',
                     }
                 }
 
+                const amounts = calculateFromSubtotalAndTaxInput(subtotal, value)
                 return {
                     ...previous,
                     taxAmount: value,
-                    total: formatInputAmount(subtotal + taxAmount),
+                    total: formatInputAmount(amounts.total),
                     lastMoneyInput: 'taxAmount',
                 }
             }
 
             const total = parseAmount(value)
-            const taxAmount = parseAmount(previous.taxAmount)
+            const amounts = calculateFromTotalAndTaxInput(total, previous.taxAmount)
             return {
                 ...previous,
                 total: value,
-                subtotal: formatInputAmount(Math.max(total - taxAmount, 0)),
+                subtotal: formatInputAmount(amounts.subtotal),
                 taxAmount: hasAmountInput(previous.taxAmount) ? previous.taxAmount : '0.00',
                 lastMoneyInput: 'total',
             }
@@ -310,15 +406,13 @@ export default function BusinessExpensesPanel({
     const submitExpense = async (event: React.FormEvent) => {
         event.preventDefault()
         const category = selectedCategory || 'Otros'
-        const subtotal = parseAmount(expenseForm.subtotal)
-        const total = parseAmount(expenseForm.total)
-        const taxAmount = parseAmount(expenseForm.taxAmount)
+        const amounts = resolveExpenseMoney(expenseForm)
         const payload = {
             category,
             description: expenseForm.description,
-            total,
-            tax_amount: taxAmount,
-            amount: subtotal,
+            total: amounts.total,
+            tax_amount: amounts.taxAmount,
+            amount: amounts.subtotal,
             payment_method: expenseForm.paymentMethod,
             reference: expenseForm.reference,
             notes: expenseForm.notes,
@@ -362,6 +456,7 @@ export default function BusinessExpensesPanel({
 
     const submitHistoricalSale = async (event: React.FormEvent) => {
         event.preventDefault()
+        setHistoricalSaleError('')
         const items = historicalSaleForm.lines
             .map((line) => ({
                 product_id: line.productId,
@@ -373,7 +468,7 @@ export default function BusinessExpensesPanel({
             .filter((item) => item.product_id && item.quantity > 0 && item.unit_price_gross >= 0)
 
         if (items.length === 0) {
-            window.alert('Agrega al menos un producto válido para la venta histórica.')
+            setHistoricalSaleError('Agrega al menos un producto válido para la venta histórica.')
             return
         }
 
@@ -408,8 +503,17 @@ export default function BusinessExpensesPanel({
     }
 
     const createAdjustmentForExpense = async (expense: BusinessExpense) => {
-        const reason = window.prompt('Motivo del ajuste posterior', `Corrección del gasto ${expense.description}`)
-        if (reason === null) return
+        setExpenseAdjustmentDraft({
+            expense,
+            reason: `Corrección del gasto ${expense.description || expense.category}`,
+            confirmed: false,
+        })
+    }
+
+    const confirmExpenseAdjustment = async () => {
+        if (!expenseAdjustmentDraft) return
+        const { expense, reason, confirmed } = expenseAdjustmentDraft
+        if (!confirmed || reason.trim().length < 6) return
         const originalPeriod = expense.financial_period_key || String(expense.expense_date || '').slice(0, 7)
         await onCreateFinancialAdjustment({
             type: 'expense_reversal',
@@ -420,8 +524,9 @@ export default function BusinessExpensesPanel({
             amount: -Math.abs(Number(expense.amount || 0)),
             tax_amount: -Math.abs(Number(expense.tax_amount || 0)),
             total: -Math.abs(Number(expense.total || 0)),
-            reason: reason.trim() || `Corrección de gasto del período ${originalPeriod}`,
+            reason: reason.trim(),
         })
+        setExpenseAdjustmentDraft(null)
     }
 
     return (
@@ -440,8 +545,8 @@ export default function BusinessExpensesPanel({
                 <SummaryCell label="Pagados" value={formatMoney(paid)} hint={`${summary?.paid_count ?? 0} gastos`} tone="text-success" />
                 <SummaryCell label="Pendientes" value={formatMoney(pending)} hint={`${summary?.pending_count ?? 0} por pagar`} tone="text-amber-700" />
                 <SummaryCell label="Vencidos" value={formatMoney(overdue)} hint={`${summary?.overdue_count ?? 0} atrasados`} tone="text-red" />
-                <SummaryCell label="Comprometidos" value={formatMoney(committed)} hint="Pendiente + vencido" />
-                <SummaryCell label="Obligaciones" value={formatMoney(totalObligations)} hint="Pagado + comprometido" />
+                <SummaryCell label="Por pagar" value={formatMoney(committed)} hint="Pendiente + vencido" />
+                <SummaryCell label="Gasto registrado" value={formatMoney(totalObligations)} hint="Pagado + por pagar" />
             </div>
 
             <section className="rounded-lg border border-line bg-white p-3 space-y-3">
@@ -459,7 +564,7 @@ export default function BusinessExpensesPanel({
                                 <th className="px-2 py-1.5 text-left">Mes</th>
                                 <th className="px-2 py-1.5 text-left">Rango</th>
                                 <th className="px-2 py-1.5 text-left">Estado</th>
-                                <th className="px-2 py-1.5 text-right">Neta caja</th>
+                                <th className="px-2 py-1.5 text-right">Utilidad neta</th>
                                 <th className="px-2 py-1.5 text-right">Acción</th>
                             </tr>
                         </thead>
@@ -467,7 +572,7 @@ export default function BusinessExpensesPanel({
                     {visiblePeriods.map((period) => {
                         const isClosed = period.status === 'closed'
                         const canClose = !isClosed && period.end_date < today()
-                        const snapshotProfit = Number((period.snapshot as any)?.profit?.net_cash_profit ?? 0)
+                        const snapshotProfit = Number((period.snapshot as any)?.profit?.net_period_profit ?? (period.snapshot as any)?.profit?.net_committed_profit ?? (period.snapshot as any)?.profit?.net_cash_profit ?? 0)
                         return (
                             <tr key={period.period_key} className="bg-white">
                                 <td className="px-2 py-1.5 font-bold">{period.period_key}</td>
@@ -534,15 +639,16 @@ export default function BusinessExpensesPanel({
                                 <SummaryCell label="Ventas netas" value={formatMoney((periodPreview.snapshot as any)?.sales?.net ?? 0)} hint={`${(periodPreview.snapshot as any)?.sales?.orders_count ?? 0} pedidos`} />
                                 <SummaryCell label="IVA cobrado" value={formatMoney((periodPreview.snapshot as any)?.sales?.tax ?? 0)} hint="Impuesto venta" tone="text-orange-600" />
                                 <SummaryCell label="Utilidad bruta" value={formatMoney((periodPreview.snapshot as any)?.profit?.gross_profit ?? 0)} hint="Neta - costo" tone={Number((periodPreview.snapshot as any)?.profit?.gross_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
-                                <SummaryCell label="Neta caja" value={formatMoney((periodPreview.snapshot as any)?.profit?.net_cash_profit ?? 0)} hint="Bruta - pagados - ajustes" tone={Number((periodPreview.snapshot as any)?.profit?.net_cash_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
-                                <SummaryCell label="Gastos pagados" value={formatMoney((periodPreview.snapshot as any)?.profit?.paid_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.paid_count ?? 0} gastos`} tone="text-orange-600" />
+                                <SummaryCell label="Utilidad neta" value={formatMoney((periodPreview.snapshot as any)?.profit?.net_period_profit ?? (periodPreview.snapshot as any)?.profit?.net_committed_profit ?? 0)} hint="Bruta - gastos período - ajustes" tone={Number((periodPreview.snapshot as any)?.profit?.net_period_profit ?? (periodPreview.snapshot as any)?.profit?.net_committed_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
+                                <SummaryCell label="Gastos período" value={formatMoney((periodPreview.snapshot as any)?.profit?.period_expenses ?? (periodPreview.snapshot as any)?.profit?.committed_expenses ?? 0)} hint="Por fecha del gasto" tone="text-orange-600" />
+                                <SummaryCell label="Gastos pagados" value={formatMoney((periodPreview.snapshot as any)?.profit?.paid_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.paid_count ?? 0} pagos del período`} tone="text-orange-600" />
                                 <SummaryCell label="Pendientes" value={formatMoney((periodPreview.snapshot as any)?.profit?.pending_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.pending_count ?? 0} por pagar`} tone="text-amber-700" />
                                 <SummaryCell label="Vencidos" value={formatMoney((periodPreview.snapshot as any)?.profit?.overdue_expenses ?? 0)} hint={`${(periodPreview.snapshot as any)?.expenses?.overdue_count ?? 0} atrasados`} tone="text-red" />
-                                <SummaryCell label="Neta comprometida" value={formatMoney((periodPreview.snapshot as any)?.profit?.net_committed_profit ?? 0)} hint="Incluye pendientes" tone={Number((periodPreview.snapshot as any)?.profit?.net_committed_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
+                                <SummaryCell label="Utilidad neta pagada" value={formatMoney((periodPreview.snapshot as any)?.profit?.net_cash_profit ?? 0)} hint="Bruta - gastos pagados - ajustes" tone={Number((periodPreview.snapshot as any)?.profit?.net_cash_profit ?? 0) >= 0 ? 'text-success' : 'text-red'} />
                             </div>
                             <label className="block">
                                 <span className="text-[10px] uppercase font-bold text-secondary">Notas del cierre</span>
-                                <textarea className="mt-1 border border-line rounded-lg px-3 py-2 w-full text-sm min-h-[76px]" value={periodPreviewNotes} onChange={(event) => setPeriodPreviewNotes(event.target.value)} placeholder="Ej: Cierre revisado contra caja, gastos y pedidos facturados." />
+                                <textarea className="mt-1 border border-line rounded-lg px-3 py-2 w-full text-sm min-h-[76px]" value={periodPreviewNotes} onChange={(event) => setPeriodPreviewNotes(event.target.value)} placeholder="Ej: Cierre revisado contra gastos del período, gastos pagados y pedidos facturados." />
                             </label>
                             <div className="rounded-lg bg-surface border border-line px-3 py-2 text-xs text-secondary">
                                 Al confirmar, estos totales quedan congelados. Cualquier corrección posterior se registrará como ajuste en el mes abierto actual.
@@ -552,6 +658,73 @@ export default function BusinessExpensesPanel({
                             <button type="button" className="px-4 py-2 rounded-lg border border-line font-semibold" onClick={() => setPeriodPreview(null)}>Cancelar</button>
                             <button type="button" className="button-main px-4 py-2 rounded-lg font-bold disabled:opacity-60" disabled={saving} onClick={closePreviewedPeriod}>
                                 Confirmar cierre
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {expenseAdjustmentDraft && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl border border-line shadow-2xl w-full max-w-2xl">
+                        <div className="p-4 border-b border-line flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-lg font-bold">Corregir gasto de mes cerrado</div>
+                                <div className="text-sm text-secondary">
+                                    El gasto original no se modifica. Se registrará un reverso auditable en el mes abierto actual.
+                                </div>
+                            </div>
+                            <button type="button" className="text-secondary hover:text-black" onClick={() => setExpenseAdjustmentDraft(null)} disabled={saving}>Cerrar</button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <div className="rounded-lg border border-line bg-surface p-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-sm">
+                                    <div className="sm:col-span-2">
+                                        <div className="text-[10px] uppercase font-bold text-secondary">Gasto original</div>
+                                        <div className="font-bold">{expenseAdjustmentDraft.expense.description || expenseAdjustmentDraft.expense.category}</div>
+                                        <div className="text-xs text-secondary">{expenseAdjustmentDraft.expense.category} · período {expenseAdjustmentDraft.expense.financial_period_key || String(expenseAdjustmentDraft.expense.expense_date || '').slice(0, 7)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-secondary">Fecha</div>
+                                        <div className="font-semibold">{expenseAdjustmentDraft.expense.expense_date ? formatDate(expenseAdjustmentDraft.expense.expense_date) : '-'}</div>
+                                    </div>
+                                    <div className="text-left sm:text-right">
+                                        <div className="text-[10px] uppercase font-bold text-secondary">Reverso</div>
+                                        <div className="font-bold text-success">-{formatMoney(expenseAdjustmentDraft.expense.total)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
+                                Esta acción afecta el resultado del mes abierto actual como corrección posterior. Úsala solo cuando un gasto de un mes cerrado no debe contar o necesita ser compensado.
+                            </div>
+                            <label className="block">
+                                <span className="text-[10px] uppercase font-bold text-secondary">Motivo obligatorio</span>
+                                <textarea
+                                    className="mt-1 border border-line rounded-lg px-3 py-2 w-full text-sm min-h-[88px]"
+                                    value={expenseAdjustmentDraft.reason}
+                                    onChange={(event) => setExpenseAdjustmentDraft({ ...expenseAdjustmentDraft, reason: event.target.value })}
+                                    placeholder="Ej: El gasto se registró duplicado en marzo y debe compensarse en el período abierto."
+                                />
+                            </label>
+                            <label className="flex items-start gap-2 rounded-lg border border-line px-3 py-2 text-xs text-secondary">
+                                <input
+                                    type="checkbox"
+                                    className="mt-0.5"
+                                    checked={expenseAdjustmentDraft.confirmed}
+                                    onChange={(event) => setExpenseAdjustmentDraft({ ...expenseAdjustmentDraft, confirmed: event.target.checked })}
+                                />
+                                <span>Entiendo que el mes cerrado no cambiará y que se creará un ajuste financiero separado por {formatMoney(-Math.abs(Number(expenseAdjustmentDraft.expense.total || 0)))}.</span>
+                            </label>
+                        </div>
+                        <div className="p-4 border-t border-line flex flex-col sm:flex-row justify-end gap-2">
+                            <button type="button" className="px-4 py-2 rounded-lg border border-line font-semibold" onClick={() => setExpenseAdjustmentDraft(null)} disabled={saving}>Cancelar</button>
+                            <button
+                                type="button"
+                                className="button-main px-4 py-2 rounded-lg font-bold disabled:opacity-60"
+                                disabled={saving || !expenseAdjustmentDraft.confirmed || expenseAdjustmentDraft.reason.trim().length < 6}
+                                onClick={confirmExpenseAdjustment}
+                            >
+                                {saving ? 'Registrando...' : 'Registrar reverso'}
                             </button>
                         </div>
                     </div>
@@ -605,7 +778,7 @@ export default function BusinessExpensesPanel({
                         <input className="border border-line rounded-lg px-3 py-2 w-full text-sm" placeholder="0,00" inputMode="decimal" value={expenseForm.total} onChange={(event) => handleMoneyChange('total', event.target.value)} required />
                     </label>
                     <p className="sm:col-span-3 text-[11px] text-secondary">
-                        Puedes escribir subtotal, IVA o total; el sistema completa el resto.
+                        Puedes escribir subtotal, IVA en valor o porcentaje, o total; el sistema completa el resto.
                     </p>
                 </div>
 
@@ -765,6 +938,7 @@ export default function BusinessExpensesPanel({
                         {saving ? 'Guardando...' : 'Registrar venta histórica'}
                     </button>
                 </div>
+                {historicalSaleError && <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">{historicalSaleError}</div>}
                 {historicalSaleProducts.length === 0 && <div className="text-[11px] text-secondary">Carga productos del panel para registrar ventas históricas.</div>}
             </form>
 
@@ -781,8 +955,19 @@ export default function BusinessExpensesPanel({
                         <option value="all">Todas las categorías</option>
                         {categoryOptions.map((category) => <option key={category} value={category}>{category}</option>)}
                     </select>
-                    <input className="border border-line rounded-lg px-3 py-2 text-sm" type="date" value={filters.from} onChange={(event) => onFiltersChange({ ...filters, from: event.target.value })} />
-                    <input className="border border-line rounded-lg px-3 py-2 text-sm" type="date" value={filters.to} onChange={(event) => onFiltersChange({ ...filters, to: event.target.value })} />
+                    <input
+                        className="border border-line rounded-lg px-3 py-2 text-sm"
+                        type="month"
+                        value={filters.period}
+                        onChange={(event) => onFiltersChange({ ...filters, period: event.target.value, from: '', to: '' })}
+                    />
+                    <input className="border border-line rounded-lg px-3 py-2 text-sm" type="date" value={filters.from} onChange={(event) => onFiltersChange({ ...filters, period: '', from: event.target.value })} />
+                    <input className="border border-line rounded-lg px-3 py-2 text-sm" type="date" value={filters.to} onChange={(event) => onFiltersChange({ ...filters, period: '', to: event.target.value })} />
+                    {(filters.period || filters.from || filters.to || filters.status !== 'all' || filters.category !== 'all') && (
+                        <button type="button" className="px-3 py-2 rounded-lg border border-line text-xs font-bold hover:bg-surface" onClick={() => onFiltersChange({ status: 'all', category: 'all', period: '', from: '', to: '' })}>
+                            Limpiar filtros
+                        </button>
+                    )}
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full min-w-[920px] text-sm">
@@ -841,11 +1026,11 @@ export default function BusinessExpensesPanel({
                                             )}
                                             {expense.is_period_closed && (
                                                 <button type="button" className="px-2 py-1 rounded-md border border-black text-xs font-semibold hover:bg-black hover:text-white disabled:opacity-50" disabled={saving} onClick={() => createAdjustmentForExpense(expense)}>
-                                                    Crear ajuste
+                                                    Corregir mes cerrado
                                                 </button>
                                             )}
                                         </div>
-                                        {expense.is_period_closed && <div className="mt-1 text-[10px] text-secondary">Mes cerrado: se corrige con ajuste.</div>}
+                                        {expense.is_period_closed && <div className="mt-1 text-[10px] text-secondary">No anula el original; registra un reverso en el mes abierto.</div>}
                                     </td>
                                 </tr>
                             ))}

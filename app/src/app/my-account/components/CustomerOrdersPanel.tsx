@@ -103,7 +103,7 @@ export default React.memo(function CustomerOrdersPanel({
                                 {(order.items && order.items.length > 0) ? (
                                     order.items.map((item, idx) => (
                                         <div key={`${order.id}-${idx}`} className="prd_item flex flex-wrap items-center justify-between gap-3 py-5 border-b border-line last:border-0">
-                                            <Link href="/product/default" className="flex items-center gap-5">
+                                            <Link href="/tienda" className="flex items-center gap-5">
                                                 <div className="bg-img flex-shrink-0 md:w-[100px] w-20 aspect-square rounded-lg overflow-hidden">
                                                     {(() => {
                                                         const imageSrc = normalizeOrderItemImage(item.product_image)

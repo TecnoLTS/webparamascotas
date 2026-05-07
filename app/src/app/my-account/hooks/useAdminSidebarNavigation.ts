@@ -7,6 +7,8 @@ import { createAdminMenuExpandedState, getAdminGroupForTab } from '../adminNavig
 import type { AdminMenuGroupKey, AdminReportSection, DeepDiveView } from '../types'
 import { PRODUCT_REFERENCE_KEY_SET, type ProductReferenceKey } from '@/lib/productReferenceData'
 
+const ADMIN_REPORT_SECTION_SET = new Set<AdminReportSection>(['general', 'sales', 'balance', 'inventory', 'traceability'])
+
 type UseAdminSidebarNavigationParams = {
   userRole?: string
   activeTab?: string
@@ -107,14 +109,25 @@ export const useAdminSidebarNavigation = ({
     if (userRole !== 'admin') return
     const requestedTab = searchParams.get('tab')
     const requestedCatalog = searchParams.get('catalog')
+    const requestedReportSection = searchParams.get('section') || searchParams.get('report')
 
     if (requestedTab === 'catalogs') {
       setActiveTab('catalogs')
       if (requestedCatalog && PRODUCT_REFERENCE_KEY_SET.has(requestedCatalog as ProductReferenceKey)) {
         setFocusedReferenceCatalogKey(requestedCatalog as ProductReferenceKey)
       }
+      return
     }
-  }, [searchParams, setActiveTab, userRole])
+
+    if (requestedTab === 'reports') {
+      setActiveTab('reports')
+      setSelectedDeepDive(null)
+      setFocusedReferenceCatalogKey(null)
+      if (requestedReportSection && ADMIN_REPORT_SECTION_SET.has(requestedReportSection as AdminReportSection)) {
+        setAdminReportSection(requestedReportSection as AdminReportSection)
+      }
+    }
+  }, [searchParams, setActiveTab, setAdminReportSection, setSelectedDeepDive, userRole])
 
   return {
     adminMenuExpanded,

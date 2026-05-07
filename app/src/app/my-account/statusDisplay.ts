@@ -7,8 +7,11 @@ export const getStatusBadge = (status?: string) => {
   if (['processing', 'in_process', 'in-process'].includes(normalized)) {
     return { label: 'En proceso', className: 'bg-blue-100 text-blue-600' }
   }
-  if (['completed', 'delivered'].includes(normalized)) {
+  if (normalized === 'completed') {
     return { label: 'Completado', className: 'bg-success/10 text-success' }
+  }
+  if (normalized === 'delivered') {
+    return { label: 'Entregado', className: 'bg-success/10 text-success' }
   }
   if (['canceled', 'cancelled'].includes(normalized)) {
     return { label: 'Cancelado', className: 'bg-red/10 text-red' }

@@ -146,7 +146,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'todos',
     label: 'Todas',
     alt: 'Catálogo completo de productos para mascotas en Ecuador',
-    route: '/shop/breadcrumb1',
+    route: '/tienda',
     filter: {},
     showInFooter: true,
     showInShopBrowse: true,
@@ -155,7 +155,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'ropa',
     label: 'Ropa',
     alt: 'Ropa para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=ropa',
+    route: '/tienda/ropa',
     filter: { categories: ['ropa'], productTypes: ['ropa'] },
     showInFooter: true,
     showInShopBrowse: true,
@@ -164,7 +164,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'alimento',
     label: 'Alimento',
     alt: 'Alimentos para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=alimento',
+    route: '/tienda/alimento',
     filter: {
       categories: ['Alimento', 'alimento', 'alimento para perros', 'alimento para gatos'],
       productTypes: ['Alimento', 'alimento'],
@@ -176,7 +176,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'salud',
     label: 'Salud',
     alt: 'Productos de salud para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=salud',
+    route: '/tienda/salud',
     filter: {
       categories: ['salud', 'cuidado', 'cuidados', 'higiene', 'medicina', 'medicinas', 'farmacia'],
       productTypes: ['cuidado'],
@@ -186,7 +186,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'accesorios',
     label: 'Accesorios',
     alt: 'Accesorios para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=accesorios',
+    route: '/tienda/accesorios',
     filter: {
       categories: ['accesorios', 'juguetes', 'camas', 'comederos', 'transportadoras', 'correas', 'collares', 'arneses', 'bolsas', 'platos'],
       productTypes: ['accesorios'],
@@ -198,14 +198,14 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'descuentos',
     label: 'Ofertas',
     alt: 'Ofertas y descuentos en productos para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=descuentos',
+    route: '/tienda/ofertas',
     filter: {},
   },
   cuidado: {
     id: 'salud',
     label: 'Salud',
     alt: 'Productos de salud para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=salud',
+    route: '/tienda/salud',
     filter: {
       categories: ['salud', 'cuidado', 'cuidados', 'higiene', 'medicina', 'medicinas', 'farmacia'],
       productTypes: ['cuidado'],
@@ -215,7 +215,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'salud',
     label: 'Salud',
     alt: 'Productos de salud para mascotas en Ecuador',
-    route: '/shop/breadcrumb1?category=salud',
+    route: '/tienda/salud',
     filter: {
       categories: ['salud', 'cuidado', 'cuidados', 'higiene', 'medicina', 'medicinas', 'farmacia'],
       productTypes: ['cuidado'],
@@ -227,21 +227,21 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'gatos',
     label: 'Gatos',
     alt: 'Productos para gatos en Ecuador',
-    route: '/shop/breadcrumb1?gender=cat',
+    route: '/tienda/gatos',
     filter: { genders: ['cat'] },
   },
   perros: {
     id: 'perros',
     label: 'Perros',
     alt: 'Productos para perros en Ecuador',
-    route: '/shop/breadcrumb1?gender=dog',
+    route: '/tienda/perros',
     filter: { genders: ['dog'] },
   },
   'alimento para perros': {
     id: 'alimento para perros',
     label: 'Alimento para perros',
     alt: 'Alimento para perros en Ecuador',
-    route: '/shop/breadcrumb1?category=alimento&gender=dog',
+    route: '/tienda/alimento-perros',
     filter: {
       categories: ['Alimento', 'alimento', 'alimento para perros', 'alimento para gatos'],
       productTypes: ['Alimento', 'alimento'],
@@ -252,7 +252,7 @@ const PET_CATEGORY_DEFINITIONS: PetCategoryDefinitionMap = {
     id: 'alimento para gatos',
     label: 'Alimento para gatos',
     alt: 'Alimento para gatos en Ecuador',
-    route: '/shop/breadcrumb1?category=alimento&gender=cat',
+    route: '/tienda/alimento-gatos',
     filter: {
       categories: ['Alimento', 'alimento', 'alimento para perros', 'alimento para gatos'],
       productTypes: ['Alimento', 'alimento'],
@@ -506,12 +506,17 @@ export const getCategoryFilter = (categoryId: string, _tenantId?: string) => {
 
 export const getCategoryUrl = (categoryId: string, options?: { gender?: string }, _tenantId?: string) => {
   const normalized = categoryId.toLowerCase()
+  if ((normalized === 'todos' || normalized === 'todas') && options?.gender === 'dog') return '/tienda/perros'
+  if ((normalized === 'todos' || normalized === 'todas') && options?.gender === 'cat') return '/tienda/gatos'
+  if (normalized === 'alimento' && options?.gender === 'dog') return '/tienda/alimento-perros'
+  if (normalized === 'alimento' && options?.gender === 'cat') return '/tienda/alimento-gatos'
+
   const baseUrl =
-    PET_CATEGORY_ROUTES[normalized] ?? `/shop/breadcrumb1?category=${encodeURIComponent(normalized)}`
+    PET_CATEGORY_ROUTES[normalized] ?? `/tienda/${encodeURIComponent(normalized)}`
 
   if (options?.gender && !baseUrl.includes('gender=')) {
-    const separator = baseUrl.includes('?') ? '&' : '?'
-    return `${baseUrl}${separator}gender=${encodeURIComponent(options.gender)}`
+    const genderSlug = options.gender === 'dog' ? 'perros' : options.gender === 'cat' ? 'gatos' : options.gender
+    return `${baseUrl}-${encodeURIComponent(genderSlug)}`
   }
 
   return baseUrl

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from '@/components/Common/AppImage'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Navigation } from 'swiper/modules'
@@ -22,6 +23,7 @@ import {
   getProductVariants,
   hasRealReviews,
 } from '@/lib/catalog'
+import { getCatalogPagePath } from '@/lib/seoUrls'
 import {
   fetchLiveCatalogSnapshot,
   findLiveCatalogProduct,
@@ -42,6 +44,12 @@ const Icon = {
 } as const
 
 const normalizeOptionValue = (value?: string | null) => (value ?? '').trim().toLowerCase()
+
+const normalizeSpecKey = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
 
 interface Props {
   data: Array<ProductType>
@@ -252,10 +260,10 @@ const Default: React.FC<Props> = ({ data, productId }) => {
     }
   }, [openPopupImg, photoIndex])
 
-  const productType = (productFamily?.productType ?? '').toLowerCase()
+  const productType = (productFamily?.productType ?? '').trim().toLowerCase()
   const isClothing = productType === 'ropa'
-  const categoryLabel = (productFamily?.category ?? '').toLowerCase()
-  const isFoodCategory = ['Alimento', 'alimento', 'premio'].some((word) => categoryLabel.includes(word))
+  const categoryLabel = (productFamily?.category ?? '').trim().toLowerCase()
+  const isFoodCategory = ['alimento', 'premio', 'snack'].some((word) => categoryLabel.includes(word) || productType.includes(word))
   const selectorLabel = isFoodCategory
     ? 'Tamano del paquete'
     : (isClothing ? 'Talla' : (hasSizeSelector ? 'Tamaño' : 'Variante'))
@@ -274,7 +282,7 @@ const Default: React.FC<Props> = ({ data, productId }) => {
   }
 
   const attributeLabels: Record<string, Record<string, string>> = {
-    Alimento: {
+    alimento: {
       size: 'Tamano',
       flavor: 'Sabor',
       target: 'Etapa',
@@ -296,11 +304,23 @@ const Default: React.FC<Props> = ({ data, productId }) => {
       species: 'Especie',
       presentation: 'Presentacion',
     },
+    cuidado: {
+      size: 'Tamano',
+      presentation: 'Presentacion',
+      usage: 'Uso',
+      species: 'Especie',
+    },
+    salud: {
+      size: 'Tamano',
+      presentation: 'Presentacion',
+      usage: 'Uso',
+      species: 'Especie',
+    },
   }
 
   const attributeRows = useMemo(() => {
     const attributes = activeVariant?.attributes ?? {}
-    const labels = attributeLabels[productType] ?? {}
+    const labels = attributeLabels[productType] ?? attributeLabels[categoryLabel] ?? {}
 
     return Object.entries(labels)
       .map(([key, label]) => {
@@ -309,7 +329,7 @@ const Default: React.FC<Props> = ({ data, productId }) => {
         return { key, label, value }
       })
       .filter((item) => item.value !== undefined && item.value !== null && String(item.value).trim() !== '')
-  }, [activeVariant, productType])
+  }, [activeVariant, categoryLabel, productType])
 
   const productImages = Array.isArray((activeVariant as any)?.images)
     ? (activeVariant as any).images.map((img: any) => (typeof img === 'string' ? img : img?.url ?? '')).filter(Boolean)
@@ -337,6 +357,82 @@ const Default: React.FC<Props> = ({ data, productId }) => {
     [familyColorValues, variantProducts],
   )
   const currentGalleryImage = resolvedGalleryImages[photoIndex] ?? resolvedGalleryImages[0] ?? '/images/product/1.webp'
+
+  const variantDisplayValues = useMemo(() => Array.from(new Set(
+    variantProducts
+      .map((product) =>
+        getProductVariantLabel(product)
+        || getVariantSizeValue(product)
+        || product.variantPresentation
+        || product.variantLabel
+        || ''
+      )
+      .map((value) => value.trim())
+      .filter(Boolean)
+  )), [variantProducts])
+
+  const petLabel = productFamily?.gender === 'dog'
+    ? 'Perros'
+    : productFamily?.gender === 'cat'
+      ? 'Gatos'
+      : ''
+  const formattedCategory = [productFamily?.category, petLabel]
+    .filter(Boolean)
+    .join(' · ')
+  const categoryPath = productFamily?.category
+    ? getCatalogPagePath(productFamily.category, { gender: productFamily.gender })
+    : '/tienda'
+  const descriptionText =
+    activeVariant?.description?.trim()
+    || productFamily?.description?.trim()
+    || 'Producto publicado en ParaMascotasEC con informacion de precio, disponibilidad y presentaciones segun stock vigente.'
+
+  const specificationRows = useMemo(() => {
+    const rows = [
+      { key: 'brand', label: 'Marca', value: activeVariant?.brand || productFamily?.brand },
+      { key: 'category', label: 'Categoria', value: formattedCategory },
+      { key: 'species', label: 'Especie', value: petLabel },
+      { key: 'sku', label: 'SKU', value: sku },
+      { key: 'price', label: 'Precio', value: price > 0 ? `USD ${price.toFixed(2)}` : '' },
+      { key: 'stock', label: 'Disponibilidad', value: availableStock > 0 ? `${availableStock} en stock` : 'Sin stock' },
+      { key: 'variants', label: 'Variantes', value: variantProducts.length > 1 ? `${variantProducts.length} opciones` : 'Producto unico' },
+      { key: 'presentations', label: 'Presentaciones', value: variantDisplayValues.join(', ') },
+      {
+        key: 'expiration',
+        label: 'Fecha de expiracion',
+        value: activeVariant?.expirationDate
+          || activeVariant?.inventory?.expiration?.date
+          || activeVariant?.attributes?.expirationDate
+          || '',
+      },
+      ...attributeRows,
+    ]
+    const seen = new Set<string>()
+
+    return rows.filter((row) => {
+      const value = row.value === undefined || row.value === null ? '' : String(row.value).trim()
+      if (!value) return false
+
+      const key = normalizeSpecKey(row.label)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [
+    activeVariant?.attributes,
+    activeVariant?.brand,
+    activeVariant?.expirationDate,
+    activeVariant?.inventory?.expiration?.date,
+    attributeRows,
+    availableStock,
+    formattedCategory,
+    petLabel,
+    price,
+    productFamily?.brand,
+    sku,
+    variantDisplayValues,
+    variantProducts.length,
+  ])
 
   const relatedProducts = useMemo(() => {
     if (!productFamily) return []
@@ -419,10 +515,6 @@ const Default: React.FC<Props> = ({ data, productId }) => {
       </div>
     )
   }
-
-  const formattedCategory = [productFamily.category, productFamily.gender === 'dog' ? 'Perros' : productFamily.gender === 'cat' ? 'Gatos' : '']
-    .filter(Boolean)
-    .join(' · ')
 
   return (
     <div className="product-detail default">
@@ -564,7 +656,7 @@ const Default: React.FC<Props> = ({ data, productId }) => {
                   </>
                 )}
               </div>
-              <div className="desc text-secondary mt-3">{activeVariant.description}</div>
+              <div className="desc text-secondary mt-3">{descriptionText}</div>
 
               {attributeRows.length > 0 && (
                 <div className="mt-4 p-4 bg-surface border border-line rounded-xl">
@@ -749,11 +841,45 @@ const Default: React.FC<Props> = ({ data, productId }) => {
             </div>
 
             {activeTab === 'description' ? (
-              <div className="mt-6 text-secondary leading-7">{activeVariant.description}</div>
+              <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-normal text-secondary">
+                    Compra online en Ecuador
+                  </p>
+                  <h2 className="heading5 mt-2">
+                    {productFamily.name}{productFamily.gender === 'dog' ? ' para perros' : productFamily.gender === 'cat' ? ' para gatos' : ''}
+                  </h2>
+                  <p className="mt-4 text-secondary leading-7">{descriptionText}</p>
+                  <div className="mt-5 flex flex-wrap gap-2 text-sm">
+                    {specificationRows.slice(0, 5).map((row) => (
+                      <span key={`desc-${row.key}`} className="rounded-full bg-surface px-3 py-1">
+                        {row.label}: {String(row.value)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="border-line pl-0 lg:border-l lg:pl-8">
+                  <h3 className="text-title">Detalles utiles</h3>
+                  <dl className="mt-4 space-y-3 text-sm">
+                    {specificationRows
+                      .filter((row) => ['stock', 'variants', 'presentations', 'expiration'].includes(row.key))
+                      .slice(0, 4)
+                      .map((row) => (
+                        <div key={`useful-${row.key}`} className="flex justify-between gap-4 border-b border-line pb-3">
+                          <dt className="text-secondary">{row.label}</dt>
+                          <dd className="text-right font-semibold">{String(row.value)}</dd>
+                        </div>
+                      ))}
+                  </dl>
+                  <Link href={categoryPath} className="button-main mt-6 inline-flex rounded-full px-6 py-3">
+                    Ver productos relacionados
+                  </Link>
+                </div>
+              </div>
             ) : (
               <div className="mt-6 grid gap-4">
-                {attributeRows.length > 0 ? (
-                  attributeRows.map((item) => (
+                {specificationRows.length > 0 ? (
+                  specificationRows.map((item) => (
                     <div
                       key={`spec-${item.key}`}
                       className="grid grid-cols-1 gap-1 rounded-xl border border-line bg-white p-4 text-left sm:grid-cols-[minmax(140px,220px)_1fr] sm:items-start sm:gap-4"

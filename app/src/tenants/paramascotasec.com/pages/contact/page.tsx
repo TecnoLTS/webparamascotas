@@ -302,7 +302,7 @@ export default function ContactPage() {
           {/* ENLACES RÁPIDOS INFERIORES */}
           <div className="mt-8 grid gap-5 md:grid-cols-3">
             <Link
-              href="/shop/breadcrumb1"
+              href="/tienda"
               className="rounded-[28px] border border-[#d9e7ee] bg-white px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] transition hover:border-[#0a7d99]"
             >
               <Package size={28} weight="duotone" className="text-[#0a7d99] mb-4" />

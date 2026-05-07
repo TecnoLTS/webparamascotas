@@ -8,7 +8,7 @@ const Banner = () => {
             <div className="banner-block">
                 <div className="container md:py-10 py-5">
                     <div className="list-banner grid lg:grid-cols-3 md:grid-cols-2 gap-[20px]">
-                        <Link href={'/shop/breadcrumb1'} className="banner-item relative block rounded-[20px] overflow-hidden duration-500">
+                        <Link href={'/tienda'} className="banner-item relative block rounded-[20px] overflow-hidden duration-500">
                             <div className="banner-img w-full h-full">
                                 <Image
                                     src={'/images/banner/27.webp'}
@@ -25,7 +25,7 @@ const Banner = () => {
                                 <div className="button-main mt-5">Compra ahora</div>
                             </div>
                         </Link>
-                        <Link href={'/shop/breadcrumb1'} className="banner-item relative block rounded-[20px] overflow-hidden duration-500">
+                        <Link href={'/tienda/accesorios'} className="banner-item relative block rounded-[20px] overflow-hidden duration-500">
                             <div className="banner-img w-full h-full">
                                 <Image
                                     src={'/images/banner/28.webp'}
@@ -42,7 +42,7 @@ const Banner = () => {
                                 <div className="button-main mt-5">Compra ahora</div>
                             </div>
                         </Link>
-                        <Link href={'/shop/breadcrumb1'} className="banner-item relative block rounded-[20px] overflow-hidden duration-500 max-lg:hidden">
+                        <Link href={'/tienda/alimento'} className="banner-item relative block rounded-[20px] overflow-hidden duration-500 max-lg:hidden">
                             <div className="banner-img w-full h-full">
                                 <Image
                                     src={'/images/banner/29.webp'}
