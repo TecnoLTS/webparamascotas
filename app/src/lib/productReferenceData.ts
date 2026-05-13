@@ -39,8 +39,23 @@ export type ProductBrandReference = {
   logoUrl: string
 }
 
+export type ProductCategoryFeaturedImages = {
+  mobilePrimary: string
+  mobileSecondary: string
+  desktopPrimary: string
+  desktopSecondary: string
+}
+
+export type ProductCategoryImageReference = {
+  name: string
+  topImageUrl: string
+  featuredImages: ProductCategoryFeaturedImages
+  showInImageSection: boolean
+}
+
 export type ProductReferenceData = {
   categories: string[]
+  categoryImages: ProductCategoryImageReference[]
   brands: ProductBrandReference[]
   suppliers: ProductSupplierReference[]
   sizes: string[]
@@ -145,6 +160,7 @@ export const createProductSupplierReferenceId = (
 
 export const createEmptyProductReferenceData = (): ProductReferenceData => ({
   categories: [],
+  categoryImages: [],
   brands: [],
   suppliers: [],
   sizes: [],
@@ -263,6 +279,69 @@ export const normalizeProductBrandRecords = (input: unknown): ProductBrandRefere
   return normalized.sort((left, right) => left.name.localeCompare(right.name, 'es-EC', { sensitivity: 'base' }))
 }
 
+const normalizeAssetUrl = (value: unknown) => collapseWhitespace(typeof value === 'string' ? value : '')
+
+export const normalizeProductCategoryImageRecord = (input: unknown): ProductCategoryImageReference | null => {
+  const source =
+    input && typeof input === 'object' && !Array.isArray(input)
+      ? (input as Record<string, unknown>)
+      : null
+
+  if (!source) return null
+
+  const name = collapseWhitespace(
+    typeof source.name === 'string'
+      ? source.name
+      : typeof source.label === 'string'
+        ? source.label
+        : typeof source.category === 'string'
+          ? source.category
+          : '',
+  )
+  if (!name) return null
+
+  const featuredSource =
+    source.featuredImages && typeof source.featuredImages === 'object' && !Array.isArray(source.featuredImages)
+      ? source.featuredImages as Record<string, unknown>
+      : {}
+
+  const topImageUrl = normalizeAssetUrl(source.topImageUrl)
+    || normalizeAssetUrl(source.imageUrl)
+    || normalizeAssetUrl(source.image)
+
+  return {
+  name,
+  topImageUrl,
+  featuredImages: {
+    mobilePrimary: normalizeAssetUrl(featuredSource.mobilePrimary),
+    mobileSecondary: normalizeAssetUrl(featuredSource.mobileSecondary),
+    desktopPrimary: normalizeAssetUrl(featuredSource.desktopPrimary),
+    desktopSecondary: normalizeAssetUrl(featuredSource.desktopSecondary),
+  },
+  showInImageSection: source.showInImageSection !== false,
+}
+}
+
+export const normalizeProductCategoryImageRecords = (input: unknown): ProductCategoryImageReference[] => {
+  if (!Array.isArray(input)) return []
+
+  const seenNames = new Set<string>()
+  const normalized: ProductCategoryImageReference[] = []
+
+  input.forEach((item) => {
+    const reference = normalizeProductCategoryImageRecord(item)
+    if (!reference) return
+
+    const nameKey = normalizeComparable(reference.name)
+    if (seenNames.has(nameKey)) return
+
+    seenNames.add(nameKey)
+    normalized.push(reference)
+  })
+
+  return normalized
+}
+
 export const normalizeProductSupplierRecord = (
   input: unknown,
   fallbackId = '',
@@ -357,7 +436,9 @@ export const normalizeProductSupplierRecords = (input: unknown): ProductSupplier
 
 export const normalizeProductReferenceData = (input?: Partial<Record<ProductReferenceKey, unknown>> | null): ProductReferenceData => {
   const defaults = createEmptyProductReferenceData()
-  const source = input || {}
+  const source = (input || {}) as Partial<Record<ProductReferenceKey, unknown>> & {
+    categoryImages?: unknown
+  }
 
   PRODUCT_REFERENCE_KEYS.forEach((key) => {
     if (key === 'brands') {
@@ -372,6 +453,7 @@ export const normalizeProductReferenceData = (input?: Partial<Record<ProductRefe
 
     defaults[key] = normalizeReferenceList(source[key]) as never
   })
+  defaults.categoryImages = normalizeProductCategoryImageRecords(source.categoryImages)
 
   return defaults
 }

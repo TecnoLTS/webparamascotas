@@ -248,14 +248,47 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
             return categoriesSections
         }
 
-        return categoriesSections
+        const configuredCategoryIds = new Set(
+            categoriesSections.flatMap((section) => section.links.map((link) => link.id.toLowerCase()))
+        )
+        const dynamicCategoryLinks = availableCategoryIds
+            .map((categoryId) => String(categoryId).trim())
+            .filter(Boolean)
+            .filter((categoryId) => {
+                const normalizedId = categoryId.toLowerCase()
+                return (
+                    !configuredCategoryIds.has(normalizedId) &&
+                    !['todos', 'todas', 'perros', 'gatos'].includes(normalizedId)
+                )
+            })
+            .map((id) => ({ id }))
+
+        const filteredSections = categoriesSections
             .map((section) => ({
                 ...section,
                 links: section.links.filter((link) =>
-                    link.id === 'todos' || normalizedAvailableCategoryIds.has(link.id.toLowerCase())
+                    normalizedAvailableCategoryIds.has(link.id.toLowerCase())
                 ),
             }))
             .filter((section) => section.links.length > 0)
+
+        if (dynamicCategoryLinks.length === 0) {
+            return filteredSections
+        }
+
+        const categorySectionIndex = filteredSections.findIndex((section) =>
+            section.title.toLowerCase().includes('categor')
+        )
+
+        if (categorySectionIndex === -1) {
+            return [...filteredSections, { title: 'Categorías', links: dynamicCategoryLinks }]
+        }
+
+        return filteredSections.map((section, index) =>
+            index === categorySectionIndex
+                ? { ...section, links: [...section.links, ...dynamicCategoryLinks] }
+                : section
+        )
     }, [availableCategoryIds, categoriesSections, normalizedAvailableCategoryIds])
 
     // Ya no se usa companyLinks en el render, pero lo dejo por si acaso lo necesitas luego
@@ -400,7 +433,27 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
 
     const categoryBanner = site.menu.banner
 
-    const departmentLinks = site.menu.departmentLinks ?? []
+    const departmentLinks = useMemo(() => {
+        if (!availableCategoryIds || availableCategoryIds.length === 0) {
+            return site.menu.departmentLinks ?? []
+        }
+
+        const seen = new Set<string>()
+        return availableCategoryIds
+            .map((categoryId) => String(categoryId).trim())
+            .filter(Boolean)
+            .filter((categoryId) => !['perros', 'gatos'].includes(categoryId.toLowerCase()))
+            .filter((categoryId) => {
+                const normalized = categoryId.toLowerCase()
+                if (seen.has(normalized)) return false
+                seen.add(normalized)
+                return true
+            })
+            .map((categoryId) => ({
+                label: getCategoryLabel(categoryId),
+                href: getCategoryUrl(categoryId),
+            }))
+    }, [availableCategoryIds, site.menu.departmentLinks])
     const HomeMenuIcon = mainMenuItems[0].icon
     const ShopMenuIcon = mainMenuItems[1].icon
     const AboutMenuIcon = mainMenuItems[2].icon

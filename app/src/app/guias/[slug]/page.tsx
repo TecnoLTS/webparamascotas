@@ -10,6 +10,7 @@ import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { generateBreadcrumbJsonLd } from '@/lib/seo'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import type { ProductType } from '@/type/ProductType'
+import { getPublicProductCategories } from '@/lib/api/settings'
 
 type Params = {
   slug: string
@@ -62,15 +63,21 @@ export default async function SeoGuidePage({ params }: Props) {
   }
 
   let products: ProductType[] = []
+  let publicCategories: string[] = []
   try {
-    products = await fetchProducts({ fresh: true })
+    const [productsResult, categoriesResult] = await Promise.allSettled([
+      fetchProducts({ fresh: true }),
+      getPublicProductCategories(),
+    ])
+    products = productsResult.status === 'fulfilled' ? productsResult.value : []
+    publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
   } catch (error) {
     console.error('No se pudieron cargar productos para guia SEO:', error)
   }
 
   const baseUrl = getCanonicalSiteUrl()
-  const availableCategoryIds = buildCatalogCategoryCards(products).map((category) => category.id)
-  const footerCategoryIds = availableCategoryIds.filter((categoryId) => categoryId.toLowerCase() !== 'todos')
+  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const footerCategoryIds = availableCategoryIds
   const breadcrumbJsonLd = generateBreadcrumbJsonLd([
     { name: 'Inicio', url: baseUrl },
     { name: 'Guias', url: `${baseUrl}/guias/${guide.slug}` },

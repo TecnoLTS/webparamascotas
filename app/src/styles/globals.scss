@@ -43,6 +43,11 @@ body {
   scroll-behavior: smooth;
 }
 
+.trending-block.style-six .trending-item:hover .category-card-image,
+.collection-block.cosmetic .collection-item:hover .category-card-image {
+  transform: none !important;
+}
+
 #app-root {
   width: 100%;
   max-width: 100%;
@@ -892,14 +897,6 @@ input[type="file"] {
 
   .collection-block.cosmetic .right {
     gap: 18px !important;
-  }
-
-  .collection-block.cosmetic .left .collection-item .bg-img {
-    aspect-ratio: 630 / 500 !important;
-  }
-
-  .collection-block.cosmetic .right .collection-item .bg-img {
-    aspect-ratio: 630 / 235 !important;
   }
 
   .collection-block.cosmetic .collection-item .collection-name {

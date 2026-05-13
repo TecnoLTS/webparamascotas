@@ -15,9 +15,10 @@ type Props = {
   products: ProductType[]
   error: string | null
   initialQuery: string | null
+  publicCategories: string[]
 }
 
-const SearchResultClient = ({ products, error, initialQuery }: Props) => {
+const SearchResultClient = ({ products, error, initialQuery, publicCategories }: Props) => {
   const [searchKeyword, setSearchKeyword] = useState<string>(initialQuery ?? '')
   const [currentPage, setCurrentPage] = useState(0)
   const productsPerPage = 8
@@ -28,11 +29,11 @@ const SearchResultClient = ({ products, error, initialQuery }: Props) => {
   const activeQuery = sanitizeProductSearchQuery(deferredSearchKeyword)
   const productSearchIndex = useMemo(() => buildProductSearchIndex(products), [products])
   const availableCategoryIds = useMemo(
-    () => buildCatalogCategoryCards(products).map((category) => category.id),
-    [products]
+    () => buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id),
+    [products, publicCategories]
   )
   const footerCategoryIds = useMemo(
-    () => availableCategoryIds.filter((categoryId) => categoryId.toLowerCase() !== 'todos'),
+    () => availableCategoryIds,
     [availableCategoryIds]
   )
 

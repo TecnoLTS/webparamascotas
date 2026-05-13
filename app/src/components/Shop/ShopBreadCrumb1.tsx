@@ -9,11 +9,10 @@ import Product from '../Product/Product';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css'
 import HandlePagination from '../Other/HandlePagination';
-import { getCategoryFilter, getCategoryUrl, getCategoryLabel, getShopBrowseCategoryIds, matchesPetCategoryFilter } from '@/data/petCategoryCards';
+import { getCategoryFilter, getCategoryUrl, getCategoryLabel, matchesPetCategoryFilter } from '@/data/petCategoryCards';
 import { useSite } from '@/context/SiteContext';
-import { getProductDiscountPercent, isProductOnSale } from '@/lib/catalog';
+import { buildCatalogCategoryCards, getProductDiscountPercent, isProductOnSale } from '@/lib/catalog';
 import { buildProductSearchIndex, filterProductsBySearch, matchesProductSearch, sanitizeProductSearchQuery } from '@/lib/productSearch';
-import { CATALOG_PRIMARY_FILTER_IDS, type CatalogPrimaryFilterId } from '@/lib/catalogBrowse'
 import {
     getProductColorValues,
     getProductMaterialValues,
@@ -28,18 +27,27 @@ interface Props {
     gender: string | null
     category: string | null
     searchQuery?: string | null
+    categoryIds?: string[]
 }
 
 const sortLabels = (values: Iterable<string>) =>
     Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, 'es'))
 
-const getPrimaryFilterLabel = (filterId: CatalogPrimaryFilterId) => {
+const getPrimaryFilterLabel = (filterId: string) => {
     if (filterId === 'todas') return 'Todas'
     if (filterId === 'ofertas') return 'Ofertas'
     return getCategoryLabel(filterId)
 }
 
-const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gender, category, searchQuery }) => {
+const normalizeCategoryOptionId = (categoryId: string) => {
+    const normalized = categoryId.trim().toLowerCase()
+    if (normalized === 'todas') return 'todos'
+    if (normalized === 'ofertas') return 'descuentos'
+    if (['perros', 'gatos'].includes(normalized)) return ''
+    return normalized
+}
+
+const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gender, category, searchQuery, categoryIds }) => {
     useSite()
     const pathname = usePathname()
     const router = useRouter()
@@ -140,6 +148,17 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
         ]))
     ), [data])
 
+    const categoryBrowseIds = useMemo(() => {
+        const sourceCategoryIds = categoryIds?.length
+            ? categoryIds
+            : buildCatalogCategoryCards(data).map((categoryCard) => categoryCard.id)
+        const normalizedIds = sourceCategoryIds
+            .map(normalizeCategoryOptionId)
+            .filter(Boolean)
+
+        return Array.from(new Set(['todos', ...normalizedIds]))
+    }, [categoryIds, data])
+
     const getIndexedAttributes = useCallback((product: ProductType) => (
         productAttributeIndex.get(product.id) ?? {
             sizes: [],
@@ -151,7 +170,7 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
     ), [productAttributeIndex])
 
     const categoryCountsMap = useMemo(() => {
-        const preferredCategoryIds = getShopBrowseCategoryIds().filter((categoryId) => categoryId !== 'todos')
+        const preferredCategoryIds = categoryBrowseIds.filter((categoryId) => categoryId !== 'todos')
         const initialCounts = new Map<string, number>(preferredCategoryIds.map((categoryId) => [categoryId, 0]))
         const searchScopedProducts = effectiveSearchQuery
             ? data.filter((product) => matchesProductSearch(productSearchIndex.get(product.id) ?? '', effectiveSearchQuery))
@@ -175,32 +194,28 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
         })
 
         return initialCounts
-    }, [data, effectiveSearchQuery, getIndexedAttributes, productSearchIndex])
+    }, [categoryBrowseIds, data, effectiveSearchQuery, productSearchIndex])
     const catalogPrimaryCounts = useMemo(() => {
-        const counts = new Map<CatalogPrimaryFilterId, number>()
+        const counts = new Map<string, number>()
         const searchScopedProducts = effectiveSearchQuery
             ? data.filter((product) => matchesProductSearch(productSearchIndex.get(product.id) ?? '', effectiveSearchQuery))
             : data
 
-        CATALOG_PRIMARY_FILTER_IDS.forEach((filterId) => {
-            if (filterId === 'todas') {
-                counts.set(filterId, searchScopedProducts.length)
-                return
-            }
+        const primaryFilterIds = categoryBrowseIds
 
-            if (filterId === 'ofertas') {
-                counts.set(filterId, searchScopedProducts.filter((product) => getIndexedAttributes(product).onSale).length)
-                return
-            }
-
+        primaryFilterIds.forEach((filterId) => {
             counts.set(
                 filterId,
-                searchScopedProducts.filter((product) => matchesPetCategoryFilter(product, getCategoryFilter(filterId))).length
+                filterId === 'todos'
+                    ? searchScopedProducts.length
+                    : filterId === 'descuentos'
+                        ? searchScopedProducts.filter((product) => getIndexedAttributes(product).onSale).length
+                    : searchScopedProducts.filter((product) => matchesPetCategoryFilter(product, getCategoryFilter(filterId))).length
             )
         })
 
         return counts
-    }, [data, effectiveSearchQuery, getIndexedAttributes, productSearchIndex])
+    }, [categoryBrowseIds, data, effectiveSearchQuery, getIndexedAttributes, productSearchIndex])
 
     const categoryCounts = useCallback((categoryId: string) => (
         categoryId === 'todos'
@@ -209,15 +224,10 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
     ), [categoryCountsMap, data.length])
 
     const categoryOptions = useMemo(() => {
-        const preferred = getShopBrowseCategoryIds()
-        return preferred.filter((categoryId) => {
-            if (categoryId === 'todos') {
-                return data.length > 0
-            }
-
-            return categoryCounts(categoryId) > 0
+        return categoryBrowseIds.filter((categoryId) => {
+            return categoryCounts(categoryId) > 0 || normalizedCategory === categoryId
         })
-    }, [categoryCounts, data])
+    }, [categoryBrowseIds, categoryCounts, data.length, normalizedCategory])
     const buildCategoryHref = useCallback((categoryId: string) => {
         const baseUrl = getCategoryUrl(categoryId)
 
@@ -231,7 +241,7 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
         url.searchParams.set('query', sanitizedQuery)
         return `${url.pathname}${url.search}`
     }, [searchInput])
-    const buildPrimaryFilterHref = useCallback((filterId: CatalogPrimaryFilterId) => {
+    const buildPrimaryFilterHref = useCallback((filterId: string) => {
         if (filterId === 'todas') return buildCategoryHref('todos')
         if (filterId === 'ofertas') return buildCategoryHref('descuentos')
         return buildCategoryHref(filterId)
@@ -421,11 +431,7 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
     }, [data, effectiveSearchQuery, matchesProduct, productSearchIndex, sortOption])
 
     const totalProducts = filteredData.length
-    const activePrimaryFilter: CatalogPrimaryFilterId = isDiscountCategory
-        ? 'ofertas'
-        : CATALOG_PRIMARY_FILTER_IDS.includes(normalizedCategory as CatalogPrimaryFilterId)
-            ? normalizedCategory as CatalogPrimaryFilterId
-            : 'todas'
+    const activePrimaryFilter = isDiscountCategory ? 'descuentos' : normalizedCategory ?? 'todos'
     const selectedType = type
     const selectedSize = size
     const selectedColor = color
@@ -638,9 +644,9 @@ const ShopBreadCrumb1: React.FC<Props> = ({ data, productPerPage, dataType, gend
                                             Categorías principales
                                         </div>
                                         <div className="flex flex-wrap justify-center gap-2.5 lg:justify-start">
-                                            {CATALOG_PRIMARY_FILTER_IDS.filter((filterId) => {
+                                            {Array.from(catalogPrimaryCounts.keys()).filter((filterId) => {
                                                 const count = catalogPrimaryCounts.get(filterId) ?? 0
-                                                return filterId === 'todas' || count > 0
+                                                return count > 0 || activePrimaryFilter === filterId
                                             }).map((filterId) => {
                                                 const isActive = activePrimaryFilter === filterId
                                                 const count = catalogPrimaryCounts.get(filterId) ?? 0

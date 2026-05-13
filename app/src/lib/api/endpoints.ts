@@ -29,6 +29,8 @@ export const apiEndpoints = {
     storeStatus: '/api/admin/settings/store-status',
     publicStoreStatus: '/api/settings/store-status',
     publicBrandLogos: '/api/settings/brand-logos',
+    publicProductCategories: '/api/settings/product-categories',
+    publicProductCategoryReferences: '/api/settings/product-category-references',
   },
   reports: {
     recentOrders: '/api/reports/recent-orders',

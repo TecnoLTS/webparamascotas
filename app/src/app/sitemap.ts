@@ -11,6 +11,7 @@ import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import { SEO_GUIDES } from '@/data/seoGuides'
 import { SEO_SERVICE_PAGES } from '@/data/seoServices'
 import type { ProductType } from '@/type/ProductType'
+import { getPublicProductCategories } from '@/lib/api/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '',
     '/tienda',
     '/servicios',
+    '/guias',
     '/pages/about',
     '/pages/contact',
     '/pages/faqs',
@@ -93,7 +95,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }))
 
   try {
-    const products = (await fetchProducts({ fresh: true })).filter(isIndexableProduct)
+    const [productsResult, categoriesResult] = await Promise.allSettled([
+      fetchProducts({ fresh: true }),
+      getPublicProductCategories(),
+    ])
+    const products = (productsResult.status === 'fulfilled' ? productsResult.value : []).filter(isIndexableProduct)
+    const publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
     const productRoutes: MetadataRoute.Sitemap = products.map((product) => ({
       url: `${baseUrl}${getProductSeoPath(product)}`,
       lastModified: getProductLastModified(product),
@@ -108,7 +115,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.74,
     }))
 
-    const dynamicCatalogRoutes: MetadataRoute.Sitemap = getDynamicCatalogPages(products).map((page) => ({
+    const dynamicCatalogRoutes: MetadataRoute.Sitemap = getDynamicCatalogPages(products, publicCategories).map((page) => ({
       url: `${baseUrl}${page.path}`,
       lastModified: generatedAt,
       changeFrequency: 'daily',

@@ -4,8 +4,10 @@ import {
     getProductOriginalPrice,
     getProductReviewCount,
     getProductSku,
+    getProductVariantLabel,
     getProductVariants,
 } from '@/lib/catalog'
+import { getVariantColorValue, getVariantSizeValue } from '@/lib/catalogAttributes'
 import { versionLocalImagePath } from '@/lib/staticAsset'
 import type { SiteConfig } from '@/config/siteConfig'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
@@ -17,6 +19,159 @@ const toAbsoluteUrl = (baseUrl: string, path?: string | null) => {
     const normalizedBase = baseUrl.replace(/\/$/, '')
     const normalizedPath = path.startsWith('/') ? path : `/${path}`
     return `${normalizedBase}${normalizedPath}`
+}
+
+const getMerchantReturnPolicyId = (siteUrl: string) => `${siteUrl}/#merchant-return-policy`
+
+const buildMerchantReturnPolicy = (siteUrl: string) => ({
+    '@type': 'MerchantReturnPolicy',
+    '@id': getMerchantReturnPolicyId(siteUrl),
+    applicableCountry: 'EC',
+    returnPolicyCountry: 'EC',
+    returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+    merchantReturnDays: 5,
+    returnFees: 'https://schema.org/ReturnFeesCustomerResponsibility',
+    returnMethod: 'https://schema.org/ReturnInStore',
+    merchantReturnLink: `${siteUrl}/pages/terminos-y-condiciones#cambios`,
+})
+
+const buildOfferShippingDetails = () => ({
+    '@type': 'OfferShippingDetails',
+    shippingDestination: {
+        '@type': 'DefinedRegion',
+        addressCountry: 'EC',
+    },
+    shippingRate: {
+        '@type': 'MonetaryAmount',
+        value: 5,
+        currency: 'USD',
+    },
+    deliveryTime: {
+        '@type': 'ShippingDeliveryTime',
+        handlingTime: {
+            '@type': 'QuantitativeValue',
+            minValue: 0,
+            maxValue: 2,
+            unitCode: 'DAY',
+        },
+        transitTime: {
+            '@type': 'QuantitativeValue',
+            minValue: 1,
+            maxValue: 5,
+            unitCode: 'DAY',
+        },
+    },
+})
+
+const getProductImages = (product: ProductType, siteUrl: string) =>
+    [
+        ...(product.images ?? []),
+        ...(product.thumbImage ?? []),
+    ].map((image) => toAbsoluteUrl(siteUrl, image)).filter(Boolean)
+
+const getProductVariantId = (product: ProductType) =>
+    product.id || product.internalId || product.slug
+
+const getProductVariantUrl = (productUrl: string, product: ProductType) => {
+    const variantId = getProductVariantId(product)
+    return variantId ? `${productUrl}?variant=${encodeURIComponent(variantId)}` : productUrl
+}
+
+const buildSeller = (siteUrl: string) => ({
+    '@type': 'Organization',
+    '@id': `${siteUrl}/#organization`,
+    name: 'ParaMascotasEC',
+    url: siteUrl,
+})
+
+const buildOfferPolicies = (siteUrl: string) => ({
+    shippingDetails: buildOfferShippingDetails(),
+    hasMerchantReturnPolicy: buildMerchantReturnPolicy(siteUrl),
+})
+
+const buildProductOffer = ({
+    product,
+    productUrl,
+    siteUrl,
+    variantUrl = productUrl,
+}: {
+    product: ProductType
+    productUrl: string
+    siteUrl: string
+    variantUrl?: string
+}) => ({
+    '@type': 'Offer',
+    url: variantUrl,
+    priceCurrency: 'USD',
+    price: getProductCurrentPrice(product),
+    availability: Number(product.quantity ?? 0) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+    itemCondition: 'https://schema.org/NewCondition',
+    priceValidUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString().slice(0, 10),
+    seller: buildSeller(siteUrl),
+    ...buildOfferPolicies(siteUrl),
+})
+
+const buildVariantProductJsonLd = ({
+    product,
+    productUrl,
+    siteUrl,
+    brandName,
+    productGroupId,
+    productGroupIdentifier,
+}: {
+    product: ProductType
+    productUrl: string
+    siteUrl: string
+    brandName: string
+    productGroupId: string
+    productGroupIdentifier: string
+}) => {
+    const sku = getProductSku(product) || product.internalId || product.id
+    const variantUrl = getProductVariantUrl(productUrl, product)
+    const size = getVariantSizeValue(product)
+    const color = getVariantColorValue(product)
+
+    return {
+        '@type': 'Product',
+        '@id': `${variantUrl}#product`,
+        name: product.name,
+        sku,
+        mpn: sku,
+        image: getProductImages(product, siteUrl),
+        description: product.description,
+        url: variantUrl,
+        size: size || undefined,
+        color: color || undefined,
+        brand: {
+            '@type': 'Brand',
+            name: product.brand || brandName,
+        },
+        isVariantOf: {
+            '@type': 'ProductGroup',
+            '@id': productGroupId,
+            productGroupID: productGroupIdentifier,
+        },
+        offers: buildProductOffer({
+            product,
+            productUrl,
+            siteUrl,
+            variantUrl,
+        }),
+    }
+}
+
+const getProductGroupId = (product: ProductType) =>
+    product.variantGroupKey || product.internalId || product.id || product.slug
+
+const getVariantAxes = (variants: ProductType[]) => {
+    const hasSizes = new Set(variants.map((variant) => getVariantSizeValue(variant)).filter(Boolean)).size > 1
+    const hasColors = new Set(variants.map((variant) => getVariantColorValue(variant)).filter(Boolean)).size > 1
+    const hasLabels = new Set(variants.map((variant) => getProductVariantLabel(variant)).filter(Boolean)).size > 1
+    return [
+        hasSizes ? 'https://schema.org/size' : null,
+        hasColors ? 'https://schema.org/color' : null,
+        !hasSizes && !hasColors && hasLabels ? 'https://schema.org/model' : null,
+    ].filter(Boolean)
 }
 
 export function generateProductJsonLd(
@@ -34,13 +189,31 @@ export function generateProductJsonLd(
     const highPrice = Math.max(...variants.map((variant) => Number(variant.price ?? 0)).filter((value) => value > 0), price)
     const lowPrice = Math.min(...variants.map((variant) => Number(variant.price ?? 0)).filter((value) => value > 0), price)
     const sku = getProductSku(product) || product.internalId || product.id
-    const imageList = [
-        ...(product.images ?? []),
-        ...(product.thumbImage ?? []),
-    ].map((image) => toAbsoluteUrl(siteUrl, image)).filter(Boolean)
-
-    return {
-        '@context': 'https://schema.org',
+    const imageList = getProductImages(product, siteUrl)
+    const productGroupId = `${productUrl}#product-group`
+    const productGroupIdentifier = getProductGroupId(product)
+    const aggregateOffer = {
+        '@type': 'AggregateOffer',
+        url: productUrl,
+        priceCurrency: 'USD',
+        lowPrice,
+        highPrice,
+        offerCount: variants.length,
+        availability: product.quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        itemCondition: 'https://schema.org/NewCondition',
+        seller: buildSeller(siteUrl),
+        ...buildOfferPolicies(siteUrl),
+    }
+    const additionalProperty = [
+        product.gender ? { '@type': 'PropertyValue', name: 'Mascota', value: product.gender === 'cat' ? 'Gato' : product.gender === 'dog' ? 'Perro' : product.gender } : undefined,
+        originalPrice > price && originalPrice > 0 ? { '@type': 'PropertyValue', name: 'Precio anterior', value: originalPrice.toFixed(2) } : undefined,
+    ].filter(Boolean)
+    const aggregateRating = product.rate > 0 && reviewCount > 0 ? {
+        '@type': 'AggregateRating',
+        ratingValue: product.rate,
+        reviewCount,
+    } : undefined
+    const primaryProduct = {
         '@type': 'Product',
         '@id': `${productUrl}#product`,
         name: product.name,
@@ -54,33 +227,57 @@ export function generateProductJsonLd(
             '@type': 'Brand',
             name: product.brand || brandName,
         },
-        offers: variants.length > 1 ? {
-            '@type': 'AggregateOffer',
-            url: productUrl,
-            priceCurrency: 'USD',
-            lowPrice,
-            highPrice,
-            offerCount: variants.length,
-            availability: product.quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-            itemCondition: 'https://schema.org/NewCondition',
-        } : {
-            '@type': 'Offer',
-            url: productUrl,
-            priceCurrency: 'USD',
-            price,
-            availability: product.quantity > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-            itemCondition: 'https://schema.org/NewCondition',
-            priceValidUntil: new Date(Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString().slice(0, 10),
-        },
-        additionalProperty: [
-            product.gender ? { '@type': 'PropertyValue', name: 'Mascota', value: product.gender === 'cat' ? 'Gato' : product.gender === 'dog' ? 'Perro' : product.gender } : undefined,
-            originalPrice > price && originalPrice > 0 ? { '@type': 'PropertyValue', name: 'Precio anterior', value: originalPrice.toFixed(2) } : undefined,
-        ].filter(Boolean),
-        aggregateRating: product.rate > 0 && reviewCount > 0 ? {
-            '@type': 'AggregateRating',
-            ratingValue: product.rate,
-            reviewCount,
-        } : undefined,
+        offers: variants.length > 1
+            ? aggregateOffer
+            : buildProductOffer({
+                product,
+                productUrl,
+                siteUrl,
+            }),
+        additionalProperty,
+        aggregateRating,
+    }
+
+    if (variants.length > 1) {
+        return {
+            '@context': 'https://schema.org',
+            '@graph': [
+                primaryProduct,
+                {
+                    '@type': 'ProductGroup',
+                    '@id': productGroupId,
+                    name: product.name,
+                    productGroupID: productGroupIdentifier,
+                    variesBy: getVariantAxes(variants),
+                    sku,
+                    mpn: sku,
+                    category: product.category,
+                    image: imageList,
+                    description: product.description,
+                    url: productUrl,
+                    brand: {
+                        '@type': 'Brand',
+                        name: product.brand || brandName,
+                    },
+                    offers: aggregateOffer,
+                    hasVariant: variants.map((variant) => buildVariantProductJsonLd({
+                        product: variant,
+                        productUrl,
+                        siteUrl,
+                        brandName,
+                        productGroupId,
+                        productGroupIdentifier,
+                    })),
+                    additionalProperty,
+                    aggregateRating,
+                },
+            ],
+        }
+    }
+
+    return {
+        '@context': 'https://schema.org',
+        ...primaryProduct,
     }
 }
 
@@ -94,6 +291,7 @@ export function generateOrganizationJsonLd(options?: { baseUrl?: string; name?: 
         name,
         url: siteUrl,
         logo: options?.logo ?? `${siteUrl}${versionLocalImagePath('/images/brand/LogoVerde150.svg')}`,
+        hasMerchantReturnPolicy: buildMerchantReturnPolicy(siteUrl),
         sameAs: options?.sameAs ?? [
             'https://www.facebook.com/paramascotasec',
             'https://www.instagram.com/paramascotasec',
@@ -140,6 +338,7 @@ export function generatePetStoreJsonLd(site: SiteConfig) {
         logo,
         image: logo,
         description: site.description,
+        hasMerchantReturnPolicy: buildMerchantReturnPolicy(siteUrl),
         areaServed: {
             '@type': 'Country',
             name: 'Ecuador',

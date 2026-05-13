@@ -4,11 +4,14 @@ import CatalogSeoPage from '../CatalogSeoPage'
 import { fetchProducts } from '@/lib/products'
 import {
   buildDynamicCatalogPageFromProducts,
+  getDirectCatalogPageBySlug,
   getCatalogPageBySlug,
   isCatalogAliasSlug,
+  slugifySeo,
   type SeoCatalogPage,
 } from '@/lib/seoUrls'
 import { toCanonicalUrl } from '@/lib/publicUrl'
+import { getPublicProductCategories } from '@/lib/api/settings'
 
 type Params = {
   slug: string
@@ -26,12 +29,17 @@ type Props = {
 export const dynamic = 'force-dynamic'
 
 const resolveCatalogPage = async (slug: string): Promise<SeoCatalogPage | null> => {
-  const staticPage = getCatalogPageBySlug(slug)
-  if (staticPage) return staticPage
+  const directStaticPage = getDirectCatalogPageBySlug(slug)
+  if (directStaticPage) return directStaticPage
 
   try {
-    const products = await fetchProducts({ fresh: true })
-    return buildDynamicCatalogPageFromProducts(slug, products)
+    const [productsResult, categoriesResult] = await Promise.allSettled([
+      fetchProducts({ fresh: true }),
+      getPublicProductCategories(),
+    ])
+    const products = productsResult.status === 'fulfilled' ? productsResult.value : []
+    const publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
+    return buildDynamicCatalogPageFromProducts(slug, products, publicCategories) ?? getCatalogPageBySlug(slug)
   } catch (error) {
     console.error('No se pudo resolver categoria SEO dinamica:', error)
     return null
@@ -80,7 +88,7 @@ export default async function CatalogSlugPage({ params, searchParams }: Props) {
     notFound()
   }
 
-  if (isCatalogAliasSlug(slug)) {
+  if (isCatalogAliasSlug(slug) && page.slug !== slugifySeo(slug)) {
     permanentRedirect(page.path)
   }
 

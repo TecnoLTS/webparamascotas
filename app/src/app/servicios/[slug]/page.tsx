@@ -11,6 +11,7 @@ import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import { generateBreadcrumbJsonLd, generateFaqJsonLd } from '@/lib/seo'
+import { getPublicProductCategories } from '@/lib/api/settings'
 import type { ProductType } from '@/type/ProductType'
 
 type Params = {
@@ -65,15 +66,27 @@ export default async function SeoServicePage({ params }: Props) {
   const nonce = requestHeaders.get('x-nonce') || undefined
   const baseUrl = getCanonicalSiteUrl()
   let products: ProductType[] = []
+  let publicCategories: string[] = []
 
-  try {
-    products = orderProductsFoodFirst(await fetchProducts({ fresh: true }))
-  } catch (error) {
-    console.error('No se pudieron cargar productos para pagina de servicio SEO:', error)
+  const [productsResult, categoriesResult] = await Promise.allSettled([
+    fetchProducts({ fresh: true }),
+    getPublicProductCategories(),
+  ])
+
+  if (productsResult.status === 'fulfilled') {
+    products = orderProductsFoodFirst(productsResult.value)
+  } else {
+    console.error('No se pudieron cargar productos para pagina de servicio SEO:', productsResult.reason)
   }
 
-  const availableCategoryIds = buildCatalogCategoryCards(products).map((category) => category.id)
-  const footerCategoryIds = availableCategoryIds.filter((categoryId) => categoryId.toLowerCase() !== 'todos')
+  if (categoriesResult.status === 'fulfilled') {
+    publicCategories = categoriesResult.value
+  } else {
+    console.error('No se pudieron cargar categorias publicas para pagina de servicio SEO:', categoriesResult.reason)
+  }
+
+  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const footerCategoryIds = availableCategoryIds
   const serviceUrl = `${baseUrl}${page.path}`
   const serviceJsonLd = {
     '@context': 'https://schema.org',

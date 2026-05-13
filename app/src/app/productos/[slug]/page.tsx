@@ -6,7 +6,7 @@ import MenuOne from '@/components/Header/Menu/MenuPet'
 import Default from '@/components/Product/Detail/Default'
 import Footer from '@/components/Footer/Footer'
 import { loadProducts } from '@/lib/products.server'
-import { buildCatalogCategoryCards, getProductDetailRouteId } from '@/lib/catalog'
+import { buildCatalogCategoryCards, getProductDetailRouteId, getProductVariants } from '@/lib/catalog'
 import {
   findCatalogProductForSeoSlug,
   getProductSeoDescription,
@@ -19,16 +19,27 @@ import {
   generateProductJsonLd,
 } from '@/lib/seo'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
+import { getPublicProductCategories } from '@/lib/api/settings'
 
 type Params = {
   slug: string
 }
 
+type SearchParams = {
+  variant?: string | string[]
+}
+
 type Props = {
   params: Promise<Params>
+  searchParams?: Promise<SearchParams>
 }
 
 export const dynamic = 'force-dynamic'
+
+const getVariantParam = (value?: string | string[]) => {
+  const variant = Array.isArray(value) ? value[0] : value
+  return typeof variant === 'string' && variant.trim() ? variant.trim() : ''
+}
 
 export async function generateMetadata(
   { params }: Props,
@@ -73,11 +84,20 @@ export async function generateMetadata(
   }
 }
 
-export default async function SeoProductPage({ params }: Props) {
+export default async function SeoProductPage({ params, searchParams }: Props) {
   const requestHeaders = await headers()
   const nonce = requestHeaders.get('x-nonce') || undefined
   const { slug } = await params
-  const { products: productsWithSettings } = await loadProducts({ fresh: true })
+  const resolvedSearchParams = searchParams ? await searchParams : {}
+  const requestedVariant = getVariantParam(resolvedSearchParams.variant)
+  const [productsResult, categoriesResult] = await Promise.allSettled([
+    loadProducts({ fresh: true }),
+    getPublicProductCategories(),
+  ])
+  const { products: productsWithSettings } = productsResult.status === 'fulfilled'
+    ? productsResult.value
+    : { products: [] }
+  const publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
   const currentProduct = findCatalogProductForSeoSlug(productsWithSettings, slug)
 
   if (!currentProduct) {
@@ -86,13 +106,22 @@ export default async function SeoProductPage({ params }: Props) {
 
   const canonicalPath = getProductSeoPath(currentProduct)
   if (slug !== getProductSeoSlug(currentProduct)) {
-    permanentRedirect(canonicalPath)
+    permanentRedirect(requestedVariant ? `${canonicalPath}?variant=${encodeURIComponent(requestedVariant)}` : canonicalPath)
   }
 
   const baseUrl = getCanonicalSiteUrl()
-  const productId = getProductDetailRouteId(currentProduct)
-  const availableCategoryIds = buildCatalogCategoryCards(productsWithSettings).map((category) => category.id)
-  const footerCategoryIds = availableCategoryIds.filter((categoryId) => categoryId.toLowerCase() !== 'todos')
+  const selectedVariant = requestedVariant
+    ? getProductVariants(currentProduct).find((variant) =>
+      variant.id === requestedVariant ||
+      variant.internalId === requestedVariant ||
+      variant.slug === requestedVariant
+    )
+    : undefined
+  const productId = selectedVariant
+    ? getProductDetailRouteId(selectedVariant)
+    : getProductDetailRouteId(currentProduct)
+  const availableCategoryIds = buildCatalogCategoryCards(productsWithSettings, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const footerCategoryIds = availableCategoryIds
   const breadcrumbJsonLd = generateBreadcrumbJsonLd([
     { name: 'Inicio', url: baseUrl },
     { name: 'Tienda', url: `${baseUrl}/tienda` },

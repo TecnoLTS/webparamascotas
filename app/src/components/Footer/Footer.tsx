@@ -39,6 +39,13 @@ const YoutubeIcon = () => (
     </svg>
 )
 
+const footerCommerceLinks = [
+    { label: 'Productos para perros', href: '/tienda/perros' },
+    { label: 'Productos para gatos', href: '/tienda/gatos' },
+    { label: 'Alimento para perros', href: '/tienda/alimento-perros' },
+    { label: 'Alimento para gatos', href: '/tienda/alimento-gatos' },
+]
+
 const Footer = ({ categoryIds }: FooterProps) => {
     const site = useSite()
     const currentYear = 2026
@@ -48,8 +55,17 @@ const Footer = ({ categoryIds }: FooterProps) => {
             return site.footerCategoryLinks
         }
 
-        const available = new Set(categoryIds.map((categoryId) => String(categoryId).trim().toLowerCase()))
-        return site.footerCategoryLinks.filter((categoryId) => available.has(categoryId.toLowerCase()))
+        const seen = new Set<string>()
+        return categoryIds
+            .map((categoryId) => String(categoryId).trim())
+            .filter(Boolean)
+            .filter((categoryId) => !['perros', 'gatos'].includes(categoryId.toLowerCase()))
+            .filter((categoryId) => {
+                const normalized = categoryId.toLowerCase()
+                if (seen.has(normalized)) return false
+                seen.add(normalized)
+                return true
+            })
     }, [categoryIds, site.footerCategoryLinks])
     return (
         <div id="footer" className='footer'>
@@ -135,6 +151,7 @@ const Footer = ({ categoryIds }: FooterProps) => {
                                 <Link className='hover:text-green-600 duration-300' href={'/pages/about'}>Conócenos</Link>
                                 <Link className='hover:text-green-600 duration-300' href={'/pages/contact'}>Contáctanos</Link>
                                 <Link className='hover:text-green-600 duration-300' href={'/servicios'}>Servicios</Link>
+                                <Link className='hover:text-green-600 duration-300' href={'/guias'}>Guías de compra</Link>
                                 <Link className='hover:text-green-600 duration-300' href={'/pages/preguntas-frecuentes'}>Preguntas frecuentes</Link>
                             </div>
                         </div>
@@ -142,6 +159,15 @@ const Footer = ({ categoryIds }: FooterProps) => {
                         <div className="item min-w-0">
                             <div className="pb-5 text-[15px] font-bold uppercase tracking-[0.06em] text-heading">Categorías</div>
                             <div className="flex flex-col items-start gap-3 text-[14px] leading-[1.45]">
+                                {footerCommerceLinks.map((link) => (
+                                    <Link
+                                        key={link.href}
+                                        className='hover:text-green-600 duration-300'
+                                        href={link.href}
+                                    >
+                                        {link.label}
+                                    </Link>
+                                ))}
                                 {footerCategories.map((categoryId) => (
                                     <Link
                                         key={categoryId}

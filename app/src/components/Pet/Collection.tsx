@@ -11,6 +11,7 @@ interface CollectionProps {
 
 const Collection: React.FC<CollectionProps> = ({ categories }) => {
   const resolvedCategories = categories ?? getCategoryCards()
+  const shouldCenterDesktopTrack = resolvedCategories.length <= 5
   const router = useRouter()
   const mobileTrackRef = React.useRef<HTMLDivElement | null>(null)
   const dragStartXRef = React.useRef(0)
@@ -87,7 +88,7 @@ const Collection: React.FC<CollectionProps> = ({ categories }) => {
     const baseName = getCategoryImageBasePath(src)
     if (!baseName) return ''
 
-    return [160, 240, 320, 432]
+    return [240, 320, 432, 640, 768]
       .map((width) => {
         const optimizedSrc = versionLocalImagePath(
           `/images/collection/home-top/generated/${baseName}-${width}.webp`
@@ -107,17 +108,18 @@ const Collection: React.FC<CollectionProps> = ({ categories }) => {
         onClickCapture={preventDraggedClick}
         onClick={() => handleCategoryClick(category.id)}
       >
-        <div className="bg-img mx-auto w-full rounded-[18px] sm:rounded-[22px] lg:rounded-[24px] overflow-hidden relative aspect-[4/5] bg-[#f6f7f9] transition-transform duration-300 group-hover:scale-[1.03]">
+        <div className="bg-img mx-auto w-full rounded-[18px] sm:rounded-[22px] lg:rounded-[24px] overflow-hidden relative aspect-[4/5] bg-[#f6f7f9]">
           <picture>
             <source
               type="image/webp"
               srcSet={getCategorySourceSet(category.image)}
-              sizes="(min-width: 1200px) 216px, (min-width: 768px) 20vw, 132px"
+              sizes="(min-width: 1280px) 216px, (min-width: 1024px) calc((100vw - 80px) / 3), (min-width: 768px) calc((100vw - 68px) / 3), calc((100vw - 48px) / 3)"
             />
             <img
               src={category.image}
               alt={category.alt || category.label}
-              className="absolute inset-0 h-full w-full object-cover"
+              className="category-card-image absolute inset-0 h-full w-full object-contain"
+              style={{ transform: 'none' }}
               loading="lazy"
               decoding="async"
               draggable={false}
@@ -138,28 +140,21 @@ const Collection: React.FC<CollectionProps> = ({ categories }) => {
       <div className="container">
         <div className="heading3 text-center">Categorías</div>
         <div className="list-trending md:mt-10 mt-6">
-          <div className="md:hidden">
-            <div className="overflow-hidden">
-              <div
-                ref={mobileTrackRef}
-                onMouseDown={startMouseDrag}
-                onMouseLeave={stopMouseDrag}
-                className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-              >
-                {resolvedCategories.map((category) =>
-                  renderCategoryCard(
-                    category,
-                    'min-w-0 flex-none basis-[calc((100%-24px)/3)] snap-start'
-                  )
-                )}
-              </div>
+          <div className="overflow-hidden">
+            <div
+              ref={mobileTrackRef}
+              onMouseDown={startMouseDrag}
+              onMouseLeave={stopMouseDrag}
+              className={`mx-auto flex max-w-[1160px] justify-start gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth overscroll-x-contain md:gap-4 lg:gap-5 ${shouldCenterDesktopTrack ? 'xl:justify-center' : ''} [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
+              style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+            >
+              {resolvedCategories.map((category) =>
+                renderCategoryCard(
+                  category,
+                  'min-w-0 flex-none basis-[calc((100%_-_24px)/3)] snap-start md:basis-[calc((100%_-_32px)/3)] lg:basis-[calc((100%_-_40px)/3)] xl:basis-[216px]'
+                )
+              )}
             </div>
-          </div>
-          <div className="hidden md:mx-auto md:grid md:w-full md:max-w-[1110px] md:grid-cols-5 md:gap-4 lg:max-w-[1160px] lg:gap-5">
-            {resolvedCategories.map((category) =>
-              renderCategoryCard(category, 'w-full')
-            )}
           </div>
         </div>
       </div>

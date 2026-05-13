@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import { versionLocalImagePath } from '@/lib/staticAsset'
+import { toCanonicalUrl } from '@/lib/publicUrl'
 
 type PageMeta = {
   title: string
@@ -60,12 +61,20 @@ export const buildPageMetadata = (pageKey: string, tenantName: string): Metadata
   return {
     title: `${meta.title} | ${tenantName}`,
     description: meta.description,
+    alternates: {
+      canonical: toCanonicalUrl(`/pages/${pageKey}`),
+    },
     openGraph: meta.images
       ? {
           title: `${meta.title} | ${tenantName}`,
           description: meta.description,
+          url: toCanonicalUrl(`/pages/${pageKey}`),
           images: meta.images.map(versionLocalImagePath),
         }
-      : undefined,
+      : {
+          title: `${meta.title} | ${tenantName}`,
+          description: meta.description,
+          url: toCanonicalUrl(`/pages/${pageKey}`),
+        },
   }
 }

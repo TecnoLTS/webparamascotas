@@ -4,6 +4,8 @@ const PANEL_IP_MODE = (process.env.PANEL_IP_MODE || 'off').trim().toLowerCase()
 const PANEL_IP_ALLOWLIST = (process.env.PANEL_IP_ALLOWLIST || '').trim()
 const CSP_REPORT_URI = '/api/security/csp-report'
 const PRIVATE_IPV4_RULES = ['127.0.0.1/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
+const CANONICAL_HOST = 'paramascotasec.com'
+const CANONICAL_ORIGIN = `https://${CANONICAL_HOST}`
 
 const normalizeIpMode = (value: string) => {
   if (['private', 'private-lan', 'lan'].includes(value)) return 'private'
@@ -80,76 +82,48 @@ const isPanelIpAllowed = (ip: string) => {
 
 const shouldApplyPanelAllowlist = (pathname: string) => pathname === '/my-account' || pathname.startsWith('/my-account/')
 
-const slugifyPathToken = (value?: string | null) =>
-  String(value ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/&/g, ' y ')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-
-const getLegacyShopTarget = (category?: string | null, gender?: string | null) => {
-  const normalizedCategory = slugifyPathToken(category || 'todos')
-  const normalizedGender = String(gender ?? '').trim().toLowerCase()
-
-  if (!normalizedCategory || normalizedCategory === 'todos' || normalizedCategory === 'todas') {
-    if (normalizedGender === 'dog') return '/tienda/perros'
-    if (normalizedGender === 'cat') return '/tienda/gatos'
-    return '/tienda'
-  }
-
-  if (normalizedCategory === 'descuento' || normalizedCategory === 'descuentos' || normalizedCategory === 'ofertas') {
-    return '/tienda/ofertas'
-  }
-  if (['cuidado', 'cuidados', 'higiene', 'medicina', 'medicinas', 'farmacia'].includes(normalizedCategory)) {
-    return '/tienda/salud'
-  }
-  if (normalizedCategory === 'alimento-para-perros' || normalizedCategory === 'alimentos-para-perros') {
-    return '/tienda/alimento-perros'
-  }
-  if (normalizedCategory === 'alimento-para-gatos' || normalizedCategory === 'alimentos-para-gatos') {
-    return '/tienda/alimento-gatos'
-  }
-  if (normalizedCategory === 'comida-humeda-para-perros') return '/tienda/comida-humeda-perros'
-  if (normalizedCategory === 'comida-humeda-para-gatos') return '/tienda/comida-humeda-gatos'
-  if (normalizedCategory === 'snacks-para-gatos') return '/tienda/snacks-gatos'
-  if (normalizedCategory === 'alimento' && normalizedGender === 'dog') return '/tienda/alimento-perros'
-  if (normalizedCategory === 'alimento' && normalizedGender === 'cat') return '/tienda/alimento-gatos'
-  if (normalizedCategory === 'perros') return '/tienda/perros'
-  if (normalizedCategory === 'gatos') return '/tienda/gatos'
-
-  return `/tienda/${normalizedCategory}`
+const SEO_ROUTE_REDIRECTS: Record<string, string> = {
+  '/tienda/alimento-para-perros': '/tienda/alimento-perros',
+  '/tienda/alimento-para-gatos': '/tienda/alimento-gatos',
+  '/tienda/comida-humeda-para-perros': '/tienda/comida-humeda-perros',
+  '/tienda/comida-humeda-para-gatos': '/tienda/comida-humeda-gatos',
+  '/tienda/snacks-para-perros': '/tienda/snacks-perros',
+  '/tienda/juguetes-para-gatos': '/tienda/juguetes-gatos',
+  '/tienda/accesorios-para-perros': '/tienda/accesorios-perros',
+  '/tienda/ropa-para-perros': '/tienda/ropa-perros',
 }
 
-const buildRedirectResponse = (req: NextRequest, pathname: string, searchParams?: URLSearchParams) => {
+const buildRedirectResponse = (req: NextRequest, pathname: string, searchParams?: URLSearchParams, status = 308) => {
   const target = req.nextUrl.clone()
   target.pathname = pathname
   target.search = searchParams?.toString() ? `?${searchParams.toString()}` : ''
-  return NextResponse.redirect(target, 308)
+  return NextResponse.redirect(target, status)
+}
+
+const getForwardedHost = (req: NextRequest) =>
+  (req.headers.get('x-forwarded-host') || req.headers.get('host') || '').split(',')[0]?.trim().toLowerCase()
+
+const getForwardedProto = (req: NextRequest) =>
+  (req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(':', '') || '').split(',')[0]?.trim().toLowerCase()
+
+const buildCanonicalHostRedirect = (req: NextRequest) => {
+  const host = getForwardedHost(req)
+  const proto = getForwardedProto(req)
+  const isPrimaryHost = host === CANONICAL_HOST
+  const isWwwHost = host === `www.${CANONICAL_HOST}`
+
+  if (!isPrimaryHost && !isWwwHost) return null
+  if (isPrimaryHost && proto === 'https') return null
+
+  return NextResponse.redirect(`${CANONICAL_ORIGIN}${req.nextUrl.pathname}${req.nextUrl.search}`, 301)
 }
 
 const redirectLegacySeoRoutes = (req: NextRequest) => {
   const pathname = req.nextUrl.pathname
 
-  if (pathname === '/shop' || pathname.startsWith('/shop/')) {
-    const nextParams = new URLSearchParams()
-    const query = req.nextUrl.searchParams.get('query')?.trim()
-    if (query) nextParams.set('query', query)
-
-    return buildRedirectResponse(
-      req,
-      getLegacyShopTarget(req.nextUrl.searchParams.get('category'), req.nextUrl.searchParams.get('gender')),
-      nextParams,
-    )
-  }
-
-  if ((pathname === '/product' || pathname.startsWith('/product/')) && pathname !== '/product/default') {
-    const id = req.nextUrl.searchParams.get('id')?.trim()
-    if (!id) return buildRedirectResponse(req, '/tienda')
-
-    const nextParams = new URLSearchParams({ id })
-    return buildRedirectResponse(req, '/product/default', nextParams)
+  const seoRouteRedirect = SEO_ROUTE_REDIRECTS[pathname]
+  if (seoRouteRedirect) {
+    return buildRedirectResponse(req, seoRouteRedirect, req.nextUrl.searchParams, 301)
   }
 
   return null
@@ -191,6 +165,14 @@ export function middleware(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID()).replace(/=+$/g, '')
   const csp = buildCsp(nonce)
   const cspReportOnly = buildStrictReportOnlyCsp(nonce)
+
+  const canonicalHostRedirect = buildCanonicalHostRedirect(req)
+  if (canonicalHostRedirect) {
+    canonicalHostRedirect.headers.set('Content-Security-Policy', csp)
+    canonicalHostRedirect.headers.set('Content-Security-Policy-Report-Only', cspReportOnly)
+    canonicalHostRedirect.headers.set('x-nonce', nonce)
+    return canonicalHostRedirect
+  }
 
   const legacyRedirect = redirectLegacySeoRoutes(req)
   if (legacyRedirect) {

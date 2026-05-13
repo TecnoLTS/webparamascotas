@@ -1,6 +1,12 @@
 import { NextResponse } from 'next/server'
 import { listProducts } from '@/lib/api/products'
-import { getProductCurrentPrice, getProductSku } from '@/lib/catalog'
+import {
+  getProductCurrentPrice,
+  getProductSku,
+  getProductVariants,
+  groupCatalogProducts,
+} from '@/lib/catalog'
+import { getVariantColorValue, getVariantSizeValue } from '@/lib/catalogAttributes'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
 import { getProductSeoPath } from '@/lib/seoUrls'
 import type { ProductType } from '@/type/ProductType'
@@ -50,11 +56,50 @@ const getProductType = (product: ProductType) => {
 const textStartsWith = (value: string, prefix: string) =>
   cleanText(value).toLowerCase().startsWith(`${cleanText(prefix).toLowerCase()} `)
 
-const renderItem = (baseUrl: string, product: ProductType) => {
+const getProductIdentifier = (product: ProductType) =>
+  product.id || product.internalId || product.slug
+
+const getVariantFamilyMap = (products: ProductType[]) => {
+  const familyByVariant = new Map<string, ProductType>()
+
+  groupCatalogProducts(products).forEach((family) => {
+    getProductVariants(family).forEach((variant) => {
+      const identifiers = [variant.id, variant.internalId, variant.slug].filter(Boolean)
+      identifiers.forEach((identifier) => {
+        familyByVariant.set(String(identifier), family)
+      })
+    })
+  })
+
+  return familyByVariant
+}
+
+const getFeedProductLink = (baseUrl: string, product: ProductType, family?: ProductType) => {
+  const targetProduct = family ?? product
+  const variantCount = getProductVariants(targetProduct).length
+  const baseProductUrl = `${baseUrl}${getProductSeoPath(targetProduct)}`
+  const variantId = getProductIdentifier(product)
+
+  if (variantCount <= 1 || !variantId) {
+    return baseProductUrl
+  }
+
+  return `${baseProductUrl}?variant=${encodeURIComponent(variantId)}`
+}
+
+const getItemGroupId = (family?: ProductType) => {
+  if (!family || getProductVariants(family).length <= 1) return ''
+  return family.variantGroupKey || family.internalId || family.id || family.slug
+}
+
+const renderItem = (baseUrl: string, product: ProductType, family?: ProductType) => {
   const price = getProductCurrentPrice(product)
   const image = toAbsoluteUrl(baseUrl, product.thumbImage?.[0] || product.images?.[0])
   const sku = getProductSku(product)
   const id = product.id || product.internalId || product.slug
+  const itemGroupId = getItemGroupId(family)
+  const size = getVariantSizeValue(product)
+  const color = getVariantColorValue(product)
   const brand = cleanText(product.brand) || 'ParaMascotasEC'
   const title = cleanText(product.brand && !textStartsWith(product.name, product.brand)
     ? `${product.brand} ${product.name}`
@@ -70,12 +115,19 @@ const renderItem = (baseUrl: string, product: ProductType) => {
     `<g:id>${xmlEscape(id)}</g:id>`,
     `<g:title>${xmlEscape(title)}</g:title>`,
     `<g:description>${xmlEscape(description)}</g:description>`,
-    `<g:link>${xmlEscape(`${baseUrl}${getProductSeoPath(product)}`)}</g:link>`,
+    `<g:link>${xmlEscape(getFeedProductLink(baseUrl, product, family))}</g:link>`,
     `<g:image_link>${xmlEscape(image)}</g:image_link>`,
     `<g:availability>${Number(product.quantity ?? 0) > 0 ? 'in_stock' : 'out_of_stock'}</g:availability>`,
     '<g:condition>new</g:condition>',
     `<g:price>${xmlEscape(`${price.toFixed(2)} USD`)}</g:price>`,
     `<g:brand>${xmlEscape(brand)}</g:brand>`,
+    '<g:shipping>',
+    '<g:country>EC</g:country>',
+    '<g:price>5.00 USD</g:price>',
+    '</g:shipping>',
+    itemGroupId ? `<g:item_group_id>${xmlEscape(itemGroupId)}</g:item_group_id>` : '',
+    size ? `<g:size>${xmlEscape(size)}</g:size>` : '',
+    color ? `<g:color>${xmlEscape(color)}</g:color>` : '',
     sku ? `<g:mpn>${xmlEscape(sku)}</g:mpn>` : '<g:identifier_exists>no</g:identifier_exists>',
     `<g:google_product_category>${xmlEscape(getGoogleProductCategory(product))}</g:google_product_category>`,
     `<g:product_type>${xmlEscape(getProductType(product))}</g:product_type>`,
@@ -93,6 +145,8 @@ export async function GET() {
     console.error('No se pudo generar feed de Google Merchant:', error)
   }
 
+  const familyByVariant = getVariantFamilyMap(products)
+
   const items = products
     .filter((product) => product.published !== false && Number(product.quantity ?? 0) > 0)
     .sort((left, right) => {
@@ -101,7 +155,7 @@ export async function GET() {
       if (leftFood !== rightFood) return leftFood - rightFood
       return left.name.localeCompare(right.name, 'es')
     })
-    .map((product) => renderItem(baseUrl, product))
+    .map((product) => renderItem(baseUrl, product, familyByVariant.get(getProductIdentifier(product) ?? '')))
     .filter(Boolean)
     .join('\n')
 

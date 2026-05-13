@@ -32,9 +32,9 @@ const AUTOPLAY_DELAY_MS = 7000
 const slides: SlideContent[] = [
   {
     id: 1,
-    title: 'Hazlo feliz todos los días',
+    title: 'ParaMascotasEC: tienda de mascotas online en Ecuador',
     subtitle:
-      'Porque no es solo tu mascota, es parte de tu familia. Dale todo lo que necesita para una vida llena de amor y bienestar.',
+      'Alimento para perros y gatos, accesorios, ropa, snacks y cuidado para comprar online con atención cercana.',
     ctaLabel: 'Descubrir ahora',
     ctaHref: '/tienda',
   },
@@ -207,7 +207,11 @@ const SliderSlideContent = ({
         />
       ) : null}
       <div className={`pet-hero-copy pet-hero-copy--slide-${slide.id}`}>
-        <h1 className="pet-hero-title">{slide.title}</h1>
+        {slide.id === 1 ? (
+          <h1 className="pet-hero-title">{slide.title}</h1>
+        ) : (
+          <h2 className="pet-hero-title">{slide.title}</h2>
+        )}
         <p className="pet-hero-subtitle">{slide.subtitle}</p>
         {active ? (
           <Link className="pet-hero-cta" href={slide.ctaHref}>

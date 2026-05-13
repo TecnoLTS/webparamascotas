@@ -12,6 +12,9 @@ export const CATALOG_PRIMARY_FILTER_IDS = [
 
 export type CatalogPrimaryFilterId = (typeof CATALOG_PRIMARY_FILTER_IDS)[number]
 
+export const isCatalogPrimaryFilterId = (value: string): value is CatalogPrimaryFilterId =>
+  CATALOG_PRIMARY_FILTER_IDS.includes(value as CatalogPrimaryFilterId)
+
 export type CatalogSecondaryOption = {
   id: string
   label: string

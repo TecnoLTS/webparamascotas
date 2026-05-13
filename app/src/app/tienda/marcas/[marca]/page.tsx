@@ -1,4 +1,5 @@
 import React from 'react'
+import Link from 'next/link'
 import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
@@ -17,10 +18,12 @@ import {
 } from '@/lib/seoUrls'
 import {
   generateBreadcrumbJsonLd,
+  generateFaqJsonLd,
   generateItemListJsonLd,
 } from '@/lib/seo'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import type { ProductType } from '@/type/ProductType'
+import { getPublicProductCategories } from '@/lib/api/settings'
 
 type Params = {
   marca: string
@@ -89,12 +92,20 @@ export default async function BrandPage({ params }: Props) {
   let products: ProductType[] = []
   let brandProducts: ProductType[] = []
   let brand: string | null = null
+  let publicCategories: string[] = []
 
   try {
-    const result = await loadBrandProducts(marca)
-    products = result.products
-    brand = result.brand
-    brandProducts = result.brandProducts
+    const [result, categoriesResult] = await Promise.allSettled([
+      loadBrandProducts(marca),
+      getPublicProductCategories(),
+    ])
+    if (result.status === 'rejected') {
+      throw result.reason
+    }
+    publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
+    products = result.value.products
+    brand = result.value.brand
+    brandProducts = result.value.brandProducts
   } catch (error) {
     console.error('No se pudieron cargar productos para marca SEO:', error)
   }
@@ -105,8 +116,8 @@ export default async function BrandPage({ params }: Props) {
 
   const copy = getBrandLandingCopy(brand)
   const baseUrl = getCanonicalSiteUrl()
-  const availableCategoryIds = buildCatalogCategoryCards(products).map((category) => category.id)
-  const footerCategoryIds = availableCategoryIds.filter((categoryId) => categoryId.toLowerCase() !== 'todos')
+  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const footerCategoryIds = availableCategoryIds
   const brandPath = getBrandSeoPath(brand)
   const itemListJsonLd = generateItemListJsonLd(
     brandProducts.slice(0, 24).map((product) => ({
@@ -120,6 +131,17 @@ export default async function BrandPage({ params }: Props) {
     { name: 'Tienda', url: `${baseUrl}/tienda` },
     { name: brand, url: `${baseUrl}${brandPath}` },
   ])
+  const brandFaqs = [
+    {
+      question: `¿Puedo comprar ${brand} online en Ecuador?`,
+      answer: `Sí. ParaMascotasEC muestra productos ${brand} publicados con precio en USD, fotos, disponibilidad y compra online en Ecuador.`,
+    },
+    {
+      question: `¿Cómo sé si un producto ${brand} es para perro o gato?`,
+      answer: 'Cada ficha indica especie, categoría, presentación y disponibilidad para ayudarte a elegir antes de comprar.',
+    },
+  ]
+  const faqJsonLd = generateFaqJsonLd(brandFaqs)
 
   return (
     <>
@@ -132,6 +154,11 @@ export default async function BrandPage({ params }: Props) {
         nonce={nonce}
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
+      />
+      <script
+        nonce={nonce}
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
       <header id="header" className="relative w-full style-pet">
         <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
@@ -154,7 +181,38 @@ export default async function BrandPage({ params }: Props) {
         dataType={null}
         gender={null}
         category={null}
+        categoryIds={availableCategoryIds}
       />
+      <section className="pb-12">
+        <div className="container">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(280px,420px)]">
+            <div className="rounded-lg border border-line bg-white p-5">
+              <h2 className="heading5">{brand} en la tienda online</h2>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-secondary">
+                Revisa productos {brand} publicados con precio en USD, disponibilidad y enlaces hacia categorías relacionadas para perros y gatos.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+                <Link className="text-[var(--blue)] hover-underline" href="/tienda/alimento-perros">Alimento para perros</Link>
+                <Link className="text-[var(--blue)] hover-underline" href="/tienda/alimento-gatos">Alimento para gatos</Link>
+                <Link className="text-[var(--blue)] hover-underline" href="/guias">Guías de compra</Link>
+              </div>
+            </div>
+            <div className="rounded-lg border border-line bg-white p-5">
+              <h2 className="heading5">Preguntas sobre {brand}</h2>
+              <div className="mt-4 space-y-3">
+                {brandFaqs.map((faq, index) => (
+                  <details key={faq.question} className="rounded-lg bg-surface px-4 py-3" open={index === 0}>
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-title">
+                      {faq.question}
+                    </summary>
+                    <p className="mt-3 text-sm leading-6 text-secondary">{faq.answer}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
       <Footer categoryIds={footerCategoryIds} />
     </>
   )

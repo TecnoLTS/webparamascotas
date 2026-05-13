@@ -3,9 +3,65 @@ import { getCategoryAlt, getCategoryImage, getCategoryLabel, getShopBrowseCatego
 import type { SiteId } from '@/lib/site'
 import { ProductType, ProductVariantOption } from '@/type/ProductType'
 import { normalizeMeasurementLabel, normalizeMeasurementLabels } from '@/lib/measurementLabel'
+import type { ProductCategoryImageReference } from '@/lib/productReferenceData'
 
 const normalizeText = (value?: string | null) =>
   (value ?? '').trim().toLowerCase()
+
+type CatalogCategoryReference = string | ProductCategoryImageReference
+
+const getCategoryReferenceName = (reference: CatalogCategoryReference) =>
+  typeof reference === 'string' ? reference : reference.name
+
+const getCategoryReferenceAliases = (value: string) => {
+  const normalized = normalizeText(value)
+  if (normalized === 'todos' || normalized === 'todas') return ['todos', 'todas']
+  if (normalized === 'descuentos' || normalized === 'ofertas') return ['descuentos', 'ofertas']
+  return [normalized]
+}
+
+const isFixedCatalogCategoryAlias = (value: string) =>
+  ['todos', 'todas', 'descuentos', 'ofertas'].includes(normalizeText(value))
+
+const findCategoryReference = (
+  categoryId: string,
+  referenceCategories: CatalogCategoryReference[] = []
+) => {
+  const aliases = getCategoryReferenceAliases(categoryId)
+  return referenceCategories.find((reference) => aliases.includes(normalizeText(getCategoryReferenceName(reference))))
+}
+
+const parseCatalogCategoryValues = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean)
+  }
+
+  if (typeof value !== 'string') {
+    return []
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) return []
+
+  try {
+    const parsed = JSON.parse(trimmed)
+    if (Array.isArray(parsed)) {
+      return parsed.map((item) => String(item || '').trim()).filter(Boolean)
+    }
+  } catch {
+    // Legacy product data can store comma-separated category labels.
+  }
+
+  return trimmed.split(',').map((item) => item.trim()).filter(Boolean)
+}
+
+const getProductCatalogCategoryIds = (product: ProductType) =>
+  [
+    product.category,
+    ...parseCatalogCategoryValues(product.attributes?.catalogCategories),
+  ]
+    .map((value) => normalizeText(value))
+    .filter(Boolean)
 
 const toTitleCase = (value?: string | null) =>
   (value ?? '')
@@ -585,19 +641,40 @@ export const findCatalogProductForDetail = (products: ProductType[], idOrSlug: s
   }
 }
 
-const resolveCategoryImage = (categoryId: string, _siteId?: SiteId) => {
+const resolveCategoryImage = (
+  categoryId: string,
+  _siteId?: SiteId,
+  referenceCategories: CatalogCategoryReference[] = []
+) => {
   const normalized = normalizeText(categoryId)
+  const reference = findCategoryReference(categoryId, referenceCategories)
+  if (reference && typeof reference !== 'string' && reference.topImageUrl) return reference.topImageUrl
+
   const configuredImage = getCategoryImage(normalized)
 
   if (configuredImage && configuredImage !== '/images/collection/home-top/catalogo-completo-para-mascotas-4x5.webp') return configuredImage
   if (normalized.includes('perro')) return getCategoryImage('perros')
   if (normalized.includes('gato')) return getCategoryImage('gatos')
-  if (normalized.includes('cuidado')) return getCategoryImage('cuidado')
+  if (
+    normalized.includes('salud') ||
+    normalized.includes('cuidado') ||
+    normalized.includes('higiene') ||
+    normalized.includes('medicina') ||
+    normalized.includes('farmacia')
+  ) return getCategoryImage('salud')
   if (normalized.includes('accesorio')) return getCategoryImage('accesorios')
   if (normalized.includes('ropa')) return getCategoryImage('ropa')
   if (normalized.includes('comedero')) return getCategoryImage('comederos')
   if (normalized.includes('cama')) return getCategoryImage('camas')
   return '/images/collection/home-top/catalogo-completo-para-mascotas-4x5.webp'
+}
+
+const resolveCategoryFeaturedImages = (
+  categoryId: string,
+  referenceCategories: CatalogCategoryReference[] = []
+) => {
+  const reference = findCategoryReference(categoryId, referenceCategories)
+  return reference && typeof reference !== 'string' ? reference.featuredImages : undefined
 }
 
 const resolveCategoryLabel = (categoryId: string, _siteId?: SiteId) => {
@@ -627,15 +704,29 @@ const sortCatalogCategoryIds = (categoryIds: string[], _siteId?: SiteId) => {
   })
 }
 
-export const getCatalogCategoryIds = (products: ProductType[], siteId?: SiteId) => {
-  const explicitCategories = products
-    .map((product) => normalizeText(product.category))
-    .filter(Boolean)
+export const getCatalogCategoryIds = (
+  products: ProductType[],
+  siteId?: SiteId,
+  referenceCategories: CatalogCategoryReference[] = []
+) => {
+  const panelCategoryIds = referenceCategories
+    .map((category) => normalizeText(getCategoryReferenceName(category)))
+    .filter((categoryId) => categoryId && !isFixedCatalogCategoryAlias(categoryId))
+  if (panelCategoryIds.length > 0) {
+    return sortCatalogCategoryIds(Array.from(new Set(panelCategoryIds)), siteId)
+  }
 
   const hasDogProducts = products.some((product) => normalizeText(product.gender) === 'dog')
   const hasCatProducts = products.some((product) => normalizeText(product.gender) === 'cat')
 
-  const filteredCategories = explicitCategories.filter((categoryId) => {
+  const catalogCategories = [
+    ...products.flatMap(getProductCatalogCategoryIds),
+    ...referenceCategories
+      .map((category) => normalizeText(getCategoryReferenceName(category)))
+      .filter((categoryId) => !isFixedCatalogCategoryAlias(categoryId)),
+  ].filter(Boolean)
+
+  const filteredCategories = catalogCategories.filter((categoryId) => {
     if (hasDogProducts && categoryId === 'alimento para perros') return false
     if (hasCatProducts && categoryId === 'alimento para gatos') return false
     return true
@@ -651,31 +742,26 @@ export const getCatalogCategoryIds = (products: ProductType[], siteId?: SiteId) 
   )
 }
 
-export const buildCatalogCategoryCards = (products: ProductType[], siteId?: SiteId): CategoryCard[] => {
+export const buildCatalogCategoryCards = (
+  products: ProductType[],
+  siteId?: SiteId,
+  options: { referenceCategories?: CatalogCategoryReference[] } = {}
+): CategoryCard[] => {
   const cards: CategoryCard[] = []
 
-  cards.push({
-    id: 'todos',
-    label: resolveCategoryLabel('todos', siteId),
-    image: resolveCategoryImage('todos', siteId),
-    alt: getCategoryAlt('todos', siteId),
-  })
+  const categoryIds = [
+    'todos',
+    ...(products.some(isProductOnSale) ? ['descuentos'] : []),
+    ...getCatalogCategoryIds(products, siteId, options.referenceCategories ?? []),
+  ]
 
-  if (products.some(isProductOnSale)) {
-    cards.push({
-      id: 'descuentos',
-      label: resolveCategoryLabel('descuentos', siteId),
-      image: resolveCategoryImage('descuentos', siteId),
-      alt: getCategoryAlt('descuentos', siteId),
-    })
-  }
-
-  getCatalogCategoryIds(products, siteId).forEach((categoryId) => {
+  Array.from(new Set(categoryIds)).forEach((categoryId) => {
     cards.push({
       id: categoryId,
       label: resolveCategoryLabel(categoryId, siteId),
-      image: resolveCategoryImage(categoryId, siteId),
+      image: resolveCategoryImage(categoryId, siteId, options.referenceCategories ?? []),
       alt: getCategoryAlt(categoryId, siteId),
+      featuredImages: resolveCategoryFeaturedImages(categoryId, options.referenceCategories ?? []),
     })
   })
 

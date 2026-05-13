@@ -43,6 +43,7 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
         }
     ) => {
         const imageSpec = getHomeFeaturedCategoryImageSpec(item.id, options?.imageVariant)
+        const dynamicFeaturedImage = options?.imageVariant ? item.featuredImages?.[options.imageVariant] : undefined
 
         return (
             <div
@@ -50,16 +51,17 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                 className={`collection-item block h-full relative md:rounded-[20px] rounded-xl overflow-hidden cursor-pointer ${options?.wrapperClass ?? ''}`}
                 onClick={() => handleCategoryClick(item.id)}
             >
-                <div className={`bg-img h-full w-full ${options?.aspectClass ?? 'aspect-square'}`}>
+                <div className={`bg-img h-full w-full bg-[#f6f7f9] ${options?.aspectClass ?? 'aspect-square'}`}>
                     <Image
-                        src={imageSpec?.src ?? item.image}
+                        src={dynamicFeaturedImage || imageSpec?.src || item.image}
                         alt={item.label}
                         width={1000}
                         height={1000}
                         quality={90}
                         loading="lazy"
                         sizes={options?.sizes ?? '(min-width: 1280px) 360px, (min-width: 640px) 44vw, 92vw'}
-                        className='h-full w-full object-cover'
+                        className='category-card-image h-full w-full object-contain'
+                        style={{ transform: 'none' }}
                     />
                 </div>
                 <div

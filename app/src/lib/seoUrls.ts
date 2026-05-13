@@ -1,6 +1,5 @@
 import { getCategoryLabel } from '@/data/petCategoryCards'
 import {
-  findCatalogProductForDetail,
   getProductCurrentPrice,
   getProductDetailRouteId,
   getProductSku,
@@ -49,7 +48,6 @@ const SEO_CATALOG_ALIASES: Record<string, string> = {
   promociones: 'ofertas',
   cuidado: 'salud',
   cuidados: 'salud',
-  higiene: 'salud',
   medicina: 'salud',
   medicinas: 'salud',
   farmacia: 'salud',
@@ -59,9 +57,16 @@ const SEO_CATALOG_ALIASES: Record<string, string> = {
   'alimentos-para-gatos': 'alimento-gatos',
   'comida-humeda-para-perros': 'comida-humeda-perros',
   'comida-humeda-para-gatos': 'comida-humeda-gatos',
+  'comida-húmeda-para-perros': 'comida-humeda-perros',
+  'comida-húmeda-para-gatos': 'comida-humeda-gatos',
+  'snacks-para-perros': 'snacks-perros',
   'snacks-para-gatos': 'snacks-gatos',
+  'juguetes-para-perros': 'juguetes-perros',
+  'juguetes-para-gatos': 'juguetes-gatos',
   'productos-para-perros': 'perros',
   'productos-para-gatos': 'gatos',
+  'productos-para-mascotas-quito': 'productos-mascotas-quito',
+  'tienda-de-mascotas-quito': 'tienda-mascotas-quito',
   'ropa-para-mascotas': 'ropa',
   'accesorios-para-mascotas': 'accesorios',
   'salud-para-mascotas': 'salud',
@@ -83,16 +88,16 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     description: 'Compra alimento para perros y gatos en Ecuador con marcas como Dog Chow, Cat Chow, Pro-Can, Pro-Cat, NutraPro, Avant, Cani y Purina.',
     category: 'alimento',
     priority: 0.95,
-    intro: 'Encuentra alimento seco, comida humeda y snacks para perros y gatos con stock publicado, precios en USD y compra online en ParaMascotasEC.',
-    highlights: ['Alimento por especie, edad y presentacion', 'Marcas reconocidas para perros y gatos', 'Catalogo actualizado con disponibilidad real'],
+    intro: 'Encuentra alimento seco, comida húmeda y snacks para perros y gatos con stock publicado, precios en USD y compra online en ParaMascotasEC.',
+    highlights: ['Alimento por especie, edad y presentación', 'Marcas reconocidas para perros y gatos', 'Catálogo actualizado con disponibilidad real'],
     faqs: [
       {
-        question: 'Que alimento para mascotas puedo comprar online en Ecuador?',
-        answer: 'Puedes comprar alimento seco, comida humeda y snacks para perros y gatos segun edad, tamano, marca y presentacion disponible.',
+        question: '¿Qué alimento para mascotas puedo comprar online en Ecuador?',
+        answer: 'Puedes comprar alimento seco, comida húmeda y snacks para perros y gatos según edad, tamaño, marca y presentación disponible.',
       },
       {
-        question: 'Como elegir alimento para mi mascota?',
-        answer: 'Revisa especie, edad, tamano, etapa de vida y presentacion. Si tienes dudas, contacta a ParaMascotasEC antes de comprar.',
+        question: '¿Cómo elegir alimento para mi mascota?',
+        answer: 'Revisa especie, edad, tamaño, etapa de vida y presentación. Si tienes dudas, contacta a ParaMascotasEC antes de comprar.',
       },
     ],
   },
@@ -106,16 +111,16 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     category: 'alimento',
     gender: 'dog',
     priority: 0.94,
-    intro: 'Catalogo de alimento para perros adultos y cachorros, con opciones secas y humedas para razas pequenas, medianas y grandes.',
-    highlights: ['Alimento para perros adultos y cachorros', 'Opciones por raza, tamano y etapa', 'Marcas de recompra frecuente disponibles online'],
+    intro: 'Catálogo de alimento para perros adultos y cachorros, con opciones secas y húmedas para razas pequeñas, medianas y grandes.',
+    highlights: ['Alimento para perros adultos y cachorros', 'Opciones por raza, tamaño y etapa', 'Marcas de recompra frecuente disponibles online'],
     faqs: [
       {
-        question: 'Tienen alimento para cachorros?',
-        answer: 'Si. El catalogo muestra opciones para cachorros cuando hay stock disponible, incluyendo alimento seco y comida humeda.',
+        question: '¿Tienen alimento para cachorros?',
+        answer: 'Sí. El catálogo muestra opciones para cachorros cuando hay stock disponible, incluyendo alimento seco y comida húmeda.',
       },
       {
-        question: 'Puedo comprar comida humeda para perros?',
-        answer: 'Si. Filtra o busca comida humeda para perros para encontrar presentaciones como sobres o latas disponibles.',
+        question: '¿Puedo comprar comida húmeda para perros?',
+        answer: 'Sí. Filtra o busca comida húmeda para perros para encontrar presentaciones como sobres o latas disponibles.',
       },
     ],
   },
@@ -129,64 +134,64 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     category: 'alimento',
     gender: 'cat',
     priority: 0.94,
-    intro: 'Productos de alimento para gatos adultos y gatitos, comida humeda, snacks y marcas reconocidas para compras online en Ecuador.',
-    highlights: ['Alimento para gatos adultos y gatitos', 'Comida humeda y snacks para gatos', 'Opciones por sabor, marca y presentacion'],
+    intro: 'Productos de alimento para gatos adultos y gatitos, comida húmeda, snacks y marcas reconocidas para compras online en Ecuador.',
+    highlights: ['Alimento para gatos adultos y gatitos', 'Comida húmeda y snacks para gatos', 'Opciones por sabor, marca y presentación'],
     faqs: [
       {
-        question: 'Tienen alimento para gatitos?',
-        answer: 'Si. Las opciones para gatitos aparecen en esta categoria cuando estan publicadas y con stock.',
+        question: '¿Tienen alimento para gatitos?',
+        answer: 'Sí. Las opciones para gatitos aparecen en esta categoría cuando están publicadas y con stock.',
       },
       {
-        question: 'Hay comida humeda para gatos?',
-        answer: 'Si. Puedes encontrar comida humeda para gatos por marca y sabor, segun disponibilidad del catalogo.',
+        question: '¿Hay comida húmeda para gatos?',
+        answer: 'Sí. Puedes encontrar comida húmeda para gatos por marca y sabor, según disponibilidad del catálogo.',
       },
     ],
   },
   {
     slug: 'comida-humeda-perros',
     path: '/tienda/comida-humeda-perros',
-    label: 'Comida humeda para perros',
-    h1: 'Comida humeda para perros en Ecuador',
-    title: 'Comida humeda para perros online en Ecuador',
-    description: 'Compra comida humeda para perros en Ecuador: sobres y presentaciones de Dog Chow, Pro-Can, Mimma Carnitas y otras marcas disponibles.',
+    label: 'Comida húmeda para perros',
+    h1: 'Comida húmeda para perros en Ecuador',
+    title: 'Comida húmeda para perros online en Ecuador',
+    description: 'Compra comida húmeda para perros en Ecuador: sobres y presentaciones de Dog Chow, Pro-Can, Mimma Carnitas y otras marcas disponibles.',
     category: 'alimento',
     gender: 'dog',
-    searchQuery: 'humeda',
+    searchQuery: 'húmeda',
     priority: 0.88,
-    intro: 'Seleccion de comida humeda para perros adultos y cachorros, ideal para complementar la alimentacion diaria segun preferencia y etapa.',
-    highlights: ['Sobres y porciones practicas', 'Sabores como pollo, carne, cordero y salmon', 'Opciones para adultos y cachorros'],
+    intro: 'Selección de comida húmeda para perros adultos y cachorros, ideal para complementar la alimentación diaria según preferencia y etapa.',
+    highlights: ['Sobres y porciones prácticas', 'Sabores como pollo, carne, cordero y salmón', 'Opciones para adultos y cachorros'],
     faqs: [
       {
-        question: 'La comida humeda reemplaza al alimento seco?',
-        answer: 'Depende de la dieta de tu perro. Puede usarse como alimento principal o complemento siguiendo la recomendacion del producto y de tu veterinario.',
+        question: '¿La comida húmeda reemplaza al alimento seco?',
+        answer: 'Depende de la dieta de tu perro. Puede usarse como alimento principal o complemento siguiendo la recomendación del producto y de tu veterinario.',
       },
       {
-        question: 'Como encuentro sabores disponibles?',
-        answer: 'Usa el buscador de esta categoria para filtrar por pollo, carne, salmon, cordero u otros sabores publicados.',
+        question: '¿Cómo encuentro sabores disponibles?',
+        answer: 'Usa el buscador de esta categoría para filtrar por pollo, carne, salmón, cordero u otros sabores publicados.',
       },
     ],
   },
   {
     slug: 'comida-humeda-gatos',
     path: '/tienda/comida-humeda-gatos',
-    label: 'Comida humeda para gatos',
-    h1: 'Comida humeda para gatos en Ecuador',
-    title: 'Comida humeda para gatos online en Ecuador',
-    description: 'Compra comida humeda para gatos en Ecuador: Felix, Pro-Cat, Purina y opciones por sabor como atun, salmon, pollo o higado.',
+    label: 'Comida húmeda para gatos',
+    h1: 'Comida húmeda para gatos en Ecuador',
+    title: 'Comida húmeda para gatos online en Ecuador',
+    description: 'Compra comida húmeda para gatos en Ecuador: Felix, Pro-Cat, Purina y opciones por sabor como atún, salmón, pollo o hígado.',
     category: 'alimento',
     gender: 'cat',
-    searchQuery: 'humeda',
+    searchQuery: 'húmeda',
     priority: 0.88,
-    intro: 'Comida humeda para gatos y gatitos por marca, sabor y presentacion, con productos publicados segun stock real.',
-    highlights: ['Opciones con pescado, atun, salmon, pollo e higado', 'Presentaciones practicas para gatos', 'Complemento para mejorar hidratacion y variedad'],
+    intro: 'Comida húmeda para gatos y gatitos por marca, sabor y presentación, con productos publicados según stock real.',
+    highlights: ['Opciones con pescado, atún, salmón, pollo e hígado', 'Presentaciones prácticas para gatos', 'Complemento para mejorar hidratación y variedad'],
     faqs: [
       {
-        question: 'Que sabores de comida humeda para gatos hay?',
-        answer: 'El catalogo puede incluir atun, salmon, pescado blanco, pollo, pavo o higado, segun stock vigente.',
+        question: '¿Qué sabores de comida húmeda para gatos hay?',
+        answer: 'El catálogo puede incluir atún, salmón, pescado blanco, pollo, pavo o hígado, según stock vigente.',
       },
       {
-        question: 'Puedo combinar alimento seco y humedo?',
-        answer: 'Si, muchas familias combinan ambas opciones. Mantener porciones adecuadas ayuda a cuidar peso y digestion.',
+        question: '¿Puedo combinar alimento seco y húmedo?',
+        answer: 'Sí, muchas familias combinan ambas opciones. Mantener porciones adecuadas ayuda a cuidar peso y digestión.',
       },
     ],
   },
@@ -196,21 +201,133 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     label: 'Snacks para gatos',
     h1: 'Snacks para gatos en Ecuador',
     title: 'Snacks para gatos online en Ecuador',
-    description: 'Compra snacks para gatos en Ecuador, incluyendo opciones NutraPro y bocaditos por sabor segun disponibilidad.',
+    description: 'Compra snacks para gatos en Ecuador, incluyendo opciones NutraPro y bocaditos por sabor según disponibilidad.',
     category: 'alimento',
     gender: 'cat',
     searchQuery: 'snack',
     priority: 0.8,
     intro: 'Snacks para gatos ideales como premio, recompensa o complemento ocasional dentro de una rutina equilibrada.',
-    highlights: ['Premios por sabor y presentacion', 'Opciones para gatos adultos y gatitos', 'Compra online con marcas disponibles'],
+    highlights: ['Premios por sabor y presentación', 'Opciones para gatos adultos y gatitos', 'Compra online con marcas disponibles'],
     faqs: [
       {
         question: 'Los snacks para gatos son alimento diario?',
         answer: 'Normalmente son complementos o premios. Revisa la etiqueta y administra porciones moderadas.',
       },
       {
-        question: 'Que marca de snacks para gatos tienen?',
-        answer: 'El catalogo prioriza marcas publicadas con stock, como NutraPro cuando esta disponible.',
+        question: '¿Qué marca de snacks para gatos tienen?',
+        answer: 'El catálogo prioriza marcas publicadas con stock, como NutraPro cuando está disponible.',
+      },
+    ],
+  },
+  {
+    slug: 'snacks-perros',
+    path: '/tienda/snacks-perros',
+    label: 'Snacks para perros',
+    h1: 'Snacks para perros en Ecuador',
+    title: 'Snacks para perros online en Ecuador',
+    description: 'Compra snacks para perros en Ecuador: premios, bocaditos y opciones por marca según disponibilidad en ParaMascotasEC.',
+    category: 'alimento',
+    gender: 'dog',
+    searchQuery: 'snack',
+    priority: 0.8,
+    intro: 'Snacks para perros pensados como premio, recompensa de entrenamiento o complemento ocasional dentro de una rutina equilibrada.',
+    highlights: ['Premios para perros adultos y cachorros', 'Opciones por sabor y presentación', 'Compra online con stock publicado'],
+    faqs: [
+      {
+        question: '¿Los snacks para perros reemplazan el alimento diario?',
+        answer: 'Normalmente son complementos o premios. Revisa la ficha del producto y administra porciones moderadas según tamaño y actividad.',
+      },
+      {
+        question: '¿Cómo elegir snacks para mi perro?',
+        answer: 'Considera edad, tamaño, ingredientes, presentación y objetivo de uso: premio, entrenamiento o complemento ocasional.',
+      },
+    ],
+  },
+  {
+    slug: 'juguetes-perros',
+    path: '/tienda/juguetes-perros',
+    label: 'Juguetes para perros',
+    h1: 'Juguetes para perros en Ecuador',
+    title: 'Juguetes para perros online en Ecuador',
+    description: 'Compra juguetes para perros en Ecuador: opciones para juego, paseo y entretenimiento según disponibilidad en ParaMascotasEC.',
+    gender: 'dog',
+    searchQuery: 'juguete',
+    priority: 0.76,
+    intro: 'Juguetes para perros disponibles por tamaño, uso y material, pensados para juego supervisado, actividad y entretenimiento en casa.',
+    highlights: ['Juguetes para perros pequeños y grandes', 'Opciones para juego y actividad', 'Productos relacionados con accesorios para perros'],
+    faqs: [
+      {
+        question: '¿Qué juguete conviene para mi perro?',
+        answer: 'Elige según tamaño, fuerza de mordida, edad y tipo de juego. Revisa siempre fotos, medidas y descripción del producto.',
+      },
+      {
+        question: '¿Los juguetes para perros tienen stock actualizado?',
+        answer: 'Sí. El catálogo muestra productos publicados y disponibles para compra online cuando hay stock.',
+      },
+    ],
+  },
+  {
+    slug: 'juguetes-gatos',
+    path: '/tienda/juguetes-gatos',
+    label: 'Juguetes para gatos',
+    h1: 'Juguetes para gatos en Ecuador',
+    title: 'Juguetes para gatos online en Ecuador',
+    description: 'Compra juguetes para gatos en Ecuador: opciones para actividad, juego y enriquecimiento según disponibilidad en ParaMascotasEC.',
+    gender: 'cat',
+    searchQuery: 'juguete',
+    priority: 0.76,
+    intro: 'Juguetes para gatos disponibles para estimular juego, movimiento y exploración, con productos publicados según stock real.',
+    highlights: ['Juguetes y accesorios para gatos', 'Opciones para actividad en casa', 'Compra online con precios en USD'],
+    faqs: [
+      {
+        question: '¿Qué juguetes son útiles para gatos?',
+        answer: 'Depende de la personalidad del gato. Busca opciones que promuevan movimiento, juego supervisado y exploración segura.',
+      },
+      {
+        question: '¿Puedo combinar juguetes con snacks para gatos?',
+        answer: 'Sí. Los snacks pueden usarse como premio ocasional, manteniendo porciones moderadas y una alimentación equilibrada.',
+      },
+    ],
+  },
+  {
+    slug: 'productos-mascotas-quito',
+    path: '/tienda/productos-mascotas-quito',
+    label: 'Productos para mascotas Quito',
+    h1: 'Productos para mascotas en Quito',
+    title: 'Productos para mascotas en Quito | Compra online',
+    description: 'Compra productos para mascotas en Quito y Ecuador: alimento para perros y gatos, accesorios, ropa, cuidado y ofertas en ParaMascotasEC.',
+    priority: 0.84,
+    intro: 'ParaMascotasEC atiende compras online de productos para mascotas en Quito y Ecuador, con catálogo publicado, precios en USD y disponibilidad actualizada.',
+    highlights: ['Alimento, accesorios, ropa y cuidado', 'Compra online para Quito y Ecuador', 'Stock publicado por producto'],
+    faqs: [
+      {
+        question: '¿ParaMascotasEC vende productos para mascotas en Quito?',
+        answer: 'Sí. Puedes comprar online productos para perros y gatos con precios en USD y disponibilidad publicada.',
+      },
+      {
+        question: '¿Hay envíos fuera de Quito?',
+        answer: 'ParaMascotasEC puede atender compras online en Ecuador según cobertura y condiciones de envío vigentes.',
+      },
+    ],
+  },
+  {
+    slug: 'tienda-mascotas-quito',
+    path: '/tienda/tienda-mascotas-quito',
+    label: 'Tienda de mascotas Quito',
+    h1: 'Tienda de mascotas en Quito',
+    title: 'Tienda de mascotas en Quito | ParaMascotasEC',
+    description: 'ParaMascotasEC es una tienda de mascotas online para Quito y Ecuador con alimento, accesorios, ropa, higiene, ofertas y productos para perros y gatos.',
+    priority: 0.84,
+    intro: 'Tienda de mascotas online para Quito y Ecuador: productos para perros y gatos, marcas disponibles, precios publicados y compra directa desde el catálogo.',
+    highlights: ['Tienda online para perros y gatos', 'Productos con precio y stock visible', 'Guías de compra y categorías relacionadas'],
+    faqs: [
+      {
+        question: '¿Qué puedo comprar en la tienda de mascotas?',
+        answer: 'Puedes comprar alimento, comida húmeda, snacks, ropa, accesorios, juguetes y productos de cuidado según disponibilidad.',
+      },
+      {
+        question: '¿Cómo encuentro marcas o productos específicos?',
+        answer: 'Usa el buscador, entra a categorías como alimento para perros o gatos, o revisa páginas de marca cuando estén disponibles.',
       },
     ],
   },
@@ -227,7 +344,7 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     highlights: ['Camisetas, chalecos, hoodies y sacos', 'Opciones por talla y color', 'Productos con fotos y disponibilidad'],
     faqs: [
       {
-        question: 'Como elegir la talla de ropa para mi mascota?',
+        question: '¿Cómo elegir la talla de ropa para mi mascota?',
         answer: 'Revisa la talla publicada y compara cuello, pecho y largo de tu mascota antes de comprar.',
       },
       {
@@ -245,16 +362,16 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     description: 'Compra accesorios para perros y gatos en Ecuador: collares, correas, arneses, platos, juguetes, areneros y dispensadores.',
     category: 'accesorios',
     priority: 0.78,
-    intro: 'Accesorios para la rutina diaria de perros y gatos: paseo, alimentacion, higiene, juego y comodidad.',
+    intro: 'Accesorios para la rutina diaria de perros y gatos: paseo, alimentación, higiene, juego y comodidad.',
     highlights: ['Collares, arneses y correas', 'Platos, juguetes y areneros', 'Accesorios por especie, color y uso'],
     faqs: [
       {
-        question: 'Que accesorios para perros venden?',
-        answer: 'Puedes encontrar collares, arneses, correas, platos, dispensadores, juguetes y otros productos segun stock.',
+        question: '¿Qué accesorios para perros venden?',
+        answer: 'Puedes encontrar collares, arneses, correas, platos, dispensadores, juguetes y otros productos según stock.',
       },
       {
         question: 'Hay accesorios para gatos?',
-        answer: 'Si. El catalogo incluye productos para gatos como areneros y juguetes cuando estan disponibles.',
+        answer: 'Sí. El catálogo incluye productos para gatos como areneros y juguetes cuando están disponibles.',
       },
     ],
   },
@@ -264,7 +381,7 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     label: 'Salud',
     h1: 'Productos de salud y cuidado para mascotas en Ecuador',
     title: 'Salud y cuidado para mascotas online en Ecuador',
-    description: 'Productos de salud, higiene y cuidado para perros y gatos en Ecuador, publicados segun disponibilidad.',
+    description: 'Productos de salud, higiene y cuidado para perros y gatos en Ecuador, publicados según disponibilidad.',
     category: 'salud',
     priority: 0.68,
     intro: 'Productos orientados al cuidado diario, higiene y bienestar de perros y gatos.',
@@ -275,7 +392,7 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
         answer: 'No. Para sintomas o tratamientos, consulta siempre con un veterinario.',
       },
       {
-        question: 'Como se si un producto de cuidado es adecuado?',
+        question: '¿Cómo sé si un producto de cuidado es adecuado?',
         answer: 'Revisa especie, indicacion y descripcion. Si tienes dudas, contacta a ParaMascotasEC.',
       },
     ],
@@ -286,19 +403,19 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     label: 'Perros',
     h1: 'Productos para perros en Ecuador',
     title: 'Productos para perros online en Ecuador',
-    description: 'Compra productos para perros en Ecuador: alimento, comida humeda, ropa, collares, arneses, platos, juguetes y accesorios.',
+    description: 'Compra productos para perros en Ecuador: alimento, comida húmeda, ropa, collares, arneses, platos, juguetes y accesorios.',
     gender: 'dog',
     priority: 0.82,
-    intro: 'Catalogo para perros con productos de alimentacion, paseo, ropa, juego y accesorios para el dia a dia.',
-    highlights: ['Alimento seco y comida humeda para perros', 'Ropa, collares, arneses y correas', 'Productos por talla, etapa y marca'],
+    intro: 'Catálogo para perros con productos de alimentación, paseo, ropa, juego y accesorios para el día a día.',
+    highlights: ['Alimento seco y comida húmeda para perros', 'Ropa, collares, arneses y correas', 'Productos por talla, etapa y marca'],
     faqs: [
       {
-        question: 'Que productos para perros puedo comprar?',
-        answer: 'Puedes comprar alimento, ropa, collares, arneses, correas, platos, juguetes y accesorios segun disponibilidad.',
+        question: '¿Qué productos para perros puedo comprar?',
+        answer: 'Puedes comprar alimento, ropa, collares, arneses, correas, platos, juguetes y accesorios según disponibilidad.',
       },
       {
         question: 'Hay productos para cachorros?',
-        answer: 'Si. Revisa las fichas y categorias de alimento para encontrar opciones para cachorros cuando esten en stock.',
+        answer: 'Sí. Revisa las fichas y categorías de alimento para encontrar opciones para cachorros cuando estén en stock.',
       },
     ],
   },
@@ -308,19 +425,19 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     label: 'Gatos',
     h1: 'Productos para gatos en Ecuador',
     title: 'Productos para gatos online en Ecuador',
-    description: 'Compra productos para gatos en Ecuador: alimento, comida humeda, snacks, areneros, juguetes y accesorios.',
+    description: 'Compra productos para gatos en Ecuador: alimento, comida húmeda, snacks, areneros, juguetes y accesorios.',
     gender: 'cat',
     priority: 0.82,
-    intro: 'Catalogo para gatos con alimento, comida humeda, snacks, juguetes, areneros y accesorios disponibles online.',
-    highlights: ['Alimento para gatos adultos y gatitos', 'Comida humeda y snacks', 'Accesorios y juguetes para gatos'],
+    intro: 'Catálogo para gatos con alimento, comida húmeda, snacks, juguetes, areneros y accesorios disponibles online.',
+    highlights: ['Alimento para gatos adultos y gatitos', 'Comida húmeda y snacks', 'Accesorios y juguetes para gatos'],
     faqs: [
       {
         question: 'Hay alimento para gatos adultos y gatitos?',
-        answer: 'Si. La disponibilidad depende del stock publicado en el catalogo.',
+        answer: 'Sí. La disponibilidad depende del stock publicado en el catálogo.',
       },
       {
         question: 'Tienen juguetes o areneros para gatos?',
-        answer: 'Si, cuando estan publicados puedes encontrarlos dentro de productos para gatos o accesorios.',
+        answer: 'Sí, cuando están publicados puedes encontrarlos dentro de productos para gatos o accesorios.',
       },
     ],
   },
@@ -330,18 +447,18 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
     label: 'Ofertas',
     h1: 'Ofertas para mascotas en Ecuador',
     title: 'Ofertas para mascotas online en Ecuador',
-    description: 'Ofertas y descuentos en productos para perros y gatos en Ecuador, segun promociones y stock disponible.',
+    description: 'Ofertas y descuentos en productos para perros y gatos en Ecuador, según promociones y stock disponible.',
     category: 'descuentos',
     priority: 0.7,
-    intro: 'Productos con precio promocional o descuento vigente para perros y gatos, actualizados segun disponibilidad.',
-    highlights: ['Promociones publicadas en catalogo', 'Productos para perros y gatos', 'Precios en USD y compra online'],
+    intro: 'Productos con precio promocional o descuento vigente para perros y gatos, actualizados según disponibilidad.',
+    highlights: ['Promociones publicadas en catálogo', 'Productos para perros y gatos', 'Precios en USD y compra online'],
     faqs: [
       {
         question: 'Las ofertas cambian?',
-        answer: 'Si. Las promociones dependen del stock, fechas y precios publicados en el catalogo.',
+        answer: 'Sí. Las promociones dependen del stock, fechas y precios publicados en el catálogo.',
       },
       {
-        question: 'Como se aplica un descuento?',
+        question: '¿Cómo se aplica un descuento?',
         answer: 'El precio visible en la ficha o carrito refleja las promociones disponibles para el producto.',
       },
     ],
@@ -360,6 +477,11 @@ export const isCatalogAliasSlug = (slug?: string | null) => {
   return Boolean(normalized && getCanonicalCatalogSlug(normalized) !== normalized)
 }
 
+export const getDirectCatalogPageBySlug = (slug?: string | null) => {
+  if (!slug) return null
+  return SEO_CATALOG_PAGE_BY_SLUG.get(slugifySeo(slug)) ?? null
+}
+
 export const getCatalogPageBySlug = (slug?: string | null) => {
   if (!slug) return null
   return SEO_CATALOG_PAGE_BY_SLUG.get(getCanonicalCatalogSlug(slug)) ?? null
@@ -368,21 +490,21 @@ export const getCatalogPageBySlug = (slug?: string | null) => {
 export const getAllCatalogPage = (): SeoCatalogPage => ({
   slug: 'tienda',
   path: '/tienda',
-  label: 'Catalogo',
+  label: 'Catálogo',
   h1: 'Tienda de mascotas online en Ecuador',
   title: 'Tienda de mascotas online en Ecuador',
   description: 'Compra productos para mascotas en Ecuador: alimento para perros y gatos, ropa, accesorios, salud y cuidado con stock publicado.',
   priority: 0.98,
-  intro: 'Catalogo completo de ParaMascotasEC con productos para perros y gatos: alimento, ropa, accesorios, salud y cuidado.',
+  intro: 'Catálogo completo de ParaMascotasEC con productos para perros y gatos: alimento, ropa, accesorios, salud y cuidado.',
   highlights: ['Productos para perros y gatos', 'Alimento, accesorios, ropa y cuidado', 'Compra online con precios en USD'],
   faqs: [
     {
-      question: 'Que vende ParaMascotasEC?',
+      question: '¿Qué vende ParaMascotasEC?',
       answer: 'ParaMascotasEC vende alimento, ropa, accesorios, juguetes y productos de cuidado para perros y gatos en Ecuador.',
     },
     {
       question: 'Los productos tienen stock real?',
-      answer: 'El catalogo publico se genera desde los productos publicados y disponibles en la tienda.',
+      answer: 'El catálogo público se genera desde los productos publicados y disponibles en la tienda.',
     },
   ],
 })
@@ -478,12 +600,14 @@ const getMostCommonLabel = (labels: string[]) => {
 export const buildDynamicCatalogPageFromProducts = (
   slug: string,
   products: ProductType[],
+  referenceCategories: string[] = [],
 ): SeoCatalogPage | null => {
   const normalizedSlug = slugifySeo(slug)
-  if (!normalizedSlug || getCatalogPageBySlug(normalizedSlug)) return getCatalogPageBySlug(normalizedSlug)
+  const directStaticPage = getDirectCatalogPageBySlug(normalizedSlug)
+  if (!normalizedSlug || directStaticPage) return directStaticPage
 
   const { baseSlug, gender } = splitGenderSlug(normalizedSlug)
-  const baseStaticPage = getCatalogPageBySlug(baseSlug)
+  const baseStaticPage = getDirectCatalogPageBySlug(baseSlug)
   if (!baseSlug) return null
 
   if (baseStaticPage && gender) {
@@ -500,10 +624,10 @@ export const buildDynamicCatalogPageFromProducts = (
       description: `Compra ${label.toLowerCase()} en ParaMascotasEC Ecuador con productos publicados, precios en USD y disponibilidad actualizada.`,
       gender,
       priority: Math.max(baseStaticPage.priority - 0.08, 0.5),
-      intro: `Seleccion de ${label.toLowerCase()} desde el catalogo publicado de ParaMascotasEC, con enlaces limpios y disponibilidad actualizada.`,
+      intro: `Selección de ${label.toLowerCase()} desde el catálogo publicado de ParaMascotasEC, con enlaces limpios y disponibilidad actualizada.`,
       highlights: [
         ...baseStaticPage.highlights.slice(0, 2),
-        `Categoria filtrada para ${speciesLabel}`,
+        `Categoría filtrada para ${speciesLabel}`,
       ],
     }
   }
@@ -514,19 +638,21 @@ export const buildDynamicCatalogPageFromProducts = (
     if (gender && getProductGender(product) !== gender) return false
     return getProductCategoryCandidates(product).some((candidate) => slugifySeo(candidate) === baseSlug)
   })
+  const referenceCategory = referenceCategories.find((category) => slugifySeo(category) === baseSlug)
 
-  if (matchingProducts.length === 0) return null
+  if (matchingProducts.length === 0 && !referenceCategory) return null
 
   const baseLabel = getMostCommonLabel(
     matchingProducts
       .flatMap(getProductCategoryCandidates)
       .filter((candidate) => slugifySeo(candidate) === baseSlug),
-  ) || toDisplayLabel(baseSlug)
+  ) || referenceCategory || toDisplayLabel(baseSlug)
   const speciesLabel = gender === 'dog' ? 'perros' : gender === 'cat' ? 'gatos' : 'mascotas'
   const label = gender ? `${baseLabel} para ${speciesLabel}` : `${baseLabel} para mascotas`
   const brands = uniq(matchingProducts.map((product) => product.brand?.trim()).filter(Boolean)).slice(0, 5)
   const brandText = brands.length > 0 ? ` Marcas disponibles: ${brands.join(', ')}.` : ''
   const lowerLabel = label.toLowerCase()
+  const productCount = matchingProducts.length
 
   return {
     slug: normalizedSlug,
@@ -536,38 +662,39 @@ export const buildDynamicCatalogPageFromProducts = (
     title: `${label} online en Ecuador`,
     description: `Compra ${lowerLabel} en ParaMascotasEC Ecuador con productos publicados, precios en USD y disponibilidad actualizada.${brandText}`,
     category: baseLabel,
-    productType: baseLabel,
     gender,
     priority: gender ? 0.64 : 0.68,
-    intro: `Seleccion de ${lowerLabel} con productos activos del catalogo de ParaMascotasEC. Esta pagina se actualiza automaticamente cuando se publican nuevos productos relacionados.`,
+    intro: `Selección de ${lowerLabel} con productos activos del catálogo de ParaMascotasEC. Esta página se actualiza automáticamente cuando se publican nuevos productos relacionados.`,
     highlights: [
-      `${matchingProducts.length} productos publicados`,
+      productCount > 0 ? `${productCount} productos publicados` : 'Categoría preparada para nuevos productos',
       'URLs limpias y canónicas',
-      'Catalogo conectado al inventario vigente',
+      'Catálogo conectado al inventario vigente',
     ],
     faqs: [
       {
-        question: `Que ${lowerLabel} puedo comprar?`,
-        answer: `Puedes ver los productos publicados en esta categoria, comparar marcas, presentaciones, precios y disponibilidad antes de comprar online.`,
+        question: `¿Qué ${lowerLabel} puedo comprar?`,
+        answer: `Puedes ver los productos publicados en esta categoría, comparar marcas, presentaciones, precios y disponibilidad antes de comprar online.`,
       },
       {
-        question: 'Esta categoria se actualiza cuando agrego productos?',
-        answer: 'Si. Cuando un producto publicado usa esta categoria, la pagina queda disponible para usuarios y motores de busqueda.',
+        question: '¿Esta categoría se actualiza cuando agrego productos?',
+        answer: 'Sí. Cuando un producto publicado usa esta categoría, la página queda disponible para usuarios y motores de búsqueda.',
       },
     ],
   }
 }
 
-export const getDynamicCatalogPages = (products: ProductType[]) => {
+export const getDynamicCatalogPages = (products: ProductType[], referenceCategories: string[] = []) => {
   const candidateSlugs = uniq(
-    products
-      .flatMap(getProductCategoryCandidates)
+    [
+      ...products.flatMap(getProductCategoryCandidates),
+      ...referenceCategories,
+    ]
       .map(slugifySeo)
-      .filter((slug) => slug && !getCatalogPageBySlug(slug)),
+      .filter((slug) => slug && !getDirectCatalogPageBySlug(slug)),
   )
 
   const pages = candidateSlugs
-    .map((slug) => buildDynamicCatalogPageFromProducts(slug, products))
+    .map((slug) => buildDynamicCatalogPageFromProducts(slug, products, referenceCategories))
     .filter((page): page is SeoCatalogPage => Boolean(page))
 
   const staticGenderPages = SEO_CATALOG_PAGES
@@ -581,10 +708,10 @@ export const getDynamicCatalogPages = (products: ProductType[]) => {
 
       return [
         dogCount > 1 && !getCatalogPageBySlug(`${page.slug}-perros`)
-          ? buildDynamicCatalogPageFromProducts(`${page.slug}-perros`, products)
+          ? buildDynamicCatalogPageFromProducts(`${page.slug}-perros`, products, referenceCategories)
           : null,
         catCount > 1 && !getCatalogPageBySlug(`${page.slug}-gatos`)
-          ? buildDynamicCatalogPageFromProducts(`${page.slug}-gatos`, products)
+          ? buildDynamicCatalogPageFromProducts(`${page.slug}-gatos`, products, referenceCategories)
           : null,
       ].filter((entry): entry is SeoCatalogPage => Boolean(entry))
     })
@@ -597,8 +724,8 @@ export const getDynamicCatalogPages = (products: ProductType[]) => {
     const catCount = pageProducts.filter((product) => getProductGender(product) === 'cat').length
 
     return [
-      dogCount > 1 ? buildDynamicCatalogPageFromProducts(`${page.slug}-perros`, products) : null,
-      catCount > 1 ? buildDynamicCatalogPageFromProducts(`${page.slug}-gatos`, products) : null,
+      dogCount > 1 ? buildDynamicCatalogPageFromProducts(`${page.slug}-perros`, products, referenceCategories) : null,
+      catCount > 1 ? buildDynamicCatalogPageFromProducts(`${page.slug}-gatos`, products, referenceCategories) : null,
     ].filter((entry): entry is SeoCatalogPage => Boolean(entry))
   })
 
@@ -662,7 +789,7 @@ export const findCatalogProductForSeoSlug = (products: ProductType[], slug: stri
 
   const directProduct = products.find((product) => getProductIdentifierTokens(product).includes(token))
   if (directProduct) {
-    return findCatalogProductForDetail(products, getProductDetailRouteId(directProduct)) ?? directProduct
+    return directProduct
   }
 
   const idLikeSuffix = products.find((product) =>
@@ -670,7 +797,7 @@ export const findCatalogProductForSeoSlug = (products: ProductType[], slug: stri
   )
 
   return idLikeSuffix
-    ? findCatalogProductForDetail(products, getProductDetailRouteId(idLikeSuffix)) ?? idLikeSuffix
+    ? idLikeSuffix
     : undefined
 }
 
@@ -722,16 +849,16 @@ export const getProductSeoDescription = (product: ProductType) => {
   const brand = product.brand && !productNameIncludesBrand(product) ? ` ${product.brand}` : ''
   const sku = getProductSku(product)
   const category = getCategoryLabel(product.category) || product.category || 'mascotas'
-  const stockText = Number(product.quantity ?? 0) > 0 ? 'con stock disponible' : 'segun disponibilidad'
+  const stockText = Number(product.quantity ?? 0) > 0 ? 'con stock disponible' : 'según disponibilidad'
   const skuText = sku ? ` SKU ${sku}.` : ''
   return `Compra ${product.name}${brand} en ParaMascotasEC. Producto de ${category.toLowerCase()} para ${getGenderWord(product.gender)} en Ecuador, ${stockText}.${skuText}`
 }
 
 export const getBrandLandingCopy = (brand: string) => ({
   h1: `${brand} para mascotas en Ecuador`,
-  title: `${brand} para perros y gatos online en Ecuador`,
-  description: `Compra productos ${brand} para perros y gatos en ParaMascotasEC Ecuador, con precios en USD y stock publicado.`,
-  intro: `Catalogo de productos ${brand} disponibles en ParaMascotasEC para perros y gatos.`,
+  title: `${brand} Ecuador: productos para perros y gatos`,
+  description: `Compra productos ${brand} para perros y gatos en ParaMascotasEC Ecuador, con precios en USD, stock publicado y compra online.`,
+  intro: `Catálogo de productos ${brand} disponibles en ParaMascotasEC para perros y gatos, con fichas de producto, precio y disponibilidad actualizada.`,
 })
 
 const productNameIncludesBrand = (product: ProductType) => {

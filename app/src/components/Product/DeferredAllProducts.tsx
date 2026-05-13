@@ -11,6 +11,7 @@ const AllProducts = dynamic(() => import('./AllProducts'), {
 
 interface Props {
     data: Array<ProductType>
+    categoryIds?: string[]
     pageSize?: number
 }
 
@@ -33,7 +34,7 @@ const AllProductsPlaceholder = () => (
     </section>
 )
 
-export default function DeferredAllProducts({ data, pageSize }: Props) {
+export default function DeferredAllProducts({ data, categoryIds, pageSize }: Props) {
     const containerRef = useRef<HTMLDivElement | null>(null)
     const [shouldLoad, setShouldLoad] = useState(false)
 
@@ -58,7 +59,7 @@ export default function DeferredAllProducts({ data, pageSize }: Props) {
 
     return (
         <div ref={containerRef}>
-            {shouldLoad ? <AllProducts data={data} pageSize={pageSize} /> : <AllProductsPlaceholder />}
+            {shouldLoad ? <AllProducts data={data} categoryIds={categoryIds} pageSize={pageSize} /> : <AllProductsPlaceholder />}
         </div>
     )
 }

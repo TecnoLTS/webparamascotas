@@ -9,6 +9,7 @@ const categoryImages = [
   'accesorios-para-mascotas-4x5.webp',
   'alimento-para-mascotas-4x5.webp',
   'catalogo-completo-para-mascotas-4x5.webp',
+  'ofertas-para-mascotas-4x5.webp',
   'ropa-para-mascotas-4x5.webp',
   'salud-para-mascotas-4x5.webp',
 ]
@@ -43,7 +44,7 @@ const sliderImages = [
   'slade3-uhd.webp',
 ]
 
-const categoryWidths = [160, 240, 320, 432]
+const categoryWidths = [240, 320, 432, 640, 768]
 const extraSliderVariants = [
   { fileName: 'slade1-desktop.webp', suffix: 'desktop-1440', width: 1440 },
   { fileName: 'slade2-desktop.webp', suffix: 'desktop-1440', width: 1440 },
@@ -66,7 +67,7 @@ const writeCategoryVariants = async () => {
     return categoryWidths.map((width) =>
       sharp(source)
         .resize({ width, withoutEnlargement: true })
-        .webp({ quality: 72, effort: 5 })
+        .webp({ quality: 84, effort: 5 })
         .toFile(path.join(outputDir, `${baseName}-${width}.webp`))
     )
   }))

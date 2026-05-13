@@ -8,6 +8,7 @@ import type { ProductType } from '@/type/ProductType'
 import { getProductSeoPath } from '@/lib/seoUrls'
 import { SEO_GUIDES } from '@/data/seoGuides'
 import { SEO_SERVICE_PAGES } from '@/data/seoServices'
+import { getPublicProductCategories } from '@/lib/api/settings'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,14 +58,26 @@ export async function GET() {
   const site = getSiteConfig()
   const baseUrl = getCanonicalSiteUrl()
   let products: ProductType[] = []
+  let publicCategories: string[] = []
 
-  try {
-    products = (await fetchProducts({ fresh: true })).filter(isPublicProduct)
-  } catch (error) {
-    console.error('No se pudo generar llms.txt dinamico', error)
+  const [productsResult, categoriesResult] = await Promise.allSettled([
+    fetchProducts({ fresh: true }),
+    getPublicProductCategories(),
+  ])
+
+  if (productsResult.status === 'fulfilled') {
+    products = productsResult.value.filter(isPublicProduct)
+  } else {
+    console.error('No se pudo generar llms.txt dinamico', productsResult.reason)
   }
 
-  const categoryLines = buildCatalogCategoryCards(products)
+  if (categoriesResult.status === 'fulfilled') {
+    publicCategories = categoriesResult.value
+  } else {
+    console.error('No se pudieron cargar categorias para llms.txt', categoriesResult.reason)
+  }
+
+  const categoryLines = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories })
     .filter((category) => category.id.toLowerCase() !== 'todos')
     .map((category) => `- [${sanitizeText(category.label)}](${toCanonicalUrl(getCategoryUrl(category.id))})`)
 

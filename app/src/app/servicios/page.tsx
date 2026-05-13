@@ -8,6 +8,7 @@ import { fetchProducts } from '@/lib/products'
 import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { toCanonicalUrl } from '@/lib/publicUrl'
+import { getPublicProductCategories } from '@/lib/api/settings'
 import type { ProductType } from '@/type/ProductType'
 
 export const dynamic = 'force-dynamic'
@@ -24,15 +25,27 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function ServiciosPage() {
   let products: ProductType[] = []
+  let publicCategories: string[] = []
 
-  try {
-    products = orderProductsFoodFirst(await fetchProducts({ fresh: true }))
-  } catch (error) {
-    console.error('No se pudieron cargar productos para pagina de servicios:', error)
+  const [productsResult, categoriesResult] = await Promise.allSettled([
+    fetchProducts({ fresh: true }),
+    getPublicProductCategories(),
+  ])
+
+  if (productsResult.status === 'fulfilled') {
+    products = orderProductsFoodFirst(productsResult.value)
+  } else {
+    console.error('No se pudieron cargar productos para pagina de servicios:', productsResult.reason)
   }
 
-  const availableCategoryIds = buildCatalogCategoryCards(products).map((category) => category.id)
-  const footerCategoryIds = availableCategoryIds.filter((categoryId) => categoryId.toLowerCase() !== 'todos')
+  if (categoriesResult.status === 'fulfilled') {
+    publicCategories = categoriesResult.value
+  } else {
+    console.error('No se pudieron cargar categorias publicas para pagina de servicios:', categoriesResult.reason)
+  }
+
+  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const footerCategoryIds = availableCategoryIds
 
   return (
     <>

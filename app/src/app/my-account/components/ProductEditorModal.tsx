@@ -93,6 +93,43 @@ const requiredImageSizes = {
 const PURCHASE_INVOICE_MEMORY_KEY = 'paramascotasec:last-purchase-invoice'
 const BASE_PRICE_FRACTION_DIGITS = 4
 
+const getCategoryIdentity = (value?: string | null) =>
+    normalizeProductCategory(value)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+
+const sanitizeAdditionalCategoryValues = (
+    values: Array<string | null | undefined>,
+    primaryCategory?: string | null,
+    previousPrimaryCategory?: string | null
+) => {
+    const blockedCategories = new Set(
+        [primaryCategory, previousPrimaryCategory]
+            .map((value) => getCategoryIdentity(value))
+            .filter(Boolean)
+    )
+    const seenCategories = new Set<string>()
+
+    return values.reduce<string[]>((acc, value) => {
+        const normalizedValue = normalizeProductCategory(value)
+        const categoryIdentity = getCategoryIdentity(normalizedValue)
+        if (!normalizedValue || !categoryIdentity || blockedCategories.has(categoryIdentity) || seenCategories.has(categoryIdentity)) {
+            return acc
+        }
+
+        seenCategories.add(categoryIdentity)
+        acc.push(normalizedValue)
+        return acc
+    }, [])
+}
+
+const serializeSanitizedAdditionalCategories = (
+    values: Array<string | null | undefined>,
+    primaryCategory?: string | null,
+    previousPrimaryCategory?: string | null
+) => serializeProductCategories(sanitizeAdditionalCategoryValues(values, primaryCategory, previousPrimaryCategory))
+
 const applyDefaultSizes = (
     entries: Array<{ url: string; width?: string | number; height?: string | number }>,
     kind: 'thumb' | 'gallery'
@@ -717,8 +754,11 @@ export default function ProductEditorModal({
         [duplicateVariantInputValue]
     )
     const selectedAdditionalCategories = React.useMemo(
-        () => parseSerializedProductCategories(form.attributes?.catalogCategories),
-        [form.attributes?.catalogCategories]
+        () => sanitizeAdditionalCategoryValues(
+            parseSerializedProductCategories(form.attributes?.catalogCategories),
+            form.category
+        ),
+        [form.attributes?.catalogCategories, form.category]
     )
     const sizeGuideRows = React.useMemo(() => parseProductSizeGuideRows(form.attributes?.sizeGuideRows), [form.attributes?.sizeGuideRows])
     const brandOptions = React.useMemo(() => getBrandOptionsWithCurrent(referenceData.brands, form.brand), [form.brand, referenceData.brands])
@@ -1047,7 +1087,10 @@ export default function ProductEditorModal({
         setForm((prev) => {
             const normalizedType = normalizeProductType(value, prev.category)
             const nextAttributes = getAttributesForTypeChange(normalizedType, prev.attributes)
-            const preservedAdditionalCategories = parseSerializedProductCategories(prev.attributes?.catalogCategories)
+            const preservedAdditionalCategories = sanitizeAdditionalCategoryValues(
+                parseSerializedProductCategories(prev.attributes?.catalogCategories),
+                prev.category
+            )
 
             nextAttributes.catalogCategories = serializeProductCategories(preservedAdditionalCategories)
 
@@ -1064,6 +1107,28 @@ export default function ProductEditorModal({
             }
         })
         clearErrors('productType', 'sku', 'tag', 'species', 'expirationDate', 'expirationAlertDays')
+    }, [clearErrors])
+
+    const handlePrimaryCategoryChange = React.useCallback((value: string) => {
+        setForm((prev) => {
+            const previousCategory = prev.category
+            const nextCategory = normalizeProductCategory(value)
+            const nextAdditionalCategories = sanitizeAdditionalCategoryValues(
+                parseSerializedProductCategories(prev.attributes?.catalogCategories),
+                nextCategory,
+                previousCategory
+            )
+
+            return {
+                ...prev,
+                category: nextCategory,
+                attributes: {
+                    ...(prev.attributes || {}),
+                    catalogCategories: serializeProductCategories(nextAdditionalCategories),
+                },
+            }
+        })
+        clearErrors('category')
     }, [clearErrors])
 
     const setPreferredSupplier = React.useCallback((value: string) => {
@@ -1113,11 +1178,16 @@ export default function ProductEditorModal({
 
     const toggleAdditionalCategory = React.useCallback((value: string) => {
         const normalizedValue = normalizeProductCategory(value)
-        if (!normalizedValue || normalizedValue === normalizeProductCategory(form.category)) return
+        if (!normalizedValue || getCategoryIdentity(normalizedValue) === getCategoryIdentity(form.category)) return
 
-        const currentValues = parseSerializedProductCategories(form.attributes?.catalogCategories)
-        const nextValues = currentValues.includes(normalizedValue)
-            ? currentValues.filter((item) => item !== normalizedValue)
+        const currentValues = sanitizeAdditionalCategoryValues(
+            parseSerializedProductCategories(form.attributes?.catalogCategories),
+            form.category
+        )
+        const normalizedValueIdentity = getCategoryIdentity(normalizedValue)
+        const hasCurrentValue = currentValues.some((item) => getCategoryIdentity(item) === normalizedValueIdentity)
+        const nextValues = hasCurrentValue
+            ? currentValues.filter((item) => getCategoryIdentity(item) !== normalizedValueIdentity)
             : [...currentValues, normalizedValue]
 
         setAttribute('catalogCategories', serializeProductCategories(nextValues))
@@ -1915,6 +1985,15 @@ export default function ProductEditorModal({
                 nextVariantLabel = resolveProductVariantLabel(productType, normalizedAttributes)
             }
             normalizedAttributes.taxExempt = form.taxExempt ? 'true' : 'false'
+            const sanitizedAdditionalCategories = serializeSanitizedAdditionalCategories(
+                parseSerializedProductCategories(normalizedAttributes.catalogCategories),
+                category
+            )
+            if (sanitizedAdditionalCategories) {
+                normalizedAttributes.catalogCategories = sanitizedAdditionalCategories
+            } else {
+                delete normalizedAttributes.catalogCategories
+            }
             const normalizedSpecies = normalizeProductSpecies(normalizedAttributes.species, editingProduct?.gender ?? '')
             const duplicateSourceVariantLabel = String(form.attributes?.__sourceVariantLabel || '').trim()
             const variantDefinitionField = isDuplicateVariantMode ? duplicateVariantFieldKey : getVariantDefinitionFieldKey(productType)
@@ -2665,7 +2744,7 @@ export default function ProductEditorModal({
                                         <select
                                             className="border border-line rounded-lg px-4 py-3 w-full outline-none transition-all bg-white focus:border-black disabled:bg-surface disabled:text-secondary"
                                             value={form.category}
-                                            onChange={(event) => setForm({ ...form, category: event.target.value })}
+                                            onChange={(event) => handlePrimaryCategoryChange(event.target.value)}
                                             disabled={saving || !form.productType || isRestockMode}
                                         >
                                             <option value="">Selecciona categoría</option>
@@ -2684,9 +2763,11 @@ export default function ProductEditorModal({
                                         <div className="text-secondary text-xs uppercase font-bold mb-2">También mostrar en</div>
                                         <div className="flex flex-wrap gap-2">
                                             {categoryOptions
-                                                .filter((category) => category !== primaryCategory)
+                                                .filter((category) => getCategoryIdentity(category) !== getCategoryIdentity(primaryCategory))
                                                 .map((category) => {
-                                                    const isSelected = selectedAdditionalCategories.includes(category)
+                                                    const isSelected = selectedAdditionalCategories.some(
+                                                        (selectedCategory) => getCategoryIdentity(selectedCategory) === getCategoryIdentity(category)
+                                                    )
                                                     return (
                                                         <button
                                                             key={`additional-category-${category}`}

@@ -7,9 +7,11 @@ import {
     getBrandSearchText,
     getSupplierSearchText,
     normalizeReferenceList,
+    normalizeProductCategoryImageRecords,
     PRODUCT_REFERENCE_SECTIONS,
     PRODUCT_SYSTEM_REFERENCE_GROUPS,
     type ProductBrandReference,
+    type ProductCategoryImageReference,
     type ProductReferenceData,
     type ProductReferenceKey,
     type ProductSupplierReference,
@@ -25,6 +27,7 @@ type ProductReferenceDataPanelProps = {
     focusKey?: ProductReferenceKey | null;
     onChange: (next: ProductReferenceData) => void;
     onSave: () => Promise<void> | void;
+    onSaveData?: (next: ProductReferenceData) => Promise<void> | void;
 }
 
 export default React.memo(function ProductReferenceDataPanel({
@@ -34,6 +37,7 @@ export default React.memo(function ProductReferenceDataPanel({
     focusKey = null,
     onChange,
     onSave,
+    onSaveData,
 }: ProductReferenceDataPanelProps) {
     const [panelSearch, setPanelSearch] = React.useState('')
     const [selectedKey, setSelectedKey] = React.useState<ProductReferenceKey>(PRODUCT_REFERENCE_SECTIONS[0].key)
@@ -76,6 +80,23 @@ export default React.memo(function ProductReferenceDataPanel({
             [key]: normalizeReferenceList(nextValues),
         })
     }, [data, onChange])
+
+    const updateCategories = React.useCallback(async (
+        nextValues: string[],
+        nextCategoryImages: ProductCategoryImageReference[],
+    ) => {
+        const nextData = {
+            ...data,
+            categories: normalizeReferenceList(nextValues),
+            categoryImages: normalizeProductCategoryImageRecords(nextCategoryImages),
+        }
+
+        onChange(nextData)
+
+        if (onSaveData) {
+            await onSaveData(nextData)
+        }
+    }, [data, onChange, onSaveData])
 
     const updateBrands = React.useCallback((nextValues: ProductBrandReference[]) => {
         onChange({
@@ -196,18 +217,16 @@ export default React.memo(function ProductReferenceDataPanel({
                                 <button
                                     key={`catalog-selector-${section.key}`}
                                     type="button"
-                                    className={`w-full rounded-xl border px-4 py-3 text-left transition-all ${
-                                        isActive
-                                            ? 'border-primary bg-primary/5 ring-1 ring-primary/10'
-                                            : 'border-line bg-surface/40 hover:bg-surface'
-                                    }`}
+                                    className={`w-full rounded-xl border px-4 py-3 text-left transition-all ${isActive
+                                        ? 'border-primary bg-primary/5 ring-1 ring-primary/10'
+                                        : 'border-line bg-surface/40 hover:bg-surface'
+                                        }`}
                                     onClick={() => setSelectedKey(section.key)}
                                 >
                                     <div className="flex items-center justify-between gap-3">
                                         <div className="flex items-center gap-3 min-w-0">
-                                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                                                isActive ? 'bg-primary/10 text-primary' : 'bg-white border border-line'
-                                            }`}>
+                                            <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${isActive ? 'bg-primary/10 text-primary' : 'bg-white border border-line'
+                                                }`}>
                                                 <ItemIcon size={18} />
                                             </div>
                                             <div className="min-w-0">
@@ -230,44 +249,46 @@ export default React.memo(function ProductReferenceDataPanel({
                 </div>
 
                 <div className="p-6 rounded-2xl border border-line bg-white">
-                {loading ? (
-                    <div className="py-12 text-center text-secondary">Cargando catálogos...</div>
-                ) : (
-                    selectedSection.key === 'suppliers' ? (
-                        <SupplierReferenceSectionCard
-                            section={selectedSection}
-                            values={data.suppliers}
-                            saving={saving}
-                            focused={focusKey === selectedSection.key}
-                            onChangeValues={updateSuppliers}
-                        />
-                    ) : selectedSection.key === 'brands' ? (
-                        <BrandReferenceSectionCard
-                            section={selectedSection}
-                            values={data.brands}
-                            saving={saving}
-                            focused={focusKey === selectedSection.key}
-                            onChangeValues={updateBrands}
-                        />
+                    {loading ? (
+                        <div className="py-12 text-center text-secondary">Cargando catálogos...</div>
                     ) : (
-                        <ProductReferenceSectionCard
-                            section={selectedSection}
-                            values={(data[selectedSection.key] || []) as string[]}
-                            saving={saving}
-                            focused={focusKey === selectedSection.key}
-                            onChangeValues={(nextValues) => updateSectionValues(selectedSection.key, nextValues)}
-                        />
-                    )
-                )}
+                        selectedSection.key === 'suppliers' ? (
+                            <SupplierReferenceSectionCard
+                                section={selectedSection}
+                                values={data.suppliers}
+                                saving={saving}
+                                focused={focusKey === selectedSection.key}
+                                onChangeValues={updateSuppliers}
+                            />
+                        ) : selectedSection.key === 'brands' ? (
+                            <BrandReferenceSectionCard
+                                section={selectedSection}
+                                values={data.brands}
+                                saving={saving}
+                                focused={focusKey === selectedSection.key}
+                                onChangeValues={updateBrands}
+                            />
+                        ) : (
+                            <ProductReferenceSectionCard
+                                section={selectedSection}
+                                values={(data[selectedSection.key] || []) as string[]}
+                                categoryImages={data.categoryImages}
+                                saving={saving}
+                                focused={focusKey === selectedSection.key}
+                                onChangeValues={(nextValues) => updateSectionValues(selectedSection.key, nextValues)}
+                                onChangeCategoryValues={selectedSection.key === 'categories' ? updateCategories : undefined}
+                            />
+                        )
+                    )}
 
-                <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:justify-between sm:items-center">
-                    <p className="text-xs text-secondary">
-                        Los cambios quedan disponibles en el editor de productos después de guardar este módulo.
-                    </p>
-                    <button className="button-main py-2.5 px-6 disabled:opacity-60" onClick={onSave} disabled={saving || loading}>
-                        {saving ? 'Guardando...' : 'Guardar catálogos'}
-                    </button>
-                </div>
+                    <div className="mt-6 flex flex-col sm:flex-row gap-3 sm:justify-between sm:items-center">
+                        <p className="text-xs text-secondary">
+                            Los cambios quedan disponibles en el editor de productos después de guardar este módulo.
+                        </p>
+                        <button className="button-main py-2.5 px-6 disabled:opacity-60" onClick={onSave} disabled={saving || loading}>
+                            {saving ? 'Guardando...' : 'Guardar catálogos'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

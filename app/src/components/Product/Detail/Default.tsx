@@ -23,7 +23,7 @@ import {
   getProductVariants,
   hasRealReviews,
 } from '@/lib/catalog'
-import { getCatalogPagePath } from '@/lib/seoUrls'
+import { getBrandSeoPath, getCatalogPagePath } from '@/lib/seoUrls'
 import {
   fetchLiveCatalogSnapshot,
   findLiveCatalogProduct,
@@ -265,7 +265,7 @@ const Default: React.FC<Props> = ({ data, productId }) => {
   const categoryLabel = (productFamily?.category ?? '').trim().toLowerCase()
   const isFoodCategory = ['alimento', 'premio', 'snack'].some((word) => categoryLabel.includes(word) || productType.includes(word))
   const selectorLabel = isFoodCategory
-    ? 'Tamano del paquete'
+    ? 'Tamaño del paquete'
     : (isClothing ? 'Talla' : (hasSizeSelector ? 'Tamaño' : 'Variante'))
   const sku = activeVariant ? getProductSku(activeVariant) : ''
   const price = Number(activeVariant?.price ?? 0)
@@ -283,11 +283,11 @@ const Default: React.FC<Props> = ({ data, productId }) => {
 
   const attributeLabels: Record<string, Record<string, string>> = {
     alimento: {
-      size: 'Tamano',
+      size: 'Tamaño',
       flavor: 'Sabor',
       target: 'Etapa',
       species: 'Especie',
-      presentation: 'Presentacion',
+      presentation: 'Presentación',
     },
     ropa: {
       size: 'Talla',
@@ -302,17 +302,17 @@ const Default: React.FC<Props> = ({ data, productId }) => {
       material: 'Material',
       usage: 'Uso',
       species: 'Especie',
-      presentation: 'Presentacion',
+      presentation: 'Presentación',
     },
     cuidado: {
-      size: 'Tamano',
-      presentation: 'Presentacion',
+      size: 'Tamaño',
+      presentation: 'Presentación',
       usage: 'Uso',
       species: 'Especie',
     },
     salud: {
-      size: 'Tamano',
-      presentation: 'Presentacion',
+      size: 'Tamaño',
+      presentation: 'Presentación',
       usage: 'Uso',
       species: 'Especie',
     },
@@ -382,15 +382,16 @@ const Default: React.FC<Props> = ({ data, productId }) => {
   const categoryPath = productFamily?.category
     ? getCatalogPagePath(productFamily.category, { gender: productFamily.gender })
     : '/tienda'
+  const brandPath = productFamily?.brand ? getBrandSeoPath(productFamily.brand) : null
   const descriptionText =
     activeVariant?.description?.trim()
     || productFamily?.description?.trim()
-    || 'Producto publicado en ParaMascotasEC con informacion de precio, disponibilidad y presentaciones segun stock vigente.'
+    || 'Producto publicado en ParaMascotasEC con información de precio, disponibilidad y presentaciones según stock vigente.'
 
   const specificationRows = useMemo(() => {
     const rows = [
       { key: 'brand', label: 'Marca', value: activeVariant?.brand || productFamily?.brand },
-      { key: 'category', label: 'Categoria', value: formattedCategory },
+      { key: 'category', label: 'Categoría', value: formattedCategory },
       { key: 'species', label: 'Especie', value: petLabel },
       { key: 'sku', label: 'SKU', value: sku },
       { key: 'price', label: 'Precio', value: price > 0 ? `USD ${price.toFixed(2)}` : '' },
@@ -627,8 +628,10 @@ const Default: React.FC<Props> = ({ data, productId }) => {
           <div className="product-infor w-full">
             <div className="flex gap-4">
               <div>
-                {productFamily.brand && (
-                  <div className="caption2 text-secondary font-semibold uppercase">{productFamily.brand}</div>
+                {productFamily.brand && brandPath && (
+                  <Link className="caption2 text-secondary font-semibold uppercase hover:text-[var(--blue)]" href={brandPath}>
+                    {productFamily.brand}
+                  </Link>
                 )}
                 <h1 className="heading4 mt-1">{productFamily.name}</h1>
               </div>
@@ -799,7 +802,7 @@ const Default: React.FC<Props> = ({ data, productId }) => {
 
               <div className="grid sm:grid-cols-2 gap-4 mt-5 pb-6 border-b border-line">
                 <div className="rounded-xl border border-line p-4 bg-surface">
-                  <div className="caption1 text-secondary">Categoria</div>
+                  <div className="caption1 text-secondary">Categoría</div>
                   <div className="text-title mt-1">{formattedCategory}</div>
                 </div>
                 <div className="rounded-xl border border-line p-4 bg-surface">
@@ -826,7 +829,7 @@ const Default: React.FC<Props> = ({ data, productId }) => {
                   }`}
                 onClick={() => setActiveTab('description')}
               >
-                Descripcion
+                Descripción
               </button>
               <button
                 type="button"

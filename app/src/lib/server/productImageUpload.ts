@@ -6,12 +6,36 @@ import sharp from 'sharp'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 
-type UploadImageKind = 'thumb' | 'gallery' | 'brandLogo'
+type UploadImageKind =
+  | 'thumb'
+  | 'gallery'
+  | 'brandLogo'
+  | 'categoryTop'
+  | 'categoryFeaturedMobilePrimary'
+  | 'categoryFeaturedMobileSecondary'
+  | 'categoryFeaturedDesktopPrimary'
+  | 'categoryFeaturedDesktopSecondary'
 
-const allowedKinds = new Set<UploadImageKind>(['thumb', 'gallery', 'brandLogo'])
+const allowedKinds = new Set<UploadImageKind>([
+  'thumb',
+  'gallery',
+  'brandLogo',
+  'categoryTop',
+  'categoryFeaturedMobilePrimary',
+  'categoryFeaturedMobileSecondary',
+  'categoryFeaturedDesktopPrimary',
+  'categoryFeaturedDesktopSecondary',
+])
 const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp'])
 const outputImageExtension = 'webp'
 const productUploadVariantWidths = [220, 360]
+const categoryImageSpecs: Partial<Record<UploadImageKind, { width: number; height: number; label: string }>> = {
+  categoryTop: { width: 1200, height: 1500, label: 'categoria-home-4x5' },
+  categoryFeaturedMobilePrimary: { width: 1176, height: 736, label: 'banner2-movil-16x10' },
+  categoryFeaturedMobileSecondary: { width: 588, height: 588, label: 'banner2-movil-1x1' },
+  categoryFeaturedDesktopPrimary: { width: 1260, height: 1240, label: 'banner2-desktop-630x620' },
+  categoryFeaturedDesktopSecondary: { width: 1260, height: 590, label: 'banner2-desktop-630x295' },
+}
 const maxUploadBytes = 8 * 1024 * 1024
 const backendBase = (process.env.BACKEND_URL_INTERNAL || 'http://paramascotasec-backend-web/api').replace(/\/$/, '')
 const seoFilenameMaxLength = 140
@@ -98,12 +122,19 @@ const buildSeoImageFileName = (
   kind: UploadImageKind,
   ext: string
 ) => {
+  const categorySpec = categoryImageSpecs[kind]
   const rawSegments = kind === 'brandLogo'
     ? [
       metadata.platform,
       metadata.brandName,
       'logo-marca',
     ]
+    : categorySpec
+      ? [
+        metadata.platform,
+        metadata.category,
+        categorySpec.label,
+      ]
     : [
       metadata.platform,
       metadata.productName,
@@ -136,6 +167,8 @@ const buildVariantFileName = (fileName: string, width: number) =>
 
 const isUploadImageKind = (value: unknown): value is UploadImageKind =>
   typeof value === 'string' && allowedKinds.has(value as UploadImageKind)
+
+const isCategoryImageKind = (kind: UploadImageKind) => Boolean(categoryImageSpecs[kind])
 
 const resolvePublicDir = async () => {
   const candidates = [
@@ -238,25 +271,35 @@ export const handleProductImageUpload = async (req: Request) => {
     let webpBuffer: Buffer
     try {
       const image = sharp(buffer, { failOn: 'warning' }).rotate()
-      webpBuffer = kindValue === 'brandLogo'
-        ? await image
+      if (kindValue === 'brandLogo') {
+        webpBuffer = await image
           .resize({ width: 600, height: 240, fit: 'inside', withoutEnlargement: true })
           .webp({ quality: 90, effort: 5 })
           .toBuffer()
-        : await image
+      } else if (isCategoryImageKind(kindValue)) {
+        const spec = categoryImageSpecs[kindValue]
+        if (!spec) throw new Error('Invalid category image kind')
+        webpBuffer = await image
+          .resize({ width: spec.width, height: spec.height, fit: 'cover', position: 'center' })
+          .webp({ quality: 88, effort: 5 })
+          .toBuffer()
+      } else {
+        webpBuffer = await image
           .webp({ quality: 82, effort: 5 })
           .toBuffer()
+      }
     } catch {
       return NextResponse.json({ ok: false, error: { message: 'No se pudo convertir la imagen a WebP.' } }, { status: 400 })
     }
 
     const publicDir = await resolvePublicDir()
-    const uploadDir = path.join(publicDir, 'uploads', kindValue === 'brandLogo' ? 'brands' : 'products')
+    const uploadFolder = kindValue === 'brandLogo' ? 'brands' : isCategoryImageKind(kindValue) ? 'categories' : 'products'
+    const uploadDir = path.join(publicDir, 'uploads', uploadFolder)
     await fs.mkdir(uploadDir, { recursive: true })
     const fileName = buildSeoImageFileName(metadata, kindValue, outputImageExtension)
     const filePath = path.join(uploadDir, fileName)
     await fs.writeFile(filePath, webpBuffer)
-    if (kindValue !== 'brandLogo') {
+    if (kindValue === 'thumb' || kindValue === 'gallery') {
       await Promise.all(productUploadVariantWidths.map(async (width) => {
         const variantPath = path.join(uploadDir, buildVariantFileName(fileName, width))
         await sharp(webpBuffer)
@@ -271,7 +314,7 @@ export const handleProductImageUpload = async (req: Request) => {
     return NextResponse.json({
       ok: true,
       data: {
-        url: `/uploads/${kindValue === 'brandLogo' ? 'brands' : 'products'}/${fileName}`,
+        url: `/uploads/${uploadFolder}/${fileName}`,
         fileName,
         kind: kindValue,
         width: outputMetadata.width,

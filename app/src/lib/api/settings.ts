@@ -1,8 +1,10 @@
 import { fetchJson, requestApi } from '@/lib/apiClient'
 import {
   normalizeProductBrandRecords,
+  normalizeProductCategoryImageRecords,
   normalizeProductReferenceData,
   type ProductBrandReference,
+  type ProductCategoryImageReference,
   type ProductReferenceData,
 } from '@/lib/productReferenceData'
 import { apiEndpoints } from './endpoints'
@@ -99,6 +101,16 @@ export const getPublicStoreStatus = () =>
 export const getPublicBrandLogos = async () => {
   const data = await fetchJson<ProductBrandReference[]>(apiEndpoints.settings.publicBrandLogos)
   return normalizeProductBrandRecords(data).filter((brand) => brand.logoUrl)
+}
+
+export const getPublicProductCategories = async () => {
+  const data = await fetchJson<string[]>(apiEndpoints.settings.publicProductCategories)
+  return normalizeProductReferenceData({ categories: data }).categories
+}
+
+export const getPublicProductCategoryReferences = async (): Promise<ProductCategoryImageReference[]> => {
+  const data = await fetchJson<ProductCategoryImageReference[]>(apiEndpoints.settings.publicProductCategoryReferences)
+  return normalizeProductCategoryImageRecords(data)
 }
 
 export const getProductReferenceData = async () => {

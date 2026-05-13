@@ -9,9 +9,9 @@ import Product from '../Product/Product';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css'
 import HandlePagination from '../Other/HandlePagination';
-import { getCategoryFilter, getCategoryLabel, getCategoryUrl, getShopBrowseCategoryIds, matchesPetCategoryFilter } from '@/data/petCategoryCards';
+import { getCategoryFilter, getCategoryLabel, getCategoryUrl, matchesPetCategoryFilter } from '@/data/petCategoryCards';
 import { useSite } from '@/context/SiteContext';
-import { getProductDiscountPercent, isProductOnSale } from '@/lib/catalog';
+import { buildCatalogCategoryCards, getProductDiscountPercent, isProductOnSale } from '@/lib/catalog';
 import { buildProductSearchIndex, filterProductsBySearch, matchesProductSearch, sanitizeProductSearchQuery } from '@/lib/productSearch';
 import {
     getProductColorValues,
@@ -27,9 +27,18 @@ interface Props {
     category?: string | null
     gender?: string | null
     searchQuery?: string | null
+    categoryIds?: string[]
 }
 
-const ShopSidebarList: React.FC<Props> = ({ data, productPerPage, dataType, category, gender, searchQuery }) => {
+const normalizeCategoryOptionId = (categoryId: string) => {
+    const normalized = categoryId.trim().toLowerCase()
+    if (normalized === 'todas') return 'todos'
+    if (normalized === 'ofertas') return 'descuentos'
+    if (['perros', 'gatos'].includes(normalized)) return ''
+    return normalized
+}
+
+const ShopSidebarList: React.FC<Props> = ({ data, productPerPage, dataType, category, gender, searchQuery, categoryIds }) => {
     useSite()
     const pathname = usePathname()
     const router = useRouter()
@@ -56,6 +65,16 @@ const ShopSidebarList: React.FC<Props> = ({ data, productPerPage, dataType, cate
     const isDiscountCategory = normalizedCategory === 'descuentos'
     const effectiveSearchQuery = useMemo(() => sanitizeProductSearchQuery(deferredSearchInput), [deferredSearchInput])
     const productSearchIndex = useMemo(() => buildProductSearchIndex(data), [data])
+    const categoryBrowseIds = useMemo(() => {
+        const sourceCategoryIds = categoryIds?.length
+            ? categoryIds
+            : buildCatalogCategoryCards(data).map((categoryCard) => categoryCard.id)
+        const normalizedIds = sourceCategoryIds
+            .map(normalizeCategoryOptionId)
+            .filter(Boolean)
+
+        return Array.from(new Set(['todos', ...normalizedIds]))
+    }, [categoryIds, data])
 
     const categoryCounts = useCallback((categoryId: string) => {
         const filter = getCategoryFilter(categoryId)
@@ -70,15 +89,10 @@ const ShopSidebarList: React.FC<Props> = ({ data, productPerPage, dataType, cate
         }).length
     }, [data, effectiveSearchQuery, productSearchIndex])
     const categoryOptions = useMemo(() => {
-        const preferred = getShopBrowseCategoryIds()
-        return preferred.filter((categoryId) => {
-            if (categoryId === 'todos') {
-                return data.length > 0
-            }
-
-            return categoryCounts(categoryId) > 0
+        return categoryBrowseIds.filter((categoryId) => {
+            return categoryCounts(categoryId) > 0 || normalizedCategory === categoryId
         })
-    }, [categoryCounts, data])
+    }, [categoryBrowseIds, categoryCounts, normalizedCategory])
     const buildCategoryHref = useCallback((categoryId: string) => {
         const baseUrl = getCategoryUrl(categoryId)
 

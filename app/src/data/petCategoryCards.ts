@@ -2,13 +2,6 @@ import { normalizeProductCategory, normalizeProductType } from '@/lib/productTax
 import { versionStaticAssetPath } from '@/lib/staticAsset'
 import type { ProductType } from '@/type/ProductType'
 
-export interface PetCategoryCard {
-  id: string
-  label: string
-  image: string
-  alt: string
-}
-
 export type PetCategoryFilter = {
   category?: string
   categories?: string[]
@@ -37,6 +30,14 @@ export type PetCategoryFeaturedImageVariant =
   | 'mobileSecondary'
   | 'desktopPrimary'
   | 'desktopSecondary'
+
+export interface PetCategoryCard {
+  id: string
+  label: string
+  image: string
+  alt: string
+  featuredImages?: Partial<Record<PetCategoryFeaturedImageVariant, string>>
+}
 
 type PetCategoryDefinition = {
   id: string
@@ -123,10 +124,20 @@ const toTitleCase = (value?: string) => {
   if (!value) return ''
 
   return value
+    .replace(/[-_]+/g, ' ')
     .split(' ')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ')
 }
+
+const slugifyCategoryRoute = (value?: string | null) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' y ')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
 
 const findMapValueCaseInsensitive = <T,>(map: Record<string, T>, key?: string | null) => {
   if (!key) return undefined
@@ -268,14 +279,18 @@ const topAssetRopa = topAsset('ropa-para-mascotas-4x5.webp')
 const topAssetAlimento = topAsset('alimento-para-mascotas-4x5.webp')
 const topAssetSalud = topAsset('salud-para-mascotas-4x5.webp')
 const topAssetAccesorios = topAsset('accesorios-para-mascotas-4x5.webp')
+const topAssetOfertas = topAsset('ofertas-para-mascotas-4x5.webp')
+
 
 export const PET_HOME_TOP_IMAGES: PetCategoryImageMap = {
   todos: topAssetTodos,
+  descuentos: topAssetOfertas,
   ropa: topAssetRopa,
   alimento: topAssetAlimento,
   salud: topAssetSalud,
   cuidados: topAssetSalud,
   cuidado: topAssetSalud,
+  higiene: topAssetSalud,
   accesorios: topAssetAccesorios,
 }
 
@@ -299,6 +314,7 @@ export const PET_HOME_FEATURED_IMAGES: PetCategoryFeaturedImageSetMap = {
   salud: featuredSalud,
   cuidados: featuredSalud,
   cuidado: featuredSalud,
+  higiene: featuredSalud,
   accesorios: featuredAccesorios,
 }
 
@@ -413,6 +429,9 @@ const uniqueNormalizedValues = (
 const normalizeGender = (value?: string | null) =>
   (value ?? '').trim().toLowerCase()
 
+const normalizeCategoryMatchValue = (value?: string | null) =>
+  normalizeProductCategory(value).toLocaleLowerCase('es-EC')
+
 const parseAdditionalCategoryValues = (value: unknown): string[] => {
   if (Array.isArray(value)) {
     return value
@@ -450,7 +469,7 @@ export const resolvePetCategoryFilter = (
 ): ResolvedPetCategoryFilter => ({
   categories: uniqueNormalizedValues(
     [filter?.category, ...(filter?.categories ?? [])],
-    normalizeProductCategory
+    normalizeCategoryMatchValue
   ),
   productTypes: uniqueNormalizedValues(
     [filter?.productType, ...(filter?.productTypes ?? [])],
@@ -476,7 +495,7 @@ export const matchesPetCategoryFilter = (
   )
   const productCategories = uniqueNormalizedValues(
     [productCategory, ...additionalCategories],
-    normalizeProductCategory
+    normalizeCategoryMatchValue
   )
   const productGender = normalizeGender(product.gender)
 
@@ -512,7 +531,7 @@ export const getCategoryUrl = (categoryId: string, options?: { gender?: string }
   if (normalized === 'alimento' && options?.gender === 'cat') return '/tienda/alimento-gatos'
 
   const baseUrl =
-    PET_CATEGORY_ROUTES[normalized] ?? `/tienda/${encodeURIComponent(normalized)}`
+    PET_CATEGORY_ROUTES[normalized] ?? `/tienda/${slugifyCategoryRoute(normalized)}`
 
   if (options?.gender && !baseUrl.includes('gender=')) {
     const genderSlug = options.gender === 'dog' ? 'perros' : options.gender === 'cat' ? 'gatos' : options.gender

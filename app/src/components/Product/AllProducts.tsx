@@ -5,31 +5,37 @@ import { ProductType } from '@/type/ProductType'
 import Product from './Product'
 import { getCategoryFilter, getCategoryLabel, matchesPetCategoryFilter } from '@/data/petCategoryCards'
 import {
-    CATALOG_PRIMARY_FILTER_IDS,
-    type CatalogPrimaryFilterId,
     getCatalogAllSecondaryId,
     getCatalogAllSecondaryOption,
     getCatalogSecondaryConfig,
+    isCatalogPrimaryFilterId,
     matchesCatalogSecondaryFilter,
 } from '@/lib/catalogBrowse'
-import { isProductOnSale } from '@/lib/catalog'
+import { buildCatalogCategoryCards, isProductOnSale } from '@/lib/catalog'
 import { buildProductSearchIndex, filterProductsBySearch, sanitizeProductSearchQuery } from '@/lib/productSearch'
 
 interface Props {
     data: Array<ProductType>;
+    categoryIds?: string[];
     pageSize?: number;
 }
 
-const getPrimaryFilterLabel = (filterId: CatalogPrimaryFilterId) => {
-    if (filterId === 'ofertas') return 'Ofertas'
+const getPrimaryFilterLabel = (filterId: string) => {
     return getCategoryLabel(filterId)
 }
 
-const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
-    const offersFilterId = 'ofertas' as const
+const normalizePrimaryFilterId = (categoryId: string) => {
+    const normalized = categoryId.trim().toLowerCase()
+    if (normalized === 'todas') return 'todos'
+    if (normalized === 'ofertas') return 'descuentos'
+    if (['perros', 'gatos'].includes(normalized)) return ''
+    return normalized
+}
+
+const AllProducts: React.FC<Props> = ({ data, categoryIds, pageSize = 15 }) => {
     const allSecondaryId = getCatalogAllSecondaryId()
     const [page, setPage] = useState<number>(1)
-    const [activePrimaryFilter, setActivePrimaryFilter] = useState<CatalogPrimaryFilterId>('todas')
+    const [activePrimaryFilter, setActivePrimaryFilter] = useState<string>('todos')
     const [activeSecondaryFilter, setActiveSecondaryFilter] = useState<string>(allSecondaryId)
     const [searchQuery, setSearchQuery] = useState<string>('')
 
@@ -48,12 +54,22 @@ const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
 
         return filterProductsBySearch(data, effectiveSearchQuery, productSearchIndex)
     }, [data, effectiveSearchQuery, productSearchIndex])
-    const matchesPrimaryFilter = React.useCallback((product: ProductType, filterId: CatalogPrimaryFilterId) => {
-        if (filterId === 'todas') {
+    const primaryFilterIds = useMemo(() => {
+        const sourceCategoryIds = categoryIds?.length
+            ? categoryIds
+            : buildCatalogCategoryCards(data).map((category) => category.id)
+        const normalizedIds = sourceCategoryIds
+            .map(normalizePrimaryFilterId)
+            .filter(Boolean)
+
+        return Array.from(new Set(['todos', ...normalizedIds]))
+    }, [categoryIds, data])
+    const matchesPrimaryFilter = React.useCallback((product: ProductType, filterId: string) => {
+        if (!filterId || filterId === 'todos') {
             return true
         }
 
-        if (filterId === offersFilterId) {
+        if (filterId === 'descuentos') {
             return isProductOnSale(product)
         }
 
@@ -61,12 +77,12 @@ const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
     }, [])
 
     const primaryFilterCounts = useMemo(() => {
-        const counts = new Map<CatalogPrimaryFilterId, number>()
-        CATALOG_PRIMARY_FILTER_IDS.forEach((filterId) => {
+        const counts = new Map<string, number>()
+        primaryFilterIds.forEach((filterId) => {
             counts.set(filterId, searchScopedProducts.filter((product) => matchesPrimaryFilter(product, filterId)).length)
         })
         return counts
-    }, [matchesPrimaryFilter, searchScopedProducts])
+    }, [matchesPrimaryFilter, primaryFilterIds, searchScopedProducts])
 
     const primaryScopedProducts = useMemo(
         () => searchScopedProducts.filter((product) => matchesPrimaryFilter(product, activePrimaryFilter)),
@@ -74,7 +90,9 @@ const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
     )
 
     const secondaryConfig = useMemo(
-        () => getCatalogSecondaryConfig(activePrimaryFilter, primaryScopedProducts),
+        () => isCatalogPrimaryFilterId(activePrimaryFilter)
+            ? getCatalogSecondaryConfig(activePrimaryFilter, primaryScopedProducts)
+            : null,
         [activePrimaryFilter, primaryScopedProducts]
     )
 
@@ -86,7 +104,11 @@ const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
     const visibleSecondaryOptions = useMemo(() => secondaryOptions, [secondaryOptions])
 
     const filteredData = useMemo(
-        () => primaryScopedProducts.filter((product) => matchesCatalogSecondaryFilter(product, activePrimaryFilter, activeSecondaryFilter)),
+        () => primaryScopedProducts.filter((product) =>
+            isCatalogPrimaryFilterId(activePrimaryFilter)
+                ? matchesCatalogSecondaryFilter(product, activePrimaryFilter, activeSecondaryFilter)
+                : true
+        ),
         [activePrimaryFilter, activeSecondaryFilter, primaryScopedProducts]
     )
 
@@ -143,7 +165,7 @@ const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
         scrollToTarget(productGridRef.current ?? productsRef.current, 20)
     }
 
-    const handlePrimaryFilterChange = (filterId: CatalogPrimaryFilterId) => {
+    const handlePrimaryFilterChange = (filterId: string) => {
         setActivePrimaryFilter(filterId)
         setActiveSecondaryFilter(allSecondaryId)
         setPage(1)
@@ -214,9 +236,9 @@ const AllProducts: React.FC<Props> = ({ data, pageSize = 15 }) => {
                             Categorías principales
                         </div>
                         <div className="flex flex-wrap justify-center gap-2.5 lg:justify-start">
-                            {CATALOG_PRIMARY_FILTER_IDS.filter((filterId) => {
+                            {primaryFilterIds.filter((filterId) => {
                                 const count = primaryFilterCounts.get(filterId) ?? 0
-                                return filterId === 'todas' || count > 0
+                                return count > 0
                             }).map((filterId) => {
                                 const isActive = activePrimaryFilter === filterId
                                 const count = primaryFilterCounts.get(filterId) ?? 0

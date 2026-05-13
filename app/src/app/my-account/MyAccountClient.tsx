@@ -3238,13 +3238,13 @@ const MyAccount = () => {
         ) => {
             const counts = new Map<string, number>()
 
-            ;(adminProductsList || []).forEach((product: any) => {
-                const value = getValue(product)
-                if (!value) {
-                    return
-                }
-                counts.set(value, (counts.get(value) ?? 0) + 1)
-            })
+                ; (adminProductsList || []).forEach((product: any) => {
+                    const value = getValue(product)
+                    if (!value) {
+                        return
+                    }
+                    counts.set(value, (counts.get(value) ?? 0) + 1)
+                })
 
             return Array.from(counts.entries())
                 .sort((left, right) => left[0].localeCompare(right[0], 'es', { sensitivity: 'base' }))
@@ -3583,7 +3583,7 @@ const MyAccount = () => {
         if (!localSaleLastOrderId) return
         await printOrderInvoiceById(localSaleLastOrderId)
     }
-    
+
     const handleLookupCustomerByDocument = async (documentOverride?: string) => {
         const rawDoc = (documentOverride ?? localSaleCustomerDocumentNumber).trim()
         if (rawDoc.length < 6) {
@@ -4766,7 +4766,7 @@ const MyAccount = () => {
                 <div id="header" className='relative w-full'>
                     <MenuOne props="bg-transparent" />
                 </div>
-                <div className="profile-block md:py-20 py-10">
+                <div className="profile-block admin-account-shell bg-[#f7f8f6] py-4 sm:py-5 lg:py-6">
                     <div className="w-full max-w-[1200px] mx-auto px-6 md:px-10">
                         <div className="bg-surface rounded-[20px] p-8 md:p-10 text-center">
                             <div className="heading5 text-title">
@@ -4839,10 +4839,124 @@ const MyAccount = () => {
                 </motion.div>
             )}
 
-            <div className="profile-block md:py-20 py-10">
-                <div className="w-full max-w-[1920px] mx-auto px-6 md:px-10">
-                    <div className="content-main flex gap-y-8 max-lg:flex-col w-full min-w-0">
-                        <div className="left lg:w-1/4 xl:w-1/5 w-full xl:pr-10 lg:pr-6 min-w-0">
+
+            <style jsx global>{`
+                .admin-account-shell {
+                    overflow-x: hidden;
+                }
+
+                .admin-account-shell .left,
+                .admin-account-shell .right {
+                    min-width: 0 !important;
+                }
+
+                .admin-account-shell .user-infor {
+                    padding: 16px !important;
+                    border-radius: 18px !important;
+                }
+
+                .admin-account-shell .user-infor .avatar img {
+                    width: 92px !important;
+                    height: 92px !important;
+                    object-fit: cover !important;
+                }
+
+                .admin-account-shell .user-infor .name,
+                .admin-account-shell .user-infor .heading6 {
+                    font-size: 14px !important;
+                    line-height: 1.25 !important;
+                }
+
+                .admin-account-shell .user-infor .mail {
+                    font-size: 12px !important;
+                    line-height: 1.35 !important;
+                }
+
+                .admin-account-shell .menu-tab .item {
+                    padding: 10px 12px !important;
+                }
+
+                .admin-account-shell .menu-tab strong,
+                .admin-account-shell .menu-tab .heading6 {
+                    font-size: 14px !important;
+                    line-height: 1.25 !important;
+                }
+
+                .admin-account-shell .right .heading5 {
+                    font-size: 22px !important;
+                    line-height: 1.2 !important;
+                }
+
+                .admin-account-shell .right .heading4 {
+                    font-size: 26px !important;
+                    line-height: 1.15 !important;
+                }
+
+                .admin-account-shell .right .heading6 {
+                    font-size: 18px !important;
+                    line-height: 1.25 !important;
+                }
+
+                .admin-account-shell .right table {
+                    max-width: 100%;
+                }
+
+                @media (max-width: 1023px) {
+                    .admin-account-shell {
+                        padding-top: 12px !important;
+                    }
+
+                    .admin-account-shell .user-infor {
+                        padding: 12px !important;
+                    }
+
+                    .admin-account-shell .user-infor .heading {
+                        display: flex !important;
+                        flex-direction: row !important;
+                        align-items: center !important;
+                        justify-content: flex-start !important;
+                        gap: 12px !important;
+                        text-align: left !important;
+                    }
+
+                    .admin-account-shell .user-infor .avatar img {
+                        width: 58px !important;
+                        height: 58px !important;
+                    }
+
+                    .admin-account-shell .user-infor .name,
+                    .admin-account-shell .user-infor .mail {
+                        text-align: left !important;
+                    }
+
+                    .admin-account-shell .menu-tab {
+                        margin-top: 14px !important;
+                    }
+
+                    .admin-account-shell .right .heading5 {
+                        font-size: 20px !important;
+                    }
+                }
+
+                @media (max-width: 640px) {
+                    .admin-account-shell .right .heading5 {
+                        font-size: 19px !important;
+                    }
+
+                    .admin-account-shell .right .heading4 {
+                        font-size: 23px !important;
+                    }
+
+                    .admin-account-shell .right .heading6 {
+                        font-size: 16px !important;
+                    }
+                }
+            `}</style>
+
+            <div className="profile-block admin-account-shell bg-[#f7f8f6] py-4 sm:py-5 lg:py-6">
+                <div className="w-full max-w-none mx-auto px-3 sm:px-4 lg:px-6 2xl:px-8">
+                    <div className="content-main grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)] gap-4 lg:gap-5 w-full min-w-0">
+                        <div className="left w-full min-w-0">
                             <AccountSidebar
                                 user={user}
                                 activeTab={activeTab}
@@ -4858,7 +4972,7 @@ const MyAccount = () => {
                                 strategicCriticalCount={strategicAlertSummary.critical}
                             />
                         </div>
-                        <div className="right lg:w-3/4 xl:w-4/5 w-full lg:pl-6 pl-0 min-w-0">
+                        <div className="right w-full min-w-0">
                             {user.role === 'admin' && (
                                 <>
                                     {adminDataLoading && (
@@ -4896,714 +5010,713 @@ const MyAccount = () => {
                                         />
                                     )}
                                     {activeTab === 'reports' && (
-                                    <div className="tab text-content w-full">
-                                        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3 pb-4">
-                                            <div>
-                                                <div className="heading5">{activeReportMeta.title}</div>
-                                                <p className="text-secondary text-xs mt-1">{activeReportMeta.subtitle}</p>
-                                                {adminReportSection === 'balance' && (
-                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
-                                                        Alcance del balance: <span className="ml-1 text-black">{reportFinancialScopeLabel}</span>
-                                                    </div>
-                                                )}
-                                                {adminReportSection === 'sales' && (
-                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
-                                                        Periodo de ventas: <span className="ml-1 text-black">{salesRankingView === 'month' ? selectedRankingMonthLabel : 'Histórico total'}</span>
-                                                    </div>
-                                                )}
-                                                {adminReportSection === 'inventory' && (
-                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
-                                                        Disponibilidad: <span className="ml-1 text-black">{Number(inventoryHealth?.low_stock ?? 0)} bajo stock / {Number(inventoryHealth?.out_of_stock ?? 0)} sin stock</span>
-                                                    </div>
-                                                )}
-                                                {adminReportSection === 'traceability' && (
-                                                    <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
-                                                        Soporte auditado: <span className="ml-1 text-black">{traceabilityOrders.length.toLocaleString('es-EC')} pedidos</span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-                                                <button
-                                                    type="button"
-                                                    className="text-sm font-bold px-3.5 py-1.5 rounded-lg border border-black bg-black text-white hover:bg-white hover:text-black transition-colors"
-                                                    onClick={handleExportCurrentReport}
-                                                >
-                                                    Exportar a Excel
-                                                </button>
-                                                <div className="text-sm font-bold text-secondary bg-surface px-3.5 py-1.5 rounded-lg border border-line">
-                                                    {currentDateLabel}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {adminReportSection === 'general' && (
-                                            <>
-                                        <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
-                                            <div className="text-sm font-bold">Resumen ejecutivo</div>
-                                            <p className="mt-1 text-xs text-secondary">
-                                                Lectura rápida para decidir qué atender primero. Los detalles completos viven en Ventas, Balance, Inventario y Trazabilidad.
-                                            </p>
-                                        </div>
-                                        <div className="mb-4 grid grid-cols-1 xl:grid-cols-[1.12fr_0.88fr] gap-3">
-                                            <button
-                                                type="button"
-                                                className={`p-4 rounded-lg border w-full text-left transition-all ${
-                                                    pendingOperationalOrders > 0
-                                                        ? 'border-[#F59E0B] bg-[#FFF7E8] hover:border-[#D97706]'
-                                                        : 'border-line bg-white hover:border-black'
-                                                }`}
-                                                onClick={openPendingOrdersShortcut}
-                                            >
-                                                <div className="flex h-full flex-col justify-between gap-3 lg:flex-row lg:items-start">
-                                                    <div className="min-w-0">
-                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Pedidos por atender</div>
-                                                        <div className="flex items-center gap-3 flex-wrap">
-                                                            <div className={`heading5 ${pendingOperationalOrders > 0 ? 'text-[#B45309]' : 'text-black'}`}>
-                                                                {pendingOperationalOrders.toLocaleString('es-EC')} pedidos por atender
-                                                            </div>
-                                                            {pendingOperationalOrders > 0 && (
-                                                                <span className="inline-flex items-center rounded-full bg-[#FDE68A] px-3 py-1 text-[11px] font-bold text-[#92400E]">
-                                                                    Requieren revisión
-                                                                </span>
-                                                            )}
+                                        <div className="tab text-content w-full">
+                                            <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-3 pb-4">
+                                                <div>
+                                                    <div className="heading5">{activeReportMeta.title}</div>
+                                                    <p className="text-secondary text-xs mt-1">{activeReportMeta.subtitle}</p>
+                                                    {adminReportSection === 'balance' && (
+                                                        <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                            Alcance del balance: <span className="ml-1 text-black">{reportFinancialScopeLabel}</span>
                                                         </div>
-                                                        <p className="text-secondary text-xs mt-2 max-w-2xl">
-                                                            Seguimiento operativo. Estos pedidos aun no cuentan como venta realizada hasta completarse o entregarse.
-                                                        </p>
-                                                    </div>
-                                                    <div className="grid grid-cols-3 gap-2.5 text-sm min-w-full sm:min-w-[320px] lg:min-w-[332px]">
-                                                        <div className="rounded-lg bg-white/70 border border-[#F2D29B] px-2.5 py-2.5">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Pendientes</div>
-                                                            <div className="text-lg font-bold text-black">{purePendingOperationalOrders.toLocaleString('es-EC')}</div>
+                                                    )}
+                                                    {adminReportSection === 'sales' && (
+                                                        <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                            Periodo de ventas: <span className="ml-1 text-black">{salesRankingView === 'month' ? selectedRankingMonthLabel : 'Histórico total'}</span>
                                                         </div>
-                                                        <div className="rounded-lg bg-white/70 border border-[#F2D29B] px-2.5 py-2.5">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">En proceso</div>
-                                                            <div className="text-lg font-bold text-black">{processingOperationalOrders.toLocaleString('es-EC')}</div>
+                                                    )}
+                                                    {adminReportSection === 'inventory' && (
+                                                        <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                            Disponibilidad: <span className="ml-1 text-black">{Number(inventoryHealth?.low_stock ?? 0)} bajo stock / {Number(inventoryHealth?.out_of_stock ?? 0)} sin stock</span>
                                                         </div>
-                                                        <div className="rounded-lg bg-white/70 border border-[#F2D29B] px-2.5 py-2.5 flex flex-col justify-between">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Acción</div>
-                                                            <div className="text-sm font-bold underline">Ver pedidos</div>
+                                                    )}
+                                                    {adminReportSection === 'traceability' && (
+                                                        <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                            Soporte auditado: <span className="ml-1 text-black">{traceabilityOrders.length.toLocaleString('es-EC')} pedidos</span>
                                                         </div>
-                                                    </div>
-                                                </div>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                className="p-4 rounded-lg border border-line bg-surface w-full text-left transition-all hover:border-black"
-                                                onClick={() => navigateToPanelTab('taxes')}
-                                            >
-                                                <div className="flex h-full flex-col justify-between gap-3">
-                                                    <div>
-                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">IVA vigente</div>
-                                                        <div className="heading4">{vatRateLabel}%</div>
-                                                        <p className="text-secondary text-xs mt-2">Tasa usada para separar ventas brutas, ventas netas e IVA cobrado.</p>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2.5 text-sm">
-                                                        <div className="rounded-lg bg-white border border-line px-2.5 py-2.5">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Multiplicador</div>
-                                                            <div className="text-lg font-bold text-black">{vatMultiplierLabel}x</div>
-                                                        </div>
-                                                        <div className="rounded-lg bg-white border border-line px-2.5 py-2.5">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Precio gravado</div>
-                                                            <div className="text-lg font-bold text-black">${vatExampleTotal}</div>
-                                                            <div className="text-[11px] text-secondary">$100 base</div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </button>
-                                        </div>
-
-                                        <div className="mb-3 mt-5">
-                                            <div className="text-sm font-bold">Indicadores clave del negocio</div>
-                                            <p className="mt-1 text-xs text-secondary">Métricas principales para ubicar ventas, impuestos, envíos y unidades vendidas sin entrar al detalle contable.</p>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
-                                            {(() => {
-                                                const gross = reportBalanceGross
-                                                const net = reportBalanceNet
-                                                const vat = reportBalanceVat
-                                                const shipping = reportBalanceShipping
-                                                const unitLabel = financialTrendMode === 'daily'
-                                                    ? reportFinancialScopeLabel
-                                                    : financialTrendScope === 'total'
-                                                    ? 'Total visible'
-                                                    : reportFinancialScopeLabel
-                                                return (
-                                                    <>
-                                                        <button
-                                                            type="button"
-                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
-                                                            onClick={() => openProductBreakdown('gross')}
-                                                        >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Ventas brutas</div>
-                                                            <div className="heading5">${gross.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Incluyen IVA y envío • Ver productos</div>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
-                                                            onClick={() => openProductBreakdown('net')}
-                                                        >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Ventas netas</div>
-                                                            <div className="heading5">${net.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Sin IVA ni envío • Ver productos</div>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
-                                                            onClick={() => openProductBreakdown('vat')}
-                                                        >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">IVA cobrado</div>
-                                                            <div className="heading5">${vat.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Impuesto separado de la venta • Ver productos</div>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
-                                                            onClick={() => openProductBreakdown('shipping')}
-                                                        >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Envío cobrado</div>
-                                                            <div className="heading5">${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Cobro de entrega al cliente • Ver productos</div>
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
-                                                            onClick={() => openAdminReportSection('sales')}
-                                                        >
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Unidades vendidas</div>
-                                                            <div className="heading5">{reportSalesUnitsSold.toLocaleString('es-EC')}</div>
-                                                            <div className="text-secondary text-xs mt-1">
-                                                                {unitLabel}
-                                                            </div>
-                                                        </button>
-                                                    </>
-                                                )
-                                            })()}
-                                        </div>
-
-                                        <div className="mb-3 mt-5">
-                                            <div className="text-sm font-bold">Accesos rápidos por área</div>
-                                            <p className="mt-1 text-xs text-secondary">Tarjetas para abrir el detalle correcto sin mezclar lectura comercial, financiera e inventario.</p>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-4">
-                                            <div
-                                                className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
-                                                onClick={() => openProductBreakdown('net')}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Ventas netas</div>
-                                                    <Icon.CurrencyDollar className="text-success" size={20} />
-                                                </div>
-                                                <div className="heading5">{formatMoney(reportBalanceNet)}</div>
-                                                <div className={`${salesTrendIsPositive ? 'text-success' : 'text-red'} text-xs mt-2 font-bold flex items-center gap-1`}>
-                                                    {salesTrendIsPositive ? <Icon.TrendUp weight="bold" /> : <Icon.TrendDown weight="bold" />}
-                                                    {salesTrendIsPositive ? '+' : ''}{salesProgressPercentage.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                                                    <span className="text-secondary font-normal ml-1 flex items-center gap-1 underline">ver detalle <Icon.ArrowRight size={10} /></span>
-                                                </div>
-                                            </div>
-
-                                            <div
-                                                className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
-                                                onClick={() => setSelectedDeepDive('aov')}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Ticket promedio neto</div>
-                                                    <Icon.Receipt className="text-blue-500" size={20} />
-                                                </div>
-                                                        <div className="heading5">{formatMoney(reportAverageOrderNet)}</div>
-                                                <div className="text-secondary text-xs mt-2 underline">Analizar distribución <Icon.ArrowRight size={10} className="inline ml-1" /></div>
-                                            </div>
-
-                                            <div
-                                                className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
-                                                onClick={() => openProductBreakdown('profit')}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Utilidad bruta / neta</div>
-                                                    <Icon.HandCoins className="text-orange-500" size={20} />
-                                                </div>
-                                                <div className="grid grid-cols-2 gap-3">
-                                                    <div>
-                                                        <div className="text-[10px] uppercase font-bold text-secondary">Bruta</div>
-                                                        <div className="text-lg font-bold text-success">{formatMoney(reportBalanceGrossProfit)}</div>
-                                                        <div className="text-xs text-secondary">{reportBalanceGrossMargin.toFixed(1)}%</div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-[10px] uppercase font-bold text-secondary">Neta</div>
-                                                        <div className={`text-lg font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceNetProfit)}</div>
-                                                        <div className="text-xs text-secondary">{reportBalanceNetMargin.toFixed(1)}%</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div
-                                                className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
-                                                onClick={() => openAdminReportSection('inventory')}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Capital en inventario</div>
-                                                    <Icon.Archive className="text-purple-500" size={20} />
-                                                </div>
-                                                <div className="heading5">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0))}</div>
-                                                <div className="text-secondary text-xs mt-2">{Number(dashboardStats?.businessMetrics?.inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock <span className="underline">ver riesgos <Icon.ArrowRight size={10} className="inline ml-1" /></span></div>
-                                            </div>
-
-                                            <div
-                                                className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
-                                                onClick={() => navigateToPanelTab('products')}
-                                            >
-                                                <div className="flex items-center justify-between mb-2">
-                                                    <div className="text-secondary text-sm font-medium">Productos activos</div>
-                                                    <Icon.ShoppingBag className="text-primary" size={20} />
-                                                </div>
-                                                <div className="heading5">{Number(dashboardStats?.productAnalysis?.totalMonitored ?? 0).toLocaleString('es-EC')}</div>
-                                                <div className="text-secondary text-xs mt-2 underline">Ver catálogo <Icon.ArrowRight size={10} className="inline ml-1" /></div>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-4">
-                                            <div className="bg-white p-5 rounded-xl border border-line shadow-sm relative overflow-hidden">
-                                                <div className="flex items-center justify-between mb-5">
-                                                    <div>
-                                                        <div className="heading6">Tendencia de ventas netas</div>
-                                                        <p className="text-secondary text-xs mt-1">Comparativa diaria para detectar aceleración o caída comercial.</p>
-                                                    </div>
-                                                    <div className="flex bg-surface p-1 rounded-lg border border-line">
-                                                        <button
-                                                            onClick={() => setTrendRange(7)}
-                                                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${trendRange === 7 ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
-                                                        >
-                                                            7 Días
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setTrendRange(30)}
-                                                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${trendRange === 30 ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
-                                                        >
-                                                            30 Días
-                                                        </button>
-                                                    </div>
-                                                </div>
-
-                                                <div className="h-64 md:h-72 relative mt-2">
-                                                    {dashboardStats ? (
-                                                        trendRange === 7 ? (
-                                                            <div className="flex items-end gap-3 h-full justify-between pt-6 px-2">
-                                                                {(dashboardStats.monthlyPerformance || []).slice(-7).map((item, i) => {
-                                                                    const currentData = (dashboardStats.monthlyPerformance || []).slice(-7);
-                                                                    const maxVal = Math.max(...currentData.map(p => Number(p.total))) || 1;
-                                                                    const value = Number(item.total) || 0
-                                                                    const rawHeight = (value / maxVal) * 100;
-                                                                    const height = value > 0 ? Math.max(rawHeight, 4) : 0;
-                                                                    const dayLabel = formatDashboardTrendLabel(item, { weekday: 'short' })
-
-                                                                    return (
-                                                                        <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-3 group relative cursor-pointer">
-                                                                            <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap z-20 font-bold shadow-xl pointer-events-none">
-                                                                                Ventas: {formatMoney(value)}
-                                                                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black rotate-45"></div>
-                                                                            </div>
-
-                                                                            <div className="w-full max-w-[60px] bg-secondary/5 rounded-t-xl relative flex items-end h-full overflow-visible group-hover:bg-secondary/10 transition-colors duration-300">
-                                                                                <motion.div
-                                                                                    initial={{ height: 0 }}
-                                                                                    animate={{ height: `${height}%` }}
-                                                                                    transition={{ duration: 0.8, ease: "easeOut" }}
-                                                                                    className={`w-full relative rounded-t-xl ${i === currentData.length - 1 ? 'bg-black' : 'bg-black/80 group-hover:bg-black'}`}
-                                                                                >
-                                                                                </motion.div>
-                                                                            </div>
-
-                                                                            <span className={`text-[11px] font-bold uppercase ${i === currentData.length - 1 ? 'text-black' : 'text-secondary group-hover:text-black'}`}>{dayLabel}</span>
-                                                                        </div>
-                                                                    )
-                                                                })}
-                                                            </div>
-                                                        ) : (
-                                                            <div className="w-full h-full pt-10 px-2 flex flex-col justify-between">
-                                                                <svg className="w-full h-[200px] overflow-visible" viewBox="0 0 1000 200" preserveAspectRatio="none">
-                                                                    <defs>
-                                                                        <linearGradient id="gradientTrend" x1="0" y1="0" x2="0" y2="1">
-                                                                            <stop offset="0%" stopColor="#000000" stopOpacity="0.1" />
-                                                                            <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-                                                                        </linearGradient>
-                                                                        <clipPath id="chartClip">
-                                                                            <rect x="0" y="0" width="1000" height="200" />
-                                                                        </clipPath>
-                                                                    </defs>
-
-                                                                    {/* Background Grid - More subtle and cleaner */}
-                                                                    <line x1="0" y1="50" x2="1000" y2="50" stroke="#E5E7EB" strokeDasharray="4 4" />
-                                                                    <line x1="0" y1="100" x2="1000" y2="100" stroke="#E5E7EB" strokeDasharray="4 4" />
-                                                                    <line x1="0" y1="150" x2="1000" y2="150" stroke="#E5E7EB" strokeDasharray="4 4" />
-                                                                    <line x1="0" y1="200" x2="1000" y2="200" stroke="#E5E7EB" strokeWidth="1" />
-
-                                                                    {(() => {
-                                                                        const data = dashboardStats.salesTrend30Days || [];
-                                                                        const maxVal = Math.max(...data.map(p => Number(p.total))) || 1;
-                                                                        if (data.length === 0) return null
-
-                                                                        const points = data.map((d, i) => {
-                                                                            const x = (i / Math.max(data.length - 1, 1)) * 1000;
-                                                                            const value = Number(d.total) || 0
-                                                                            const y = 200 - (value / maxVal) * 180;
-                                                                            return { x, y, val: value, date: formatDashboardTrendLabel(d, { day: '2-digit', month: 'short' }) };
-                                                                        });
-
-                                                                        const pathData = points.reduce((acc, p, i) =>
-                                                                            acc + (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`), "");
-
-                                                                        const areaData = pathData + ` L 1000 200 L 0 200 Z`;
-
-                                                                        return (
-                                                                            <>
-                                                                                <motion.path
-                                                                                    initial={{ opacity: 0 }}
-                                                                                    animate={{ opacity: 1 }}
-                                                                                    transition={{ duration: 1 }}
-                                                                                    d={areaData}
-                                                                                    fill="url(#gradientTrend)"
-                                                                                />
-                                                                                <motion.path
-                                                                                    initial={{ pathLength: 0 }}
-                                                                                    animate={{ pathLength: 1 }}
-                                                                                    transition={{ duration: 1.5, ease: "easeInOut" }}
-                                                                                    d={pathData}
-                                                                                    fill="none"
-                                                                                    stroke="black"
-                                                                                    strokeWidth="2.5"
-                                                                                    strokeLinecap="round"
-                                                                                    strokeLinejoin="round"
-                                                                                />
-                                                                                {points.map((p, i) => (
-                                                                                    <g key={i} className="group/point">
-                                                                                        <rect x={p.x - 10} y="0" width="20" height="200" fill="transparent" className="cursor-pointer" />
-
-                                                                                        <circle
-                                                                                            cx={p.x}
-                                                                                            cy={p.y}
-                                                                                            r="3"
-                                                                                            className="fill-white stroke-black stroke-[3px] opacity-0 group-hover/point:opacity-100 transition-all duration-200"
-                                                                                        />
-
-                                                                                        <foreignObject x={Math.min(Math.max(p.x - 50, 0), 900)} y={Math.max(p.y - 60, 0)} width="100" height="50" className="opacity-0 group-hover/point:opacity-100 pointer-events-none transition-all duration-200 z-50 overflow-visible">
-                                                                                            <div className="bg-black text-white text-[10px] py-2 px-3 rounded-lg text-center shadow-xl transform translate-y-1">
-                                                                                                <div className="font-bold mb-0.5">{p.date}</div>
-                                                                                                <div>{formatMoney(p.val)}</div>
-                                                                                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black rotate-45"></div>
-                                                                                            </div>
-                                                                                        </foreignObject>
-                                                                                    </g>
-                                                                                ))}
-                                                                            </>
-                                                                        )
-                                                                    })()}
-                                                                </svg>
-
-                                                                <div className="flex justify-between w-full mt-4 border-t border-line pt-4">
-                                                                    {(() => {
-                                                                        const data = dashboardStats.salesTrend30Days || [];
-                                                                        const step = Math.max(1, Math.floor(data.length / 5));
-                                                                        const labels: Array<{ day: string; total: number; index: number }> = [];
-                                                                        for (let i = 0; i < data.length; i += step) {
-                                                                            if (labels.length < 5) labels.push({ ...data[i], index: i });
-                                                                        }
-                                                                        if (data.length > 0 && labels[labels.length - 1]?.index !== data.length - 1) {
-                                                                            const lastLabel = { ...data[data.length - 1], index: data.length - 1 }
-                                                                            if (labels.length >= 5) {
-                                                                                labels[labels.length - 1] = lastLabel
-                                                                            } else {
-                                                                                labels.push(lastLabel)
-                                                                            }
-                                                                        }
-
-                                                                        return labels.map((item, idx) => {
-                                                                            return (
-                                                                            <span key={idx} className="text-[10px] font-bold text-secondary uppercase tracking-widest">
-                                                                                {idx === labels.length - 1 ? 'HOY' : formatDashboardTrendLabel(item, { day: '2-digit', month: 'short' })}
-                                                                            </span>
-                                                                            )
-                                                                        });
-                                                                    })()}
-                                                                </div>
-                                                            </div>
-                                                        )
-                                                    ) : (
-                                                        <div className="w-full h-full flex items-center justify-center text-secondary">Cargando datos...</div>
                                                     )}
                                                 </div>
-                                            </div>
-
-                                            <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-8">
-                                                <div className="bg-white p-8 rounded-2xl border border-line shadow-sm">
-                                                    <div className="heading6 mb-2">Distribución de ventas realizadas</div>
-                                                    <div className="text-[11px] text-secondary mb-6">Solo cuenta pedidos completados o entregados.</div>
-                                                    <div className="space-y-6">
-                                                        {(dashboardStats?.businessMetrics?.ordersByStatus || [])
-                                                            .filter((status) => ['completed', 'delivered'].includes(normalizeStatus(status.status)))
-                                                            .map((status, i, realizedStatuses) => {
-                                                            const total = realizedStatuses.reduce((acc, curr) => acc + Number(curr.count), 0) || 1;
-                                                            const perc = Math.round((Number(status.count) / total) * 100);
-                                                            const normalizedStatus = normalizeStatus(status.status)
-                                                            const realizedStatusLabel = normalizedStatus === 'delivered'
-                                                                ? 'Entregado'
-                                                                : normalizedStatus === 'completed'
-                                                                    ? 'Completado'
-                                                                    : getStatusBadge(status.status).label
-                                                            const barColorClass = ['completed', 'delivered'].includes(normalizedStatus)
-                                                                ? 'bg-success'
-                                                                : ['processing', 'in_process', 'in-process'].includes(normalizedStatus)
-                                                                    ? 'bg-yellow'
-                                                                    : ['pending'].includes(normalizedStatus)
-                                                                        ? 'bg-amber-400'
-                                                                        : ['canceled', 'cancelled'].includes(normalizedStatus)
-                                                                            ? 'bg-red'
-                                                                            : ['pickup', 'ready_for_pickup', 'ready'].includes(normalizedStatus)
-                                                                                ? 'bg-amber-600'
-                                                                                : 'bg-primary'
-                                                            return (
-                                                                <div key={i} className="cursor-pointer group hover:bg-surface -mx-2 p-2 rounded-lg transition-colors" onClick={() => navigateToPanelTab('admin-orders')}>
-                                                                    <div className="flex justify-between text-sm mb-2">
-                                                                        <span className="capitalize font-bold text-secondary group-hover:text-black transition-colors">{realizedStatusLabel}</span>
-                                                                        <span className="font-bold">{status.count} ({perc}%)</span>
-                                                                    </div>
-                                                                    <div className="w-full h-2 bg-line rounded-full overflow-hidden">
-                                                                        <div className={`h-full ${barColorClass}`} style={{ width: `${perc}%` }}></div>
-                                                                    </div>
-                                                                </div>
-                                                            )
-                                                        })}
-                                                        {((dashboardStats?.businessMetrics?.ordersByStatus || [])
-                                                            .filter((status) => ['completed', 'delivered'].includes(normalizeStatus(status.status)))).length === 0 && (
-                                                            <div className="text-sm text-secondary">Aún no hay ventas completadas.</div>
-                                                        )}
-                                                    </div>
-                                                </div>
-
-                                                <div className="lg:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                                    <div className="bg-white p-8 rounded-2xl border border-line shadow-sm overflow-hidden">
-                                                        <div className="heading6 mb-2">Ventas completadas recientes</div>
-                                                        <div className="text-[11px] text-secondary mb-6">Últimos pedidos que ya cuentan como venta realizada.</div>
-                                                        <div className="w-full">
-                                                            <table className="w-full text-left text-sm table-fixed">
-                                                                <thead>
-                                                                    <tr className="border-b border-line">
-                                                                        <th className="pb-3 text-secondary font-medium w-1/4">ID</th>
-                                                                        <th className="pb-3 text-secondary font-medium w-1/3">Cliente</th>
-                                                                        <th className="pb-3 text-secondary font-medium text-right">Total</th>
-                                                                        <th className="pb-3 text-secondary font-medium text-right">Hora</th>
-                                                                    </tr>
-                                                                </thead>
-                                                                <tbody>
-                                                                    {dashboardStats?.businessMetrics?.recentOrders?.map((order, i) => (
-                                                                        <tr key={i}
-                                                                            className="border-b border-line last:border-0 hover:bg-surface transition-colors cursor-pointer group"
-                                                                            onClick={() => handleViewOrder(order.id)}
-                                                                        >
-                                                                            <td className="py-4 font-bold text-xs truncate pr-2 group-hover:text-primary transition-colors">#{order.id.split('-').pop()}</td>
-                                                                            <td className="py-4 text-xs truncate pr-2">{order.user_name || 'Anónimo'}</td>
-                                                                            <td className="py-4 text-right font-bold text-xs">${Number(order.total).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                                                                            <td className="py-4 text-right text-[10px] text-secondary whitespace-nowrap">
-                                                                                {formatDateTimeEcuador(order.created_at, { hour: '2-digit', minute: '2-digit' })}
-                                                                            </td>
-                                                                        </tr>
-                                                                    ))}
-                                                                </tbody>
-                                                            </table>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="bg-white p-8 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-2">Top 5 productos vendidos</div>
-                                                        <div className="text-[11px] text-secondary mb-6">Ranking basado solo en pedidos completados o entregados.</div>
-                                                        <div className="space-y-4">
-                                                            {reportSalesRankingRows.slice(0, 5).map((prod, i) => (
-                                                                <div key={i}
-                                                                    className="flex items-center gap-4 p-3 bg-surface rounded-xl hover:shadow-md transition-all cursor-pointer hover:bg-white border border-transparent hover:border-line"
-                                                                    onClick={() => openAdminReportSection('sales')}
-                                                                >
-                                                                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-black text-white flex items-center justify-center font-bold text-xs">{i + 1}</div>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <div className="text-xs font-bold truncate group-hover:text-primary">{prod.product_name}</div>
-                                                                        <div className="text-[10px] text-secondary">{Number(prod.units_sold ?? 0).toLocaleString('es-EC')} unidades</div>
-                                                                    </div>
-                                                                    <div className="text-xs font-bold text-success whitespace-nowrap">{formatMoney(prod.net_revenue)}</div>
-                                                                </div>
-                                                            ))}
-                                                            {reportSalesRankingRows.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay productos vendidos en este alcance.</div>
-                                                            )}
-                                                        </div>
+                                                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        className="text-sm font-bold px-3.5 py-1.5 rounded-lg border border-black bg-black text-white hover:bg-white hover:text-black transition-colors"
+                                                        onClick={handleExportCurrentReport}
+                                                    >
+                                                        Exportar a Excel
+                                                    </button>
+                                                    <div className="text-sm font-bold text-secondary bg-surface px-3.5 py-1.5 rounded-lg border border-line">
+                                                        {currentDateLabel}
                                                     </div>
                                                 </div>
                                             </div>
 
-                                            <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                                <div className="bg-surface rounded-lg border border-line p-4">
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <Icon.Tag size={20} className="text-primary" />
-                                                        <div className="font-bold">Categorías líderes</div>
+                                            {adminReportSection === 'general' && (
+                                                <>
+                                                    <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
+                                                        <div className="text-sm font-bold">Resumen ejecutivo</div>
+                                                        <p className="mt-1 text-xs text-secondary">
+                                                            Lectura rápida para decidir qué atender primero. Los detalles completos viven en Ventas, Balance, Inventario y Trazabilidad.
+                                                        </p>
                                                     </div>
-                                                    <div className="space-y-2">
-                                                        {reportSalesCategories.slice(0, 4).map((cat, i) => {
-                                                            const perc = reportSalesCategoriesTotal > 0 ? Math.round((Number(cat.total) / reportSalesCategoriesTotal) * 100) : 0;
-                                                            return (
-                                                                <div key={i} className="cursor-pointer group hover:bg-white -mx-2 p-2 rounded-lg transition-colors" onClick={() => navigateToPanelTab('products')}>
-                                                                    <div className="flex justify-between text-[10px] mb-1">
-                                                                        <span className="capitalize font-bold text-secondary group-hover:text-black">{cat.category}</span>
-                                                                        <span className="font-bold">{perc}%</span>
+                                                    <div className="mb-4 grid grid-cols-1 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)] gap-3">
+                                                        <button
+                                                            type="button"
+                                                            className={`p-4 rounded-lg border w-full text-left transition-all ${pendingOperationalOrders > 0
+                                                                    ? 'border-[#F59E0B] bg-[#FFF7E8] hover:border-[#D97706]'
+                                                                    : 'border-line bg-white hover:border-black'
+                                                                }`}
+                                                            onClick={openPendingOrdersShortcut}
+                                                        >
+                                                            <div className="flex h-full flex-col justify-between gap-3 lg:flex-row lg:items-start">
+                                                                <div className="min-w-0">
+                                                                    <div className="text-secondary text-xs uppercase font-bold mb-1">Pedidos por atender</div>
+                                                                    <div className="flex items-center gap-3 flex-wrap">
+                                                                        <div className={`heading5 ${pendingOperationalOrders > 0 ? 'text-[#B45309]' : 'text-black'}`}>
+                                                                            {pendingOperationalOrders.toLocaleString('es-EC')} pedidos por atender
+                                                                        </div>
+                                                                        {pendingOperationalOrders > 0 && (
+                                                                            <span className="inline-flex items-center rounded-full bg-[#FDE68A] px-3 py-1 text-[11px] font-bold text-[#92400E]">
+                                                                                Requieren revisión
+                                                                            </span>
+                                                                        )}
                                                                     </div>
-                                                                    <div className="w-full h-1 bg-line rounded-full overflow-hidden">
-                                                                        <div className="h-full bg-primary" style={{ width: `${perc}%` }}></div>
+                                                                    <p className="text-secondary text-xs mt-2 max-w-2xl">
+                                                                        Seguimiento operativo. Estos pedidos aun no cuentan como venta realizada hasta completarse o entregarse.
+                                                                    </p>
+                                                                </div>
+                                                                <div className="grid grid-cols-3 gap-2.5 text-sm min-w-full sm:min-w-[320px] lg:min-w-[332px]">
+                                                                    <div className="rounded-lg bg-white/70 border border-[#F2D29B] px-2.5 py-2.5">
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary">Pendientes</div>
+                                                                        <div className="text-lg font-bold text-black">{purePendingOperationalOrders.toLocaleString('es-EC')}</div>
+                                                                    </div>
+                                                                    <div className="rounded-lg bg-white/70 border border-[#F2D29B] px-2.5 py-2.5">
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary">En proceso</div>
+                                                                        <div className="text-lg font-bold text-black">{processingOperationalOrders.toLocaleString('es-EC')}</div>
+                                                                    </div>
+                                                                    <div className="rounded-lg bg-white/70 border border-[#F2D29B] px-2.5 py-2.5 flex flex-col justify-between">
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary">Acción</div>
+                                                                        <div className="text-sm font-bold underline">Ver pedidos</div>
                                                                     </div>
                                                                 </div>
-                                                            )
-                                                        })}
-                                                        {reportSalesCategories.length === 0 && (
-                                                            <div className="text-xs text-secondary">Sin categorías vendidas en este alcance.</div>
-                                                        )}
-                                                    </div>
-                                                </div>
+                                                            </div>
+                                                        </button>
 
-                                                <div className="bg-surface rounded-lg border border-line p-4">
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <Icon.Lightbulb size={24} className="text-yellow" />
-                                                        <div className="font-bold">Lectura de inventario</div>
+                                                        <button
+                                                            type="button"
+                                                            className="p-4 rounded-lg border border-line bg-surface w-full text-left transition-all hover:border-black"
+                                                            onClick={() => navigateToPanelTab('taxes')}
+                                                        >
+                                                            <div className="flex h-full flex-col justify-between gap-3">
+                                                                <div>
+                                                                    <div className="text-secondary text-xs uppercase font-bold mb-1">IVA vigente</div>
+                                                                    <div className="heading4">{vatRateLabel}%</div>
+                                                                    <p className="text-secondary text-xs mt-2">Tasa usada para separar ventas brutas, ventas netas e IVA cobrado.</p>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-2.5 text-sm">
+                                                                    <div className="rounded-lg bg-white border border-line px-2.5 py-2.5">
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary">Multiplicador</div>
+                                                                        <div className="text-lg font-bold text-black">{vatMultiplierLabel}x</div>
+                                                                    </div>
+                                                                    <div className="rounded-lg bg-white border border-line px-2.5 py-2.5">
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary">Precio gravado</div>
+                                                                        <div className="text-lg font-bold text-black">${vatExampleTotal}</div>
+                                                                        <div className="text-[11px] text-secondary">$100 base</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </button>
                                                     </div>
-                                                    <div className="space-y-3">
+
+                                                    <div className="mb-3 mt-5">
+                                                        <div className="text-sm font-bold">Indicadores clave del negocio</div>
+                                                        <p className="mt-1 text-xs text-secondary">Métricas principales para ubicar ventas, impuestos, envíos y unidades vendidas sin entrar al detalle contable.</p>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3 mb-4">
+                                                        {(() => {
+                                                            const gross = reportBalanceGross
+                                                            const net = reportBalanceNet
+                                                            const vat = reportBalanceVat
+                                                            const shipping = reportBalanceShipping
+                                                            const unitLabel = financialTrendMode === 'daily'
+                                                                ? reportFinancialScopeLabel
+                                                                : financialTrendScope === 'total'
+                                                                    ? 'Total visible'
+                                                                    : reportFinancialScopeLabel
+                                                            return (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
+                                                                        onClick={() => openProductBreakdown('gross')}
+                                                                    >
+                                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Ventas brutas</div>
+                                                                        <div className="heading5">${gross.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                        <div className="text-secondary text-xs mt-1">Incluyen IVA y envío • Ver productos</div>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
+                                                                        onClick={() => openProductBreakdown('net')}
+                                                                    >
+                                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Ventas netas</div>
+                                                                        <div className="heading5">${net.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                        <div className="text-secondary text-xs mt-1">Sin IVA ni envío • Ver productos</div>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
+                                                                        onClick={() => openProductBreakdown('vat')}
+                                                                    >
+                                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">IVA cobrado</div>
+                                                                        <div className="heading5">${vat.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                        <div className="text-secondary text-xs mt-1">Impuesto separado de la venta • Ver productos</div>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
+                                                                        onClick={() => openProductBreakdown('shipping')}
+                                                                    >
+                                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Envío cobrado</div>
+                                                                        <div className="heading5">${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                        <div className="text-secondary text-xs mt-1">Cobro de entrega al cliente • Ver productos</div>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="p-3.5 bg-white rounded-lg border border-line shadow-sm text-left cursor-pointer hover:border-primary transition-all"
+                                                                        onClick={() => openAdminReportSection('sales')}
+                                                                    >
+                                                                        <div className="text-secondary text-xs uppercase font-bold mb-1">Unidades vendidas</div>
+                                                                        <div className="heading5">{reportSalesUnitsSold.toLocaleString('es-EC')}</div>
+                                                                        <div className="text-secondary text-xs mt-1">
+                                                                            {unitLabel}
+                                                                        </div>
+                                                                    </button>
+                                                                </>
+                                                            )
+                                                        })()}
+                                                    </div>
+
+                                                    <div className="mb-3 mt-5">
+                                                        <div className="text-sm font-bold">Accesos rápidos por área</div>
+                                                        <p className="mt-1 text-xs text-secondary">Tarjetas para abrir el detalle correcto sin mezclar lectura comercial, financiera e inventario.</p>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5 gap-3 mb-4">
                                                         <div
-                                                            className="p-3 bg-white rounded-lg border border-line cursor-pointer hover:border-black transition-colors shadow-sm group"
+                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
+                                                            onClick={() => openProductBreakdown('net')}
+                                                        >
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="text-secondary text-sm font-medium">Ventas netas</div>
+                                                                <Icon.CurrencyDollar className="text-success" size={20} />
+                                                            </div>
+                                                            <div className="heading5">{formatMoney(reportBalanceNet)}</div>
+                                                            <div className={`${salesTrendIsPositive ? 'text-success' : 'text-red'} text-xs mt-2 font-bold flex items-center gap-1`}>
+                                                                {salesTrendIsPositive ? <Icon.TrendUp weight="bold" /> : <Icon.TrendDown weight="bold" />}
+                                                                {salesTrendIsPositive ? '+' : ''}{salesProgressPercentage.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                                                <span className="text-secondary font-normal ml-1 flex items-center gap-1 underline">ver detalle <Icon.ArrowRight size={10} /></span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div
+                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
+                                                            onClick={() => setSelectedDeepDive('aov')}
+                                                        >
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="text-secondary text-sm font-medium">Ticket promedio neto</div>
+                                                                <Icon.Receipt className="text-blue-500" size={20} />
+                                                            </div>
+                                                            <div className="heading5">{formatMoney(reportAverageOrderNet)}</div>
+                                                            <div className="text-secondary text-xs mt-2 underline">Analizar distribución <Icon.ArrowRight size={10} className="inline ml-1" /></div>
+                                                        </div>
+
+                                                        <div
+                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
+                                                            onClick={() => openProductBreakdown('profit')}
+                                                        >
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="text-secondary text-sm font-medium">Utilidad bruta / neta</div>
+                                                                <Icon.HandCoins className="text-orange-500" size={20} />
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <div className="text-[10px] uppercase font-bold text-secondary">Bruta</div>
+                                                                    <div className="text-lg font-bold text-success">{formatMoney(reportBalanceGrossProfit)}</div>
+                                                                    <div className="text-xs text-secondary">{reportBalanceGrossMargin.toFixed(1)}%</div>
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-[10px] uppercase font-bold text-secondary">Neta</div>
+                                                                    <div className={`text-lg font-bold ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{formatMoney(reportBalanceNetProfit)}</div>
+                                                                    <div className="text-xs text-secondary">{reportBalanceNetMargin.toFixed(1)}%</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div
+                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
                                                             onClick={() => openAdminReportSection('inventory')}
                                                         >
-                                                            <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Valor potencial de venta</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.market_value ?? 0))}</div>
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="text-secondary text-sm font-medium">Capital en inventario</div>
+                                                                <Icon.Archive className="text-purple-500" size={20} />
+                                                            </div>
+                                                            <div className="heading5">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0))}</div>
+                                                            <div className="text-secondary text-xs mt-2">{Number(dashboardStats?.businessMetrics?.inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock <span className="underline">ver riesgos <Icon.ArrowRight size={10} className="inline ml-1" /></span></div>
                                                         </div>
+
                                                         <div
-                                                            className="p-3 bg-white rounded-lg border border-line cursor-pointer hover:border-black transition-colors shadow-sm group"
-                                                            onClick={() => openAdminReportSection('inventory')}
+                                                            className="p-3.5 bg-white rounded-lg border border-line shadow-sm cursor-pointer hover:border-primary transition-all"
+                                                            onClick={() => navigateToPanelTab('products')}
                                                         >
-                                                            <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Capital en inventario</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0))}</div>
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="text-secondary text-sm font-medium">Productos activos</div>
+                                                                <Icon.ShoppingBag className="text-primary" size={20} />
+                                                            </div>
+                                                            <div className="heading5">{Number(dashboardStats?.productAnalysis?.totalMonitored ?? 0).toLocaleString('es-EC')}</div>
+                                                            <div className="text-secondary text-xs mt-2 underline">Ver catálogo <Icon.ArrowRight size={10} className="inline ml-1" /></div>
                                                         </div>
                                                     </div>
-                                                </div>
 
-                                                <div className="bg-surface rounded-lg border border-line p-4">
-                                                    <div className="flex items-center gap-2 mb-3">
-                                                        <Icon.TrendUp size={24} className="text-success" />
-                                                        <div className="font-bold">Indicadores financieros</div>
-                                                    </div>
-                                                    <div className="space-y-2 cursor-pointer" onClick={() => setSelectedDeepDive('profit')}>
-                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Margen bruto sobre venta neta</span>
-                                                            <span className={`font-bold text-sm ${reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceGrossMargin.toFixed(1)}%</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Margen neto del negocio</span>
-                                                            <span className={`font-bold text-sm ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceNetMargin.toFixed(1)}%</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">Margen neto pagado</span>
-                                                            <span className={`font-bold text-sm ${reportBalanceFlowProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceFlowMargin.toFixed(1)}%</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">ROI bruto sobre costo vendido</span>
-                                                            <span className="font-bold text-sm">{reportBalanceRoi.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
-                                                        </div>
-                                                        <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
-                                                            <span className="text-xs text-secondary font-bold">ROI neto del negocio</span>
-                                                            <span className="font-bold text-sm">{reportBalanceNetRoi.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
-                                                        </div>
-                                                        <div className="text-[9px] text-secondary text-center mt-2 group-hover:text-black">Bruto descuenta producto; neto descuenta gastos registrados.</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                            </>
-                                        )}
+                                                    <div className="mt-4">
+                                                        <div className="bg-white p-4 lg:p-5 rounded-xl border border-line shadow-sm relative overflow-hidden">
+                                                            <div className="flex items-center justify-between mb-5">
+                                                                <div>
+                                                                    <div className="heading6">Tendencia de ventas netas</div>
+                                                                    <p className="text-secondary text-xs mt-1">Comparativa diaria para detectar aceleración o caída comercial.</p>
+                                                                </div>
+                                                                <div className="flex bg-surface p-1 rounded-lg border border-line">
+                                                                    <button
+                                                                        onClick={() => setTrendRange(7)}
+                                                                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${trendRange === 7 ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                                    >
+                                                                        7 Días
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setTrendRange(30)}
+                                                                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${trendRange === 30 ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                                    >
+                                                                        30 Días
+                                                                    </button>
+                                                                </div>
+                                                            </div>
 
-                                        {adminReportSection === 'sales' && (
-                                            <>
-                                                <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-6">
-                                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-                                                        <div>
-                                                            <div className="heading6">Corte comercial de ventas</div>
-                                                            <p className="text-secondary text-xs mt-1">
-                                                                Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con pedidos completados o entregados.
-                                                            </p>
-                                                            <p className="text-secondary text-xs mt-1">
-                                                                Periodo: {salesRankingView === 'month'
-                                                                    ? reportSalesPeriodLabel
-                                                                    : `${productSalesRanking?.historicalPeriod?.start || '-'} → ${productSalesRanking?.historicalPeriod?.end || '-'}`}
-                                                            </p>
+                                                            <div className="h-48 sm:h-56 lg:h-64 relative mt-2 overflow-hidden">
+                                                                {dashboardStats ? (
+                                                                    trendRange === 7 ? (
+                                                                        <div className="flex items-end gap-3 h-full justify-between pt-6 px-2">
+                                                                            {(dashboardStats.monthlyPerformance || []).slice(-7).map((item, i) => {
+                                                                                const currentData = (dashboardStats.monthlyPerformance || []).slice(-7);
+                                                                                const maxVal = Math.max(...currentData.map(p => Number(p.total))) || 1;
+                                                                                const value = Number(item.total) || 0
+                                                                                const rawHeight = (value / maxVal) * 100;
+                                                                                const height = value > 0 ? Math.max(rawHeight, 4) : 0;
+                                                                                const dayLabel = formatDashboardTrendLabel(item, { weekday: 'short' })
+
+                                                                                return (
+                                                                                    <div key={i} className="flex-1 flex flex-col items-center justify-end h-full gap-3 group relative cursor-pointer">
+                                                                                        <div className="absolute top-0 left-1/2 -translate-x-1/2 bg-black text-white text-[10px] py-1.5 px-3 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap z-20 font-bold shadow-xl pointer-events-none">
+                                                                                            Ventas: {formatMoney(value)}
+                                                                                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black rotate-45"></div>
+                                                                                        </div>
+
+                                                                                        <div className="w-full max-w-[60px] bg-secondary/5 rounded-t-xl relative flex items-end h-full overflow-visible group-hover:bg-secondary/10 transition-colors duration-300">
+                                                                                            <motion.div
+                                                                                                initial={{ height: 0 }}
+                                                                                                animate={{ height: `${height}%` }}
+                                                                                                transition={{ duration: 0.8, ease: "easeOut" }}
+                                                                                                className={`w-full relative rounded-t-xl ${i === currentData.length - 1 ? 'bg-black' : 'bg-black/80 group-hover:bg-black'}`}
+                                                                                            >
+                                                                                            </motion.div>
+                                                                                        </div>
+
+                                                                                        <span className={`text-[11px] font-bold uppercase ${i === currentData.length - 1 ? 'text-black' : 'text-secondary group-hover:text-black'}`}>{dayLabel}</span>
+                                                                                    </div>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="w-full h-full pt-10 px-2 flex flex-col justify-between">
+                                                                            <svg className="w-full h-[200px] overflow-visible" viewBox="0 0 1000 200" preserveAspectRatio="none">
+                                                                                <defs>
+                                                                                    <linearGradient id="gradientTrend" x1="0" y1="0" x2="0" y2="1">
+                                                                                        <stop offset="0%" stopColor="#000000" stopOpacity="0.1" />
+                                                                                        <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+                                                                                    </linearGradient>
+                                                                                    <clipPath id="chartClip">
+                                                                                        <rect x="0" y="0" width="1000" height="200" />
+                                                                                    </clipPath>
+                                                                                </defs>
+
+                                                                                {/* Background Grid - More subtle and cleaner */}
+                                                                                <line x1="0" y1="50" x2="1000" y2="50" stroke="#E5E7EB" strokeDasharray="4 4" />
+                                                                                <line x1="0" y1="100" x2="1000" y2="100" stroke="#E5E7EB" strokeDasharray="4 4" />
+                                                                                <line x1="0" y1="150" x2="1000" y2="150" stroke="#E5E7EB" strokeDasharray="4 4" />
+                                                                                <line x1="0" y1="200" x2="1000" y2="200" stroke="#E5E7EB" strokeWidth="1" />
+
+                                                                                {(() => {
+                                                                                    const data = dashboardStats.salesTrend30Days || [];
+                                                                                    const maxVal = Math.max(...data.map(p => Number(p.total))) || 1;
+                                                                                    if (data.length === 0) return null
+
+                                                                                    const points = data.map((d, i) => {
+                                                                                        const x = (i / Math.max(data.length - 1, 1)) * 1000;
+                                                                                        const value = Number(d.total) || 0
+                                                                                        const y = 200 - (value / maxVal) * 180;
+                                                                                        return { x, y, val: value, date: formatDashboardTrendLabel(d, { day: '2-digit', month: 'short' }) };
+                                                                                    });
+
+                                                                                    const pathData = points.reduce((acc, p, i) =>
+                                                                                        acc + (i === 0 ? `M ${p.x} ${p.y}` : ` L ${p.x} ${p.y}`), "");
+
+                                                                                    const areaData = pathData + ` L 1000 200 L 0 200 Z`;
+
+                                                                                    return (
+                                                                                        <>
+                                                                                            <motion.path
+                                                                                                initial={{ opacity: 0 }}
+                                                                                                animate={{ opacity: 1 }}
+                                                                                                transition={{ duration: 1 }}
+                                                                                                d={areaData}
+                                                                                                fill="url(#gradientTrend)"
+                                                                                            />
+                                                                                            <motion.path
+                                                                                                initial={{ pathLength: 0 }}
+                                                                                                animate={{ pathLength: 1 }}
+                                                                                                transition={{ duration: 1.5, ease: "easeInOut" }}
+                                                                                                d={pathData}
+                                                                                                fill="none"
+                                                                                                stroke="black"
+                                                                                                strokeWidth="2.5"
+                                                                                                strokeLinecap="round"
+                                                                                                strokeLinejoin="round"
+                                                                                            />
+                                                                                            {points.map((p, i) => (
+                                                                                                <g key={i} className="group/point">
+                                                                                                    <rect x={p.x - 10} y="0" width="20" height="200" fill="transparent" className="cursor-pointer" />
+
+                                                                                                    <circle
+                                                                                                        cx={p.x}
+                                                                                                        cy={p.y}
+                                                                                                        r="3"
+                                                                                                        className="fill-white stroke-black stroke-[3px] opacity-0 group-hover/point:opacity-100 transition-all duration-200"
+                                                                                                    />
+
+                                                                                                    <foreignObject x={Math.min(Math.max(p.x - 50, 0), 900)} y={Math.max(p.y - 60, 0)} width="100" height="50" className="opacity-0 group-hover/point:opacity-100 pointer-events-none transition-all duration-200 z-50 overflow-visible">
+                                                                                                        <div className="bg-black text-white text-[10px] py-2 px-3 rounded-lg text-center shadow-xl transform translate-y-1">
+                                                                                                            <div className="font-bold mb-0.5">{p.date}</div>
+                                                                                                            <div>{formatMoney(p.val)}</div>
+                                                                                                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-black rotate-45"></div>
+                                                                                                        </div>
+                                                                                                    </foreignObject>
+                                                                                                </g>
+                                                                                            ))}
+                                                                                        </>
+                                                                                    )
+                                                                                })()}
+                                                                            </svg>
+
+                                                                            <div className="flex justify-between w-full mt-4 border-t border-line pt-4">
+                                                                                {(() => {
+                                                                                    const data = dashboardStats.salesTrend30Days || [];
+                                                                                    const step = Math.max(1, Math.floor(data.length / 5));
+                                                                                    const labels: Array<{ day: string; total: number; index: number }> = [];
+                                                                                    for (let i = 0; i < data.length; i += step) {
+                                                                                        if (labels.length < 5) labels.push({ ...data[i], index: i });
+                                                                                    }
+                                                                                    if (data.length > 0 && labels[labels.length - 1]?.index !== data.length - 1) {
+                                                                                        const lastLabel = { ...data[data.length - 1], index: data.length - 1 }
+                                                                                        if (labels.length >= 5) {
+                                                                                            labels[labels.length - 1] = lastLabel
+                                                                                        } else {
+                                                                                            labels.push(lastLabel)
+                                                                                        }
+                                                                                    }
+
+                                                                                    return labels.map((item, idx) => {
+                                                                                        return (
+                                                                                            <span key={idx} className="text-[10px] font-bold text-secondary uppercase tracking-widest">
+                                                                                                {idx === labels.length - 1 ? 'HOY' : formatDashboardTrendLabel(item, { day: '2-digit', month: 'short' })}
+                                                                                            </span>
+                                                                                        )
+                                                                                    });
+                                                                                })()}
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                ) : (
+                                                                    <div className="w-full h-full flex items-center justify-center text-secondary">Cargando datos...</div>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                        <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                                                            <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
-                                                                Mes a consultar
-                                                                <input
-                                                                    type="month"
-                                                                    value={salesRankingMonth}
-                                                                    onChange={(event) => selectReportMonth(event.target.value)}
-                                                                    className="px-3 py-1.5 text-sm font-semibold rounded-md border border-line bg-white text-black focus:border-black outline-none"
-                                                                />
-                                                            </label>
-                                                            <div className="flex bg-surface p-1 rounded-lg border border-line w-fit">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setSalesRankingView('month')}
-                                                                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
-                                                                >
-                                                                    Mes
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => setSalesRankingView('historical')}
-                                                                    className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
-                                                                >
-                                                                    Histórico
-                                                                </button>
+
+                                                        <div className="mt-5 grid grid-cols-1 xl:grid-cols-3 gap-3">
+                                                            <div className="bg-white p-4 lg:p-5 rounded-xl border border-line shadow-sm">
+                                                                <div className="heading6 mb-2">Distribución de ventas realizadas</div>
+                                                                <div className="text-[11px] text-secondary mb-6">Solo cuenta pedidos completados o entregados.</div>
+                                                                <div className="space-y-6">
+                                                                    {(dashboardStats?.businessMetrics?.ordersByStatus || [])
+                                                                        .filter((status) => ['completed', 'delivered'].includes(normalizeStatus(status.status)))
+                                                                        .map((status, i, realizedStatuses) => {
+                                                                            const total = realizedStatuses.reduce((acc, curr) => acc + Number(curr.count), 0) || 1;
+                                                                            const perc = Math.round((Number(status.count) / total) * 100);
+                                                                            const normalizedStatus = normalizeStatus(status.status)
+                                                                            const realizedStatusLabel = normalizedStatus === 'delivered'
+                                                                                ? 'Entregado'
+                                                                                : normalizedStatus === 'completed'
+                                                                                    ? 'Completado'
+                                                                                    : getStatusBadge(status.status).label
+                                                                            const barColorClass = ['completed', 'delivered'].includes(normalizedStatus)
+                                                                                ? 'bg-success'
+                                                                                : ['processing', 'in_process', 'in-process'].includes(normalizedStatus)
+                                                                                    ? 'bg-yellow'
+                                                                                    : ['pending'].includes(normalizedStatus)
+                                                                                        ? 'bg-amber-400'
+                                                                                        : ['canceled', 'cancelled'].includes(normalizedStatus)
+                                                                                            ? 'bg-red'
+                                                                                            : ['pickup', 'ready_for_pickup', 'ready'].includes(normalizedStatus)
+                                                                                                ? 'bg-amber-600'
+                                                                                                : 'bg-primary'
+                                                                            return (
+                                                                                <div key={i} className="cursor-pointer group hover:bg-surface -mx-2 p-2 rounded-lg transition-colors" onClick={() => navigateToPanelTab('admin-orders')}>
+                                                                                    <div className="flex justify-between text-sm mb-2">
+                                                                                        <span className="capitalize font-bold text-secondary group-hover:text-black transition-colors">{realizedStatusLabel}</span>
+                                                                                        <span className="font-bold">{status.count} ({perc}%)</span>
+                                                                                    </div>
+                                                                                    <div className="w-full h-2 bg-line rounded-full overflow-hidden">
+                                                                                        <div className={`h-full ${barColorClass}`} style={{ width: `${perc}%` }}></div>
+                                                                                    </div>
+                                                                                </div>
+                                                                            )
+                                                                        })}
+                                                                    {((dashboardStats?.businessMetrics?.ordersByStatus || [])
+                                                                        .filter((status) => ['completed', 'delivered'].includes(normalizeStatus(status.status)))).length === 0 && (
+                                                                            <div className="text-sm text-secondary">Aún no hay ventas completadas.</div>
+                                                                        )}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="xl:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-3">
+                                                                <div className="bg-white p-4 lg:p-5 rounded-xl border border-line shadow-sm overflow-hidden">
+                                                                    <div className="heading6 mb-2">Ventas completadas recientes</div>
+                                                                    <div className="text-[11px] text-secondary mb-6">Últimos pedidos que ya cuentan como venta realizada.</div>
+                                                                    <div className="w-full">
+                                                                        <table className="min-w-[560px] w-full text-left text-xs sm:text-sm">
+                                                                            <thead>
+                                                                                <tr className="border-b border-line">
+                                                                                    <th className="pb-3 text-secondary font-medium w-1/4">ID</th>
+                                                                                    <th className="pb-3 text-secondary font-medium w-1/3">Cliente</th>
+                                                                                    <th className="pb-3 text-secondary font-medium text-right">Total</th>
+                                                                                    <th className="pb-3 text-secondary font-medium text-right">Hora</th>
+                                                                                </tr>
+                                                                            </thead>
+                                                                            <tbody>
+                                                                                {dashboardStats?.businessMetrics?.recentOrders?.map((order, i) => (
+                                                                                    <tr key={i}
+                                                                                        className="border-b border-line last:border-0 hover:bg-surface transition-colors cursor-pointer group"
+                                                                                        onClick={() => handleViewOrder(order.id)}
+                                                                                    >
+                                                                                        <td className="py-4 font-bold text-xs truncate pr-2 group-hover:text-primary transition-colors">#{order.id.split('-').pop()}</td>
+                                                                                        <td className="py-4 text-xs truncate pr-2">{order.user_name || 'Anónimo'}</td>
+                                                                                        <td className="py-4 text-right font-bold text-xs">${Number(order.total).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                                                                        <td className="py-4 text-right text-[10px] text-secondary whitespace-nowrap">
+                                                                                            {formatDateTimeEcuador(order.created_at, { hour: '2-digit', minute: '2-digit' })}
+                                                                                        </td>
+                                                                                    </tr>
+                                                                                ))}
+                                                                            </tbody>
+                                                                        </table>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="bg-white p-4 lg:p-5 rounded-xl border border-line shadow-sm">
+                                                                    <div className="heading6 mb-2">Top 5 productos vendidos</div>
+                                                                    <div className="text-[11px] text-secondary mb-6">Ranking basado solo en pedidos completados o entregados.</div>
+                                                                    <div className="space-y-4">
+                                                                        {reportSalesRankingRows.slice(0, 5).map((prod, i) => (
+                                                                            <div key={i}
+                                                                                className="flex items-center gap-4 p-3 bg-surface rounded-xl hover:shadow-md transition-all cursor-pointer hover:bg-white border border-transparent hover:border-line"
+                                                                                onClick={() => openAdminReportSection('sales')}
+                                                                            >
+                                                                                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-black text-white flex items-center justify-center font-bold text-xs">{i + 1}</div>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <div className="text-xs font-bold truncate group-hover:text-primary">{prod.product_name}</div>
+                                                                                    <div className="text-[10px] text-secondary">{Number(prod.units_sold ?? 0).toLocaleString('es-EC')} unidades</div>
+                                                                                </div>
+                                                                                <div className="text-xs font-bold text-success whitespace-nowrap">{formatMoney(prod.net_revenue)}</div>
+                                                                            </div>
+                                                                        ))}
+                                                                        {reportSalesRankingRows.length === 0 && (
+                                                                            <div className="text-sm text-secondary">No hay productos vendidos en este alcance.</div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                                            <div className="bg-surface rounded-lg border border-line p-4">
+                                                                <div className="flex items-center gap-2 mb-3">
+                                                                    <Icon.Tag size={20} className="text-primary" />
+                                                                    <div className="font-bold">Categorías líderes</div>
+                                                                </div>
+                                                                <div className="space-y-2">
+                                                                    {reportSalesCategories.slice(0, 4).map((cat, i) => {
+                                                                        const perc = reportSalesCategoriesTotal > 0 ? Math.round((Number(cat.total) / reportSalesCategoriesTotal) * 100) : 0;
+                                                                        return (
+                                                                            <div key={i} className="cursor-pointer group hover:bg-white -mx-2 p-2 rounded-lg transition-colors" onClick={() => navigateToPanelTab('products')}>
+                                                                                <div className="flex justify-between text-[10px] mb-1">
+                                                                                    <span className="capitalize font-bold text-secondary group-hover:text-black">{cat.category}</span>
+                                                                                    <span className="font-bold">{perc}%</span>
+                                                                                </div>
+                                                                                <div className="w-full h-1 bg-line rounded-full overflow-hidden">
+                                                                                    <div className="h-full bg-primary" style={{ width: `${perc}%` }}></div>
+                                                                                </div>
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                    {reportSalesCategories.length === 0 && (
+                                                                        <div className="text-xs text-secondary">Sin categorías vendidas en este alcance.</div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="bg-surface rounded-lg border border-line p-4">
+                                                                <div className="flex items-center gap-2 mb-3">
+                                                                    <Icon.Lightbulb size={24} className="text-yellow" />
+                                                                    <div className="font-bold">Lectura de inventario</div>
+                                                                </div>
+                                                                <div className="space-y-3">
+                                                                    <div
+                                                                        className="p-3 bg-white rounded-lg border border-line cursor-pointer hover:border-black transition-colors shadow-sm group"
+                                                                        onClick={() => openAdminReportSection('inventory')}
+                                                                    >
+                                                                        <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Valor potencial de venta</div>
+                                                                        <div className="text-lg font-bold">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.market_value ?? 0))}</div>
+                                                                    </div>
+                                                                    <div
+                                                                        className="p-3 bg-white rounded-lg border border-line cursor-pointer hover:border-black transition-colors shadow-sm group"
+                                                                        onClick={() => openAdminReportSection('inventory')}
+                                                                    >
+                                                                        <div className="text-[10px] text-secondary uppercase font-bold group-hover:text-black">Capital en inventario</div>
+                                                                        <div className="text-lg font-bold">{formatMoney(Number(dashboardStats?.businessMetrics?.inventoryValue?.cost_value ?? 0))}</div>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="bg-surface rounded-lg border border-line p-4">
+                                                                <div className="flex items-center gap-2 mb-3">
+                                                                    <Icon.TrendUp size={24} className="text-success" />
+                                                                    <div className="font-bold">Indicadores financieros</div>
+                                                                </div>
+                                                                <div className="space-y-2 cursor-pointer" onClick={() => setSelectedDeepDive('profit')}>
+                                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                                        <span className="text-xs text-secondary font-bold">Margen bruto sobre venta neta</span>
+                                                                        <span className={`font-bold text-sm ${reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceGrossMargin.toFixed(1)}%</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                                        <span className="text-xs text-secondary font-bold">Margen neto del negocio</span>
+                                                                        <span className={`font-bold text-sm ${reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceNetMargin.toFixed(1)}%</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                                        <span className="text-xs text-secondary font-bold">Margen neto pagado</span>
+                                                                        <span className={`font-bold text-sm ${reportBalanceFlowProfit >= 0 ? 'text-success' : 'text-red'}`}>{reportBalanceFlowMargin.toFixed(1)}%</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                                        <span className="text-xs text-secondary font-bold">ROI bruto sobre costo vendido</span>
+                                                                        <span className="font-bold text-sm">{reportBalanceRoi.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center py-2 border-b border-line hover:bg-white -mx-2 px-2 rounded-lg transition-colors">
+                                                                        <span className="text-xs text-secondary font-bold">ROI neto del negocio</span>
+                                                                        <span className="font-bold text-sm">{reportBalanceNetRoi.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</span>
+                                                                    </div>
+                                                                    <div className="text-[9px] text-secondary text-center mt-2 group-hover:text-black">Bruto descuenta producto; neto descuenta gastos registrados.</div>
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
+                                                </>
+                                            )}
 
-                                                    <div className="grid grid-cols-2 xl:grid-cols-8 gap-3">
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
-                                                            <div className="text-lg font-bold">{Number(salesRankingFinancial?.orders_count ?? 0).toLocaleString('es-EC')}</div>
+                                            {adminReportSection === 'sales' && (
+                                                <>
+                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-6">
+                                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+                                                            <div>
+                                                                <div className="heading6">Corte comercial de ventas</div>
+                                                                <p className="text-secondary text-xs mt-1">
+                                                                    Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con pedidos completados o entregados.
+                                                                </p>
+                                                                <p className="text-secondary text-xs mt-1">
+                                                                    Periodo: {salesRankingView === 'month'
+                                                                        ? reportSalesPeriodLabel
+                                                                        : `${productSalesRanking?.historicalPeriod?.start || '-'} → ${productSalesRanking?.historicalPeriod?.end || '-'}`}
+                                                                </p>
+                                                            </div>
+                                                            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                                                                <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
+                                                                    Mes a consultar
+                                                                    <input
+                                                                        type="month"
+                                                                        value={salesRankingMonth}
+                                                                        onChange={(event) => selectReportMonth(event.target.value)}
+                                                                        className="px-3 py-1.5 text-sm font-semibold rounded-md border border-line bg-white text-black focus:border-black outline-none"
+                                                                    />
+                                                                </label>
+                                                                <div className="flex bg-surface p-1 rounded-lg border border-line w-fit">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setSalesRankingView('month')}
+                                                                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                                    >
+                                                                        Mes
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setSalesRankingView('historical')}
+                                                                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                                    >
+                                                                        Histórico
+                                                                    </button>
+                                                                </div>
+                                                            </div>
                                                         </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
-                                                            <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0).toLocaleString('es-EC')}</div>
-                                                        </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.gross ?? 0))}</div>
-                                                        </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0))}</div>
-                                                        </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.vat ?? 0))}</div>
-                                                        </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.shipping ?? 0))}</div>
-                                                        </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
-                                                            <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.cost ?? 0))}</div>
-                                                        </div>
-                                                        <div className="p-3 rounded-lg border border-line bg-surface">
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
-                                                            <div className="text-lg font-bold">{Number(salesRankingFinancial?.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
+
+                                                        <div className="grid grid-cols-2 xl:grid-cols-8 gap-3">
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
+                                                                <div className="text-lg font-bold">{Number(salesRankingFinancial?.orders_count ?? 0).toLocaleString('es-EC')}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
+                                                                <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0).toLocaleString('es-EC')}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.gross ?? 0))}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0))}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.vat ?? 0))}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.shipping ?? 0))}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number(salesRankingFinancial?.cost ?? 0))}</div>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg border border-line bg-surface">
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
+                                                                <div className="text-lg font-bold">{Number(salesRankingFinancial?.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
+                                                            </div>
                                                         </div>
                                                     </div>
-	                                                </div>
 
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-6">
                                                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
@@ -5725,611 +5838,571 @@ const MyAccount = () => {
                                                         </div>
                                                     </div>
 
-	                                                <div className="grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6 mb-6">
-                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="flex items-center justify-between mb-4">
-                                                            <div>
-                                                                <div className="heading6">Tendencia reciente de ventas</div>
-                                                                <p className="text-secondary text-xs mt-1">Últimos {salesTrendPreview.length} cortes diarios disponibles para comparar ritmo comercial.</p>
-                                                            </div>
-                                                            <button
-                                                                type="button"
-                                                                className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
-                                                                onClick={() => setSelectedDeepDive('sales')}
-                                                            >
-                                                                Abrir análisis
-                                                            </button>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                            {salesTrendPreview.map((item, index) => {
-                                                                const value = Number(item.total ?? 0)
-                                                                const ratio = salesTrendPreviewMax > 0 && value > 0
-                                                                    ? Math.max((value / salesTrendPreviewMax) * 100, 8)
-                                                                    : 0
-                                                                return (
-                                                                    <div key={`${item.day}-${index}`} className="rounded-xl border border-line bg-surface p-3">
-                                                                        <div className="text-[10px] uppercase font-bold text-secondary">{item.displayDay ?? item.day}</div>
-                                                                        <div className="font-bold mt-2">{formatMoney(value)}</div>
-                                                                        <div className="mt-3 h-2 rounded-full bg-white overflow-hidden">
-                                                                            <div className="h-full bg-black rounded-full" style={{ width: `${ratio}%` }}></div>
-                                                                        </div>
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                            {salesTrendPreview.length === 0 && (
-                                                                <div className="col-span-full text-sm text-secondary">Sin datos suficientes para tendencia reciente.</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Mix de ventas por categoría</div>
-                                                        <div className="space-y-4">
-                                                            {reportSalesCategories.slice(0, 6).map((cat, index) => {
-                                                                const value = Number(cat.total ?? 0)
-                                                                const ratio = reportSalesCategoriesTotal > 0 && value > 0 ? Math.max((value / reportSalesCategoriesTotal) * 100, 4) : 0
-                                                                return (
-                                                                    <div key={`${cat.category}-${index}`}>
-                                                                        <div className="flex items-center justify-between gap-3 text-sm mb-1">
-                                                                            <span className="font-semibold capitalize">{cat.category || 'Sin categoría'}</span>
-                                                                            <span className="font-bold">{formatMoney(value)}</span>
-                                                                        </div>
-                                                                        <div className="h-2 rounded-full bg-surface overflow-hidden">
-                                                                            <div className="h-full bg-primary rounded-full" style={{ width: `${ratio}%` }}></div>
-                                                                        </div>
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                            {reportSalesCategories.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay categorías con ventas registradas.</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
-                                                        <div>
-                                                            <div className="heading6">Productos líderes del período</div>
-                                                            <p className="text-secondary text-xs mt-1">Ranking compacto por unidades, ventas netas, utilidad bruta y margen bruto.</p>
-                                                        </div>
-                                                        <button
-                                                            type="button"
-                                                            className="px-4 py-2 rounded-lg border border-line text-sm font-semibold hover:bg-surface"
-                                                            onClick={() => setActiveTab('sales-ranking')}
-                                                        >
-                                                            Ver ranking detallado
-                                                        </button>
-                                                    </div>
-                                                    <div className="space-y-3">
-                                                        {reportSalesRankingRows.slice(0, 10).map((item, index) => {
-                                                            const refs = Array.isArray(item.order_refs) ? item.order_refs : []
-                                                            return (
-                                                                <article key={`${item.product_id}-${index}`} className="rounded-xl border border-line bg-white p-4 shadow-sm transition-colors hover:bg-surface/30">
-                                                                    <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1.65fr)]">
-                                                                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-sm font-bold text-white">
-                                                                            {index + 1}
-                                                                        </div>
-
-                                                                        <div className="min-w-0">
-                                                                            <div className="text-[10px] uppercase font-bold text-secondary">Producto</div>
-                                                                            <button type="button" className="mt-1 text-left text-sm font-bold leading-5 break-words hover:underline" onClick={() => openSalesProductDetail(item)}>
-                                                                                {item.product_name}
-                                                                            </button>
-                                                                            <div className="mt-2 inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold capitalize text-secondary">
-                                                                                {item.category || 'Sin categoría'}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="min-w-0">
-                                                                            <div className="text-[10px] uppercase font-bold text-secondary">Pedidos relacionados</div>
-                                                                            <div className="mt-1 text-xs leading-5 text-secondary break-words">
-                                                                                {refs.length > 0 ? refs.join(', ') : '-'}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="min-w-0">
-                                                                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                                                                <ReportCompactMetric label="Pedidos" value={item.orders_count.toLocaleString('es-EC')} />
-                                                                                <ReportCompactMetric label="Unidades" value={item.units_sold.toLocaleString('es-EC')} />
-                                                                                <ReportCompactMetric label="Bruta" value={formatMoney(item.gross_revenue)} />
-                                                                                <ReportCompactMetric label="Neta" value={formatMoney(item.net_revenue)} />
-                                                                                <ReportCompactMetric label="IVA" value={formatMoney(item.vat_amount)} />
-                                                                                <ReportCompactMetric label="Envío" value={formatMoney(item.shipping_amount)} />
-                                                                                <ReportCompactMetric label="Costo" value={formatMoney(item.cost)} />
-                                                                                <ReportCompactMetric label="Utilidad" value={formatMoney(item.profit)} tone={item.profit >= 0 ? 'text-success' : 'text-red'} />
-                                                                                <ReportCompactMetric label="Margen" value={`${item.margin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} />
-                                                                            </div>
-                                                                        </div>
-                                                                    </div>
-                                                                </article>
-                                                            )
-                                                        })}
-                                                        {reportSalesRankingRows.length === 0 && (
-                                                            <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-secondary">
-                                                                No hay datos de ventas para construir el reporte.
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            </>
-                                        )}
-
-                                        {adminReportSection === 'balance' && (
-                                            <>
-                                                <FinancialTrendsPanel
-                                                    trends={financialTrends}
-                                                    formatMoney={formatMoney}
-                                                    mode={financialTrendMode}
-                                                    scope={financialTrendScope}
-                                                    selectedPeriod={selectedFinancialPeriod}
-                                                    onModeChange={setFinancialTrendMode}
-                                                    onScopeChange={setFinancialTrendScope}
-                                                    onSelectedPeriodChange={setSelectedFinancialPeriod}
-                                                />
-
-                                                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                                                    <div>
-                                                        <div className="text-gray-400 text-sm">Estado financiero operativo para leer ingresos, costos, gastos y utilidad neta.</div>
-                                                        <div className="heading3 mt-1">{formatMoney(reportBalanceNet)}</div>
-                                                        <div className="text-secondary text-xs mt-0.5">Ventas netas de {reportFinancialScopeLabel.toLowerCase()}, sin IVA ni envío.</div>
-                                                    </div>
-                                                    <div className="text-xs text-secondary sm:text-right">{reportOrdersCount.toLocaleString('es-EC')} pedidos realizados • promedio {formatMoney(reportAverageOrderNet)}</div>
-                                                </div>
-
-                                                <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-line">
-                                                        <div className="px-3 py-2">
-                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Ingresos e impuestos</div>
-                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Ventas brutas</span><strong>{formatMoney(reportBalanceGross)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Ventas netas</span><strong>{formatMoney(reportBalanceNet)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">IVA cobrado</span><strong className="text-orange-600">{formatMoney(reportBalanceVat)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Envío cobrado</span><strong>{formatMoney(reportBalanceShipping)}</strong></div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="px-3 py-2">
-                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Utilidad y gastos</div>
-                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad bruta</span><strong className={reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceGrossProfit)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad neta</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad neta pagada</span><strong className={reportBalanceFlowProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceFlowProfit)}</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Costo de venta -{formatMoney(reportBalanceCost)} • gastos del período -{formatMoney(reportBalancePeriodExpenses)}</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="px-3 py-2">
-                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">Márgenes</div>
-                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Margen bruto</span><strong>{reportBalanceGrossMargin.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Margen neto</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">Margen de flujo</span><strong className={reportBalanceFlowProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceFlowMargin.toFixed(1)}%</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Sobre ventas netas.</div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="px-3 py-2">
-                                                            <div className="text-[10px] uppercase text-secondary font-bold mb-1">ROI</div>
-                                                            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">ROI bruto</span><strong>{reportBalanceRoi.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">ROI neto</span><strong>{reportBalanceNetRoi.toFixed(1)}%</strong></div>
-                                                                <div className="flex justify-between gap-2"><span className="text-secondary">ROI neto pagado</span><strong>{reportBalanceFlowRoi.toFixed(1)}%</strong></div>
-                                                                <div className="col-span-2 text-[11px] text-secondary">Neto: gastos del período. Neto pagado: solo gastos pagados del mismo período.</div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="mt-4 grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
-                                                    <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
-                                                        <div className="font-bold mb-3">Lectura paso a paso del balance</div>
-                                                        <div className="space-y-2 text-sm">
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Ventas brutas facturadas</span>
-                                                                <strong>{formatMoney(reportBalanceGross)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Menos IVA comprometido</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalanceVat)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Ventas netas del negocio</span>
-                                                                <strong>{formatMoney(reportBalanceNet)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Menos costo de venta</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalanceCost)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Utilidad bruta</span>
-                                                                <strong>{formatMoney(reportBalanceGrossProfit)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Menos gastos del período</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePeriodExpenses)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Utilidad neta del negocio</span>
-                                                                <strong>{formatMoney(reportBalanceNetProfit)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Gastos pagados del período</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePaidExpenses)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
-                                                                <span>Obligaciones pendientes/vencidas</span>
-                                                                <strong className="text-orange-600">-{formatMoney(reportBalancePendingExpenses + reportBalanceOverdueExpenses)}</strong>
-                                                            </div>
-                                                            <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
-                                                                <span>Utilidad neta pagada</span>
-                                                                <strong>{formatMoney(reportBalanceFlowProfit)}</strong>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
-                                                        <div className="font-bold mb-3">Acciones recomendadas</div>
-                                                        <div className="flex flex-wrap gap-2">
-                                                            <button
-                                                                type="button"
-                                                                className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
-                                                                onClick={() => {
-                                                                    setSelectedDeepDive('profit')
-                                                                    openAdminReportSection('general')
-                                                                }}
-                                                            >
-                                                                Analizar rentabilidad
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
-                                                                onClick={() => navigateToPanelTab('margins')}
-                                                            >
-                                                                Ajustar márgenes
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
-                                                                onClick={() => openAdminReportSection('sales')}
-                                                            >
-                                                                Abrir reporte de ventas
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
-                                                                onClick={() => navigateToPanelTab('taxes')}
-                                                            >
-                                                                IVA y costos de envío
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
-                                                                onClick={() => navigateToPanelTab('expenses')}
-                                                            >
-                                                                Registrar gastos
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="heading6 mb-4 mt-10">Movimientos recientes del balance</div>
-                                                <div className="flex flex-col gap-4">
-                                                    {(dashboardStats?.businessMetrics?.recentOrders || []).slice(0, 6).map((order: any) => {
-                                                        const net = Number(order.vat_subtotal ?? (Number(order.total ?? 0) - Number(order.vat_amount ?? 0) - Number(order.shipping ?? 0)))
-                                                        const vat = Number(order.vat_amount ?? 0)
-                                                        const shipping = Number(order.shipping ?? 0)
-                                                        return (
-                                                            <div key={order.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 bg-surface rounded-xl border border-line">
-                                                                <div className="flex items-center gap-4">
-                                                                    <div className="w-10 h-10 bg-success bg-opacity-10 text-success rounded-full flex items-center justify-center">
-                                                                        <Icon.ArrowDownLeft weight="bold" />
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className="font-bold">Pedido #{order.id}</div>
-                                                                        <div className="text-secondary text-xs">{formatDateEcuador(order.created_at)}</div>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="grid grid-cols-3 gap-4 text-right text-sm md:w-[340px]">
-                                                                    <div>
-                                                                        <div className="text-[10px] uppercase text-secondary">Neto</div>
-                                                                        <div className="font-bold tabular-nums">{formatMoney(net)}</div>
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className="text-[10px] uppercase text-secondary">IVA</div>
-                                                                        <div className="font-bold tabular-nums">{formatMoney(vat)}</div>
-                                                                    </div>
-                                                                    <div>
-                                                                        <div className="text-[10px] uppercase text-secondary">Envío</div>
-                                                                        <div className="font-bold tabular-nums">{formatMoney(shipping)}</div>
-                                                                    </div>
+                                                    <div className="grid grid-cols-1 xl:grid-cols-[1.2fr,0.8fr] gap-6 mb-6">
+                                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
+                                                            <div className="flex items-center justify-between mb-4">
+                                                                <div>
+                                                                    <div className="heading6">Tendencia reciente de ventas</div>
+                                                                    <p className="text-secondary text-xs mt-1">Últimos {salesTrendPreview.length} cortes diarios disponibles para comparar ritmo comercial.</p>
                                                                 </div>
                                                                 <button
                                                                     type="button"
-                                                                    className="px-3 py-1.5 rounded-lg border border-line text-xs font-bold hover:bg-white"
-                                                                    onClick={() => handleViewOrder(order.id)}
+                                                                    className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
+                                                                    onClick={() => setSelectedDeepDive('sales')}
                                                                 >
-                                                                    Ver pedido
+                                                                    Abrir análisis
                                                                 </button>
                                                             </div>
-                                                        )
-                                                    })}
-                                                    {(dashboardStats?.businessMetrics?.recentOrders || []).length === 0 && (
-                                                        <div className="text-center py-4 text-secondary">No hay transacciones recientes.</div>
-                                                    )}
-                                                </div>
-                                            </>
-                                        )}
+                                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                                {salesTrendPreview.map((item, index) => {
+                                                                    const value = Number(item.total ?? 0)
+                                                                    const ratio = salesTrendPreviewMax > 0 && value > 0
+                                                                        ? Math.max((value / salesTrendPreviewMax) * 100, 8)
+                                                                        : 0
+                                                                    return (
+                                                                        <div key={`${item.day}-${index}`} className="rounded-xl border border-line bg-surface p-3">
+                                                                            <div className="text-[10px] uppercase font-bold text-secondary">{item.displayDay ?? item.day}</div>
+                                                                            <div className="font-bold mt-2">{formatMoney(value)}</div>
+                                                                            <div className="mt-3 h-2 rounded-full bg-white overflow-hidden">
+                                                                                <div className="h-full bg-black rounded-full" style={{ width: `${ratio}%` }}></div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                                {salesTrendPreview.length === 0 && (
+                                                                    <div className="col-span-full text-sm text-secondary">Sin datos suficientes para tendencia reciente.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
 
-                                        {adminReportSection === 'inventory' && (
-                                            <>
-                                                <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
-                                                    <div className="text-sm font-bold">Valorización, disponibilidad y vencimientos</div>
-                                                    <p className="mt-1 text-xs text-secondary">
-                                                        Primero se muestra el capital en inventario; luego los productos que requieren reposición o revisión por fecha de vencimiento.
-                                                    </p>
-                                                </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-6">
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Capital en inventario</div>
-                                                        <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.cost_value ?? 0))}</div>
-                                                        <div className="text-xs text-secondary mt-1">Costo actual del stock disponible</div>
+                                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
+                                                            <div className="heading6 mb-4">Mix de ventas por categoría</div>
+                                                            <div className="space-y-4">
+                                                                {reportSalesCategories.slice(0, 6).map((cat, index) => {
+                                                                    const value = Number(cat.total ?? 0)
+                                                                    const ratio = reportSalesCategoriesTotal > 0 && value > 0 ? Math.max((value / reportSalesCategoriesTotal) * 100, 4) : 0
+                                                                    return (
+                                                                        <div key={`${cat.category}-${index}`}>
+                                                                            <div className="flex items-center justify-between gap-3 text-sm mb-1">
+                                                                                <span className="font-semibold capitalize">{cat.category || 'Sin categoría'}</span>
+                                                                                <span className="font-bold">{formatMoney(value)}</span>
+                                                                            </div>
+                                                                            <div className="h-2 rounded-full bg-surface overflow-hidden">
+                                                                                <div className="h-full bg-primary rounded-full" style={{ width: `${ratio}%` }}></div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )
+                                                                })}
+                                                                {reportSalesCategories.length === 0 && (
+                                                                    <div className="text-sm text-secondary">No hay categorías con ventas registradas.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Valor potencial de venta</div>
-                                                        <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.market_value ?? 0))}</div>
-                                                        <div className="text-xs text-secondary mt-1">Stock valorizado al precio de venta</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Stock disponible</div>
-                                                        <div className="text-2xl font-bold">{Number(inventoryValue?.total_items ?? 0).toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">{Number(inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Stock crítico</div>
-                                                        <div className="text-2xl font-bold text-red">{Number(inventoryHealth?.out_of_stock ?? 0)}</div>
-                                                        <div className="text-xs text-secondary mt-1">Productos sin unidades disponibles</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Bajo stock</div>
-                                                        <div className="text-2xl font-bold text-amber-700">{Number(inventoryHealth?.low_stock ?? 0)}</div>
-                                                        <div className="text-xs text-secondary mt-1">Requieren reposición preventiva</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Vencimientos</div>
-                                                        <div className="text-2xl font-bold text-red">{Number(inventoryHealth?.expired_products ?? 0) + Number(inventoryHealth?.expiring_products ?? 0)}</div>
-                                                        <div className="text-xs text-secondary mt-1">Productos vencidos o próximos a vencer</div>
-                                                    </div>
-                                                </div>
 
-                                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
                                                     <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="flex items-center justify-between mb-4">
+                                                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
                                                             <div>
-                                                                <div className="heading6">Productos con más capital invertido</div>
-                                                                <p className="text-secondary text-xs mt-1">Stock que concentra más costo en inventario.</p>
+                                                                <div className="heading6">Productos líderes del período</div>
+                                                                <p className="text-secondary text-xs mt-1">Ranking compacto por unidades, ventas netas, utilidad bruta y margen bruto.</p>
                                                             </div>
                                                             <button
                                                                 type="button"
-                                                                className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
-                                                                onClick={() => navigateToPanelTab('inventory')}
+                                                                className="px-4 py-2 rounded-lg border border-line text-sm font-semibold hover:bg-surface"
+                                                                onClick={() => setActiveTab('sales-ranking')}
                                                             >
-                                                                Abrir inventario
+                                                                Ver ranking detallado
                                                             </button>
                                                         </div>
                                                         <div className="space-y-3">
-                                                            {highValueInventoryItems.slice(0, 8).map((item, index) => (
-                                                                <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-4 p-3 rounded-xl border border-line bg-surface">
-                                                                    <div>
-                                                                        <div className="font-semibold text-sm">{item.name}</div>
-                                                                        <div className="text-xs text-secondary">Stock: {Number(item.quantity ?? 0).toLocaleString('es-EC')} • Costo unitario: {formatMoney(Number(item.cost ?? 0))}</div>
-                                                                    </div>
-                                                                    <div className="text-right">
-                                                                        <div className="text-xs text-secondary uppercase">Capital</div>
-                                                                        <div className="font-bold">{formatMoney(Number(item.total_cost ?? 0))}</div>
-                                                                    </div>
+                                                            {reportSalesRankingRows.slice(0, 10).map((item, index) => {
+                                                                const refs = Array.isArray(item.order_refs) ? item.order_refs : []
+                                                                return (
+                                                                    <article key={`${item.product_id}-${index}`} className="rounded-xl border border-line bg-white p-4 shadow-sm transition-colors hover:bg-surface/30">
+                                                                        <div className="grid gap-4 lg:grid-cols-[auto_minmax(0,1.35fr)_minmax(0,1fr)_minmax(0,1.65fr)]">
+                                                                            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-sm font-bold text-white">
+                                                                                {index + 1}
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-[10px] uppercase font-bold text-secondary">Producto</div>
+                                                                                <button type="button" className="mt-1 text-left text-sm font-bold leading-5 break-words hover:underline" onClick={() => openSalesProductDetail(item)}>
+                                                                                    {item.product_name}
+                                                                                </button>
+                                                                                <div className="mt-2 inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold capitalize text-secondary">
+                                                                                    {item.category || 'Sin categoría'}
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-[10px] uppercase font-bold text-secondary">Pedidos relacionados</div>
+                                                                                <div className="mt-1 text-xs leading-5 text-secondary break-words">
+                                                                                    {refs.length > 0 ? refs.join(', ') : '-'}
+                                                                                </div>
+                                                                            </div>
+
+                                                                            <div className="min-w-0">
+                                                                                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                                                                                    <ReportCompactMetric label="Pedidos" value={item.orders_count.toLocaleString('es-EC')} />
+                                                                                    <ReportCompactMetric label="Unidades" value={item.units_sold.toLocaleString('es-EC')} />
+                                                                                    <ReportCompactMetric label="Bruta" value={formatMoney(item.gross_revenue)} />
+                                                                                    <ReportCompactMetric label="Neta" value={formatMoney(item.net_revenue)} />
+                                                                                    <ReportCompactMetric label="IVA" value={formatMoney(item.vat_amount)} />
+                                                                                    <ReportCompactMetric label="Envío" value={formatMoney(item.shipping_amount)} />
+                                                                                    <ReportCompactMetric label="Costo" value={formatMoney(item.cost)} />
+                                                                                    <ReportCompactMetric label="Utilidad" value={formatMoney(item.profit)} tone={item.profit >= 0 ? 'text-success' : 'text-red'} />
+                                                                                    <ReportCompactMetric label="Margen" value={`${item.margin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`} />
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    </article>
+                                                                )
+                                                            })}
+                                                            {reportSalesRankingRows.length === 0 && (
+                                                                <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-secondary">
+                                                                    No hay datos de ventas para construir el reporte.
                                                                 </div>
-                                                            ))}
-                                                            {highValueInventoryItems.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay productos valorizados para este reporte.</div>
                                                             )}
                                                         </div>
                                                     </div>
+                                                </>
+                                            )}
 
-                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Stock crítico y bajo stock</div>
-                                                        <div className="space-y-3">
-                                                            {riskInventoryItems.slice(0, 8).map((item, index) => (
-                                                                <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <div className="font-semibold text-sm">{item.name}</div>
-                                                                        <div className="text-sm font-bold text-red">{Number(item.quantity ?? 0)} uds</div>
-                                                                    </div>
-                                                                    <div className="text-xs text-secondary mt-1">
-                                                                        Cobertura: {(item as any).estimated_days_left === null || typeof (item as any).estimated_days_left === 'undefined'
-                                                                            ? 'sin ventas recientes'
-                                                                            : `${Number((item as any).estimated_days_left ?? 0)} día(s)`}
-                                                                        {Number((item as any).units_sold_30d ?? 0) > 0 && ` • ${Number((item as any).units_sold_30d ?? 0)} uds vendidas en 30 días`}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                            {riskInventoryItems.length === 0 && (
-                                                            <div className="text-sm text-secondary">No hay productos con riesgo inmediato de desabastecimiento.</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
+                                            {adminReportSection === 'balance' && (
+                                                <>
+                                                    <FinancialTrendsPanel
+                                                        trends={financialTrends}
+                                                        formatMoney={formatMoney}
+                                                        mode={financialTrendMode}
+                                                        scope={financialTrendScope}
+                                                        selectedPeriod={selectedFinancialPeriod}
+                                                        onModeChange={setFinancialTrendMode}
+                                                        onScopeChange={setFinancialTrendScope}
+                                                        onSelectedPeriodChange={setSelectedFinancialPeriod}
+                                                    />
 
-                                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Productos próximos a vencer</div>
-                                                        <div className="space-y-3">
-                                                            {expiringInventoryItems.slice(0, 8).map((item, index) => (
-                                                                <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <div className="font-semibold text-sm">{item.name}</div>
-                                                                        <div className="text-sm font-bold text-amber-700">{Number(item.quantity ?? 0)} uds</div>
-                                                                    </div>
-                                                                    <div className="text-xs text-secondary mt-1">
-                                                                        Vence: {formatIsoDate(String(item.expiration_date || ''))} • En {Number(item.days_to_expire ?? 0)} día(s)
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                            {expiringInventoryItems.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay productos próximos a vencer.</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
-                                                        <div className="heading6 mb-4">Productos vencidos</div>
-                                                        <div className="space-y-3">
-                                                            {expiredInventoryItems.slice(0, 8).map((item, index) => (
-                                                                <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
-                                                                    <div className="flex items-center justify-between gap-3">
-                                                                        <div className="font-semibold text-sm">{item.name}</div>
-                                                                        <div className="text-sm font-bold text-red">{Number(item.quantity ?? 0)} uds</div>
-                                                                    </div>
-                                                                    <div className="text-xs text-secondary mt-1">
-                                                                        Vencido desde: {formatIsoDate(String(item.expiration_date || ''))} • Hace {Number(item.days_expired ?? 0)} día(s)
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                            {expiredInventoryItems.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay productos vencidos en inventario.</div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </>
-                                        )}
-
-                                        {adminReportSection === 'traceability' && (
-                                            <>
-                                                <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
-                                                    <div className="text-sm font-bold">Cómo leer este reporte</div>
-                                                    <p className="mt-1 text-xs text-secondary">
-                                                        Trazabilidad no es un resumen de ventas; es la evidencia que permite revisar de qué pedidos, productos y categorías salen las cifras comerciales.
-                                                    </p>
-                                                    <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
-                                                        <div className="rounded-md border border-line bg-white px-3 py-2">
-                                                            <span className="font-bold">1. Pedidos fuente:</span> comprueba los pedidos que respaldan las ventas.
-                                                        </div>
-                                                        <div className="rounded-md border border-line bg-white px-3 py-2">
-                                                            <span className="font-bold">2. Productos:</span> identifica qué productos explican el ingreso.
-                                                        </div>
-                                                        <div className="rounded-md border border-line bg-white px-3 py-2">
-                                                            <span className="font-bold">3. Categorías:</span> valida el mix comercial agrupado.
-                                                        </div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Pedidos auditados</div>
-                                                        <div className="text-2xl font-bold">{traceabilityOrders.length.toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Pedidos fuente incluidos</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Ventas netas auditadas</div>
-                                                        <div className="text-2xl font-bold">{formatMoney(traceabilityOrders.reduce((acc, order) => acc + Number(order.net ?? 0), 0))}</div>
-                                                        <div className="text-xs text-secondary mt-1">Sin IVA ni envío</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Productos auditados</div>
-                                                        <div className="text-2xl font-bold">{traceabilityProducts.length.toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Productos ligados a pedidos fuente</div>
-                                                    </div>
-                                                    <div className="p-4 rounded-xl border border-line bg-white">
-                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-1">Categorías auditadas</div>
-                                                        <div className="text-2xl font-bold">{traceabilityCategories.length.toLocaleString('es-EC')}</div>
-                                                        <div className="text-xs text-secondary mt-1">Agrupaciones para validar el mix</div>
-                                                    </div>
-                                                </div>
-
-                                                <div className="bg-white border border-line rounded-2xl p-5 mb-6">
-                                                    <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                                                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                                                         <div>
-                                                            <div className="heading6">Pedidos fuente que respaldan el reporte</div>
-                                                            <p className="text-secondary text-xs mt-1">Cada fila permite abrir el pedido y revisar su desglose comercial.</p>
+                                                            <div className="text-gray-400 text-sm">Estado financiero operativo para leer ingresos, costos, gastos y utilidad neta.</div>
+                                                            <div className="heading3 mt-1">{formatMoney(reportBalanceNet)}</div>
+                                                            <div className="text-secondary text-xs mt-0.5">Ventas netas de {reportFinancialScopeLabel.toLowerCase()}, sin IVA ni envío.</div>
                                                         </div>
-                                                        <button
-                                                            type="button"
-                                                            className="w-fit px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
-                                                            onClick={() => navigateToPanelTab('admin-orders')}
-                                                        >
-                                                            Ver todos los pedidos
-                                                        </button>
+                                                        <div className="text-xs text-secondary sm:text-right">{reportOrdersCount.toLocaleString('es-EC')} pedidos realizados • promedio {formatMoney(reportAverageOrderNet)}</div>
                                                     </div>
-                                                    <div className="overflow-x-auto rounded-xl border border-line">
-                                                        <table className="w-full min-w-[920px] text-left text-sm">
-                                                            <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
-                                                                <tr>
-                                                                    <th className="px-4 py-3">Pedido</th>
-                                                                    <th className="px-4 py-3">Fecha</th>
-                                                                    <th className="px-4 py-3 text-right">Ventas brutas</th>
-                                                                    <th className="px-4 py-3 text-right">Ventas netas</th>
-                                                                    <th className="px-4 py-3 text-right">IVA cobrado</th>
-                                                                    <th className="px-4 py-3 text-right">Envío cobrado</th>
-                                                                    <th className="px-4 py-3 text-right">Acción</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-line">
-                                                                {traceabilityOrders.slice(0, 12).map((order) => (
-                                                                    <tr key={order.id} className="hover:bg-surface/40">
-                                                                        <td className="px-4 py-3 font-bold">#{order.id}</td>
-                                                                        <td className="px-4 py-3">{formatDateEcuador(order.created_at)}</td>
-                                                                        <td className="px-4 py-3 text-right font-semibold">{formatMoney(order.gross)}</td>
-                                                                        <td className="px-4 py-3 text-right">{formatMoney(order.net)}</td>
-                                                                        <td className="px-4 py-3 text-right">{formatMoney(order.vat)}</td>
-                                                                        <td className="px-4 py-3 text-right">{formatMoney(order.shipping)}</td>
-                                                                        <td className="px-4 py-3 text-right">
-                                                                            <button type="button" className="text-xs font-bold underline" onClick={() => handleViewOrder(order.id)}>
-                                                                                Ver pedido
-                                                                            </button>
-                                                                        </td>
-                                                                    </tr>
-                                                                ))}
-                                                                {traceabilityOrders.length === 0 && (
-                                                                    <tr>
-                                                                        <td colSpan={7} className="px-4 py-8 text-center text-secondary">No hay pedidos fuente para auditar en este periodo.</td>
-                                                                    </tr>
-                                                                )}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </div>
 
-                                                <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
-                                                    <div className="bg-white border border-line rounded-2xl p-5">
-                                                        <div className="heading6 mb-1">Productos que explican el resultado</div>
-                                                        <p className="text-secondary text-xs mb-4">Lista de productos vendidos, su categoría, unidades y pedidos relacionados.</p>
+                                                    <div className="mt-3 overflow-hidden rounded-lg border border-line bg-white shadow-sm">
+                                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 divide-y md:divide-y-0 md:divide-x divide-line">
+                                                            <div className="px-3 py-2">
+                                                                <div className="text-[10px] uppercase text-secondary font-bold mb-1">Ingresos e impuestos</div>
+                                                                <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Ventas brutas</span><strong>{formatMoney(reportBalanceGross)}</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Ventas netas</span><strong>{formatMoney(reportBalanceNet)}</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">IVA cobrado</span><strong className="text-orange-600">{formatMoney(reportBalanceVat)}</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Envío cobrado</span><strong>{formatMoney(reportBalanceShipping)}</strong></div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="px-3 py-2">
+                                                                <div className="text-[10px] uppercase text-secondary font-bold mb-1">Utilidad y gastos</div>
+                                                                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad bruta</span><strong className={reportBalanceGrossProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceGrossProfit)}</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad neta</span><strong className={reportBalanceNetProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceNetProfit)}</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Utilidad neta pagada</span><strong className={reportBalanceFlowProfit >= 0 ? 'text-success' : 'text-red'}>{formatMoney(reportBalanceFlowProfit)}</strong></div>
+                                                                    <div className="col-span-2 text-[11px] text-secondary">Costo de venta -{formatMoney(reportBalanceCost)} • gastos del período -{formatMoney(reportBalancePeriodExpenses)}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="px-3 py-2">
+                                                                <div className="text-[10px] uppercase text-secondary font-bold mb-1">Márgenes</div>
+                                                                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Margen bruto</span><strong>{reportBalanceGrossMargin.toFixed(1)}%</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Margen neto</span><strong className={reportBalanceNetProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceNetMargin.toFixed(1)}%</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">Margen de flujo</span><strong className={reportBalanceFlowProfit >= 0 ? 'text-black' : 'text-red'}>{reportBalanceFlowMargin.toFixed(1)}%</strong></div>
+                                                                    <div className="col-span-2 text-[11px] text-secondary">Sobre ventas netas.</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="px-3 py-2">
+                                                                <div className="text-[10px] uppercase text-secondary font-bold mb-1">ROI</div>
+                                                                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">ROI bruto</span><strong>{reportBalanceRoi.toFixed(1)}%</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">ROI neto</span><strong>{reportBalanceNetRoi.toFixed(1)}%</strong></div>
+                                                                    <div className="flex justify-between gap-2"><span className="text-secondary">ROI neto pagado</span><strong>{reportBalanceFlowRoi.toFixed(1)}%</strong></div>
+                                                                    <div className="col-span-2 text-[11px] text-secondary">Neto: gastos del período. Neto pagado: solo gastos pagados del mismo período.</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-4 grid grid-cols-1 xl:grid-cols-[1.1fr,0.9fr] gap-4">
+                                                        <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
+                                                            <div className="font-bold mb-3">Lectura paso a paso del balance</div>
+                                                            <div className="space-y-2 text-sm">
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Ventas brutas facturadas</span>
+                                                                    <strong>{formatMoney(reportBalanceGross)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Menos IVA comprometido</span>
+                                                                    <strong className="text-orange-600">-{formatMoney(reportBalanceVat)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Ventas netas del negocio</span>
+                                                                    <strong>{formatMoney(reportBalanceNet)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Menos costo de venta</span>
+                                                                    <strong className="text-orange-600">-{formatMoney(reportBalanceCost)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
+                                                                    <span>Utilidad bruta</span>
+                                                                    <strong>{formatMoney(reportBalanceGrossProfit)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Menos gastos del período</span>
+                                                                    <strong className="text-orange-600">-{formatMoney(reportBalancePeriodExpenses)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
+                                                                    <span>Utilidad neta del negocio</span>
+                                                                    <strong>{formatMoney(reportBalanceNetProfit)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Gastos pagados del período</span>
+                                                                    <strong className="text-orange-600">-{formatMoney(reportBalancePaidExpenses)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-surface border border-line">
+                                                                    <span>Obligaciones pendientes/vencidas</span>
+                                                                    <strong className="text-orange-600">-{formatMoney(reportBalancePendingExpenses + reportBalanceOverdueExpenses)}</strong>
+                                                                </div>
+                                                                <div className="flex items-center justify-between p-2.5 rounded-lg bg-black text-white">
+                                                                    <span>Utilidad neta pagada</span>
+                                                                    <strong>{formatMoney(reportBalanceFlowProfit)}</strong>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="p-4 rounded-lg border border-line bg-white shadow-sm">
+                                                            <div className="font-bold mb-3">Acciones recomendadas</div>
+                                                            <div className="flex flex-wrap gap-2">
+                                                                <button
+                                                                    type="button"
+                                                                    className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                    onClick={() => {
+                                                                        setSelectedDeepDive('profit')
+                                                                        openAdminReportSection('general')
+                                                                    }}
+                                                                >
+                                                                    Analizar rentabilidad
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                    onClick={() => navigateToPanelTab('margins')}
+                                                                >
+                                                                    Ajustar márgenes
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="px-3 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                    onClick={() => openAdminReportSection('sales')}
+                                                                >
+                                                                    Abrir reporte de ventas
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                    onClick={() => navigateToPanelTab('taxes')}
+                                                                >
+                                                                    IVA y costos de envío
+                                                                </button>
+                                                                <button
+                                                                    type="button"
+                                                                    className="px-4 py-2 rounded-lg border border-line text-sm font-semibold bg-white hover:bg-surface"
+                                                                    onClick={() => navigateToPanelTab('expenses')}
+                                                                >
+                                                                    Registrar gastos
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="heading6 mb-4 mt-10">Movimientos recientes del balance</div>
+                                                    <div className="flex flex-col gap-4">
+                                                        {(dashboardStats?.businessMetrics?.recentOrders || []).slice(0, 6).map((order: any) => {
+                                                            const net = Number(order.vat_subtotal ?? (Number(order.total ?? 0) - Number(order.vat_amount ?? 0) - Number(order.shipping ?? 0)))
+                                                            const vat = Number(order.vat_amount ?? 0)
+                                                            const shipping = Number(order.shipping ?? 0)
+                                                            return (
+                                                                <div key={order.id} className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-4 bg-surface rounded-xl border border-line">
+                                                                    <div className="flex items-center gap-4">
+                                                                        <div className="w-10 h-10 bg-success bg-opacity-10 text-success rounded-full flex items-center justify-center">
+                                                                            <Icon.ArrowDownLeft weight="bold" />
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="font-bold">Pedido #{order.id}</div>
+                                                                            <div className="text-secondary text-xs">{formatDateEcuador(order.created_at)}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-3 gap-4 text-right text-sm md:w-[340px]">
+                                                                        <div>
+                                                                            <div className="text-[10px] uppercase text-secondary">Neto</div>
+                                                                            <div className="font-bold tabular-nums">{formatMoney(net)}</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="text-[10px] uppercase text-secondary">IVA</div>
+                                                                            <div className="font-bold tabular-nums">{formatMoney(vat)}</div>
+                                                                        </div>
+                                                                        <div>
+                                                                            <div className="text-[10px] uppercase text-secondary">Envío</div>
+                                                                            <div className="font-bold tabular-nums">{formatMoney(shipping)}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        className="px-3 py-1.5 rounded-lg border border-line text-xs font-bold hover:bg-white"
+                                                                        onClick={() => handleViewOrder(order.id)}
+                                                                    >
+                                                                        Ver pedido
+                                                                    </button>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                        {(dashboardStats?.businessMetrics?.recentOrders || []).length === 0 && (
+                                                            <div className="text-center py-4 text-secondary">No hay transacciones recientes.</div>
+                                                        )}
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {adminReportSection === 'inventory' && (
+                                                <>
+                                                    <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
+                                                        <div className="text-sm font-bold">Valorización, disponibilidad y vencimientos</div>
+                                                        <p className="mt-1 text-xs text-secondary">
+                                                            Primero se muestra el capital en inventario; luego los productos que requieren reposición o revisión por fecha de vencimiento.
+                                                        </p>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 mb-6">
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Capital en inventario</div>
+                                                            <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.cost_value ?? 0))}</div>
+                                                            <div className="text-xs text-secondary mt-1">Costo actual del stock disponible</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Valor potencial de venta</div>
+                                                            <div className="text-2xl font-bold">{formatMoney(Number(inventoryValue?.market_value ?? 0))}</div>
+                                                            <div className="text-xs text-secondary mt-1">Stock valorizado al precio de venta</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Stock disponible</div>
+                                                            <div className="text-2xl font-bold">{Number(inventoryValue?.total_items ?? 0).toLocaleString('es-EC')}</div>
+                                                            <div className="text-xs text-secondary mt-1">{Number(inventoryValue?.skus_with_stock ?? 0).toLocaleString('es-EC')} productos con stock</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Stock crítico</div>
+                                                            <div className="text-2xl font-bold text-red">{Number(inventoryHealth?.out_of_stock ?? 0)}</div>
+                                                            <div className="text-xs text-secondary mt-1">Productos sin unidades disponibles</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Bajo stock</div>
+                                                            <div className="text-2xl font-bold text-amber-700">{Number(inventoryHealth?.low_stock ?? 0)}</div>
+                                                            <div className="text-xs text-secondary mt-1">Requieren reposición preventiva</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Vencimientos</div>
+                                                            <div className="text-2xl font-bold text-red">{Number(inventoryHealth?.expired_products ?? 0) + Number(inventoryHealth?.expiring_products ?? 0)}</div>
+                                                            <div className="text-xs text-secondary mt-1">Productos vencidos o próximos a vencer</div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+                                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
+                                                            <div className="flex items-center justify-between mb-4">
+                                                                <div>
+                                                                    <div className="heading6">Productos con más capital invertido</div>
+                                                                    <p className="text-secondary text-xs mt-1">Stock que concentra más costo en inventario.</p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
+                                                                    onClick={() => navigateToPanelTab('inventory')}
+                                                                >
+                                                                    Abrir inventario
+                                                                </button>
+                                                            </div>
+                                                            <div className="space-y-3">
+                                                                {highValueInventoryItems.slice(0, 8).map((item, index) => (
+                                                                    <div key={`${item.name}-${index}`} className="flex items-center justify-between gap-4 p-3 rounded-xl border border-line bg-surface">
+                                                                        <div>
+                                                                            <div className="font-semibold text-sm">{item.name}</div>
+                                                                            <div className="text-xs text-secondary">Stock: {Number(item.quantity ?? 0).toLocaleString('es-EC')} • Costo unitario: {formatMoney(Number(item.cost ?? 0))}</div>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <div className="text-xs text-secondary uppercase">Capital</div>
+                                                                            <div className="font-bold">{formatMoney(Number(item.total_cost ?? 0))}</div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                                {highValueInventoryItems.length === 0 && (
+                                                                    <div className="text-sm text-secondary">No hay productos valorizados para este reporte.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
+                                                            <div className="heading6 mb-4">Stock crítico y bajo stock</div>
+                                                            <div className="space-y-3">
+                                                                {riskInventoryItems.slice(0, 8).map((item, index) => (
+                                                                    <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
+                                                                        <div className="flex items-center justify-between gap-3">
+                                                                            <div className="font-semibold text-sm">{item.name}</div>
+                                                                            <div className="text-sm font-bold text-red">{Number(item.quantity ?? 0)} uds</div>
+                                                                        </div>
+                                                                        <div className="text-xs text-secondary mt-1">
+                                                                            Cobertura: {(item as any).estimated_days_left === null || typeof (item as any).estimated_days_left === 'undefined'
+                                                                                ? 'sin ventas recientes'
+                                                                                : `${Number((item as any).estimated_days_left ?? 0)} día(s)`}
+                                                                            {Number((item as any).units_sold_30d ?? 0) > 0 && ` • ${Number((item as any).units_sold_30d ?? 0)} uds vendidas en 30 días`}
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                                {riskInventoryItems.length === 0 && (
+                                                                    <div className="text-sm text-secondary">No hay productos con riesgo inmediato de desabastecimiento.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
+                                                            <div className="heading6 mb-4">Productos próximos a vencer</div>
+                                                            <div className="space-y-3">
+                                                                {expiringInventoryItems.slice(0, 8).map((item, index) => (
+                                                                    <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
+                                                                        <div className="flex items-center justify-between gap-3">
+                                                                            <div className="font-semibold text-sm">{item.name}</div>
+                                                                            <div className="text-sm font-bold text-amber-700">{Number(item.quantity ?? 0)} uds</div>
+                                                                        </div>
+                                                                        <div className="text-xs text-secondary mt-1">
+                                                                            Vence: {formatIsoDate(String(item.expiration_date || ''))} • En {Number(item.days_to_expire ?? 0)} día(s)
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                                {expiringInventoryItems.length === 0 && (
+                                                                    <div className="text-sm text-secondary">No hay productos próximos a vencer.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm">
+                                                            <div className="heading6 mb-4">Productos vencidos</div>
+                                                            <div className="space-y-3">
+                                                                {expiredInventoryItems.slice(0, 8).map((item, index) => (
+                                                                    <div key={`${item.name}-${index}`} className="p-3 rounded-xl border border-line bg-surface">
+                                                                        <div className="flex items-center justify-between gap-3">
+                                                                            <div className="font-semibold text-sm">{item.name}</div>
+                                                                            <div className="text-sm font-bold text-red">{Number(item.quantity ?? 0)} uds</div>
+                                                                        </div>
+                                                                        <div className="text-xs text-secondary mt-1">
+                                                                            Vencido desde: {formatIsoDate(String(item.expiration_date || ''))} • Hace {Number(item.days_expired ?? 0)} día(s)
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                                {expiredInventoryItems.length === 0 && (
+                                                                    <div className="text-sm text-secondary">No hay productos vencidos en inventario.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+
+                                            {adminReportSection === 'traceability' && (
+                                                <>
+                                                    <div className="mb-4 rounded-lg border border-line bg-surface px-4 py-3">
+                                                        <div className="text-sm font-bold">Cómo leer este reporte</div>
+                                                        <p className="mt-1 text-xs text-secondary">
+                                                            Trazabilidad no es un resumen de ventas; es la evidencia que permite revisar de qué pedidos, productos y categorías salen las cifras comerciales.
+                                                        </p>
+                                                        <div className="mt-3 grid grid-cols-1 gap-2 text-xs md:grid-cols-3">
+                                                            <div className="rounded-md border border-line bg-white px-3 py-2">
+                                                                <span className="font-bold">1. Pedidos fuente:</span> comprueba los pedidos que respaldan las ventas.
+                                                            </div>
+                                                            <div className="rounded-md border border-line bg-white px-3 py-2">
+                                                                <span className="font-bold">2. Productos:</span> identifica qué productos explican el ingreso.
+                                                            </div>
+                                                            <div className="rounded-md border border-line bg-white px-3 py-2">
+                                                                <span className="font-bold">3. Categorías:</span> valida el mix comercial agrupado.
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Pedidos auditados</div>
+                                                            <div className="text-2xl font-bold">{traceabilityOrders.length.toLocaleString('es-EC')}</div>
+                                                            <div className="text-xs text-secondary mt-1">Pedidos fuente incluidos</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Ventas netas auditadas</div>
+                                                            <div className="text-2xl font-bold">{formatMoney(traceabilityOrders.reduce((acc, order) => acc + Number(order.net ?? 0), 0))}</div>
+                                                            <div className="text-xs text-secondary mt-1">Sin IVA ni envío</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Productos auditados</div>
+                                                            <div className="text-2xl font-bold">{traceabilityProducts.length.toLocaleString('es-EC')}</div>
+                                                            <div className="text-xs text-secondary mt-1">Productos ligados a pedidos fuente</div>
+                                                        </div>
+                                                        <div className="p-4 rounded-xl border border-line bg-white">
+                                                            <div className="text-[10px] uppercase font-bold text-secondary mb-1">Categorías auditadas</div>
+                                                            <div className="text-2xl font-bold">{traceabilityCategories.length.toLocaleString('es-EC')}</div>
+                                                            <div className="text-xs text-secondary mt-1">Agrupaciones para validar el mix</div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="bg-white border border-line rounded-2xl p-5 mb-6">
+                                                        <div className="flex flex-col gap-3 mb-4 md:flex-row md:items-center md:justify-between">
+                                                            <div>
+                                                                <div className="heading6">Pedidos fuente que respaldan el reporte</div>
+                                                                <p className="text-secondary text-xs mt-1">Cada fila permite abrir el pedido y revisar su desglose comercial.</p>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                className="w-fit px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface"
+                                                                onClick={() => navigateToPanelTab('admin-orders')}
+                                                            >
+                                                                Ver todos los pedidos
+                                                            </button>
+                                                        </div>
                                                         <div className="overflow-x-auto rounded-xl border border-line">
-                                                            <table className="w-full min-w-[820px] text-left text-sm">
+                                                            <table className="w-full min-w-[920px] text-left text-sm">
                                                                 <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
                                                                     <tr>
-                                                                        <th className="px-4 py-3">Producto</th>
-                                                                        <th className="px-4 py-3">Categoría</th>
-                                                                        <th className="px-4 py-3 text-right">Unidades</th>
+                                                                        <th className="px-4 py-3">Pedido</th>
+                                                                        <th className="px-4 py-3">Fecha</th>
+                                                                        <th className="px-4 py-3 text-right">Ventas brutas</th>
                                                                         <th className="px-4 py-3 text-right">Ventas netas</th>
-                                                                        <th className="px-4 py-3">Pedidos asociados</th>
+                                                                        <th className="px-4 py-3 text-right">IVA cobrado</th>
+                                                                        <th className="px-4 py-3 text-right">Envío cobrado</th>
+                                                                        <th className="px-4 py-3 text-right">Acción</th>
                                                                     </tr>
                                                                 </thead>
                                                                 <tbody className="divide-y divide-line">
-                                                                    {traceabilityProducts.slice(0, 10).map((product, idx) => {
-                                                                        const refs = Array.isArray(product.order_refs)
-                                                                            ? product.order_refs
-                                                                            : String(product.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
-                                                                        return (
-                                                                            <tr key={`${product.product_id || product.product_name}-${idx}`} className="hover:bg-surface/40">
-                                                                                <td className="px-4 py-3 font-semibold">{product.product_name}</td>
-                                                                                <td className="px-4 py-3 capitalize">{product.category || 'Sin categoría'}</td>
-                                                                                <td className="px-4 py-3 text-right">{Number(product.units_sold || 0).toLocaleString('es-EC')}</td>
-                                                                                <td className="px-4 py-3 text-right font-semibold">{formatMoney(product.net_revenue)}</td>
-                                                                                <td className="px-4 py-3 text-xs text-secondary break-words">{refs.length > 0 ? refs.join(', ') : 'Sin referencia'}</td>
-                                                                            </tr>
-                                                                        )
-                                                                    })}
-                                                                    {traceabilityProducts.length === 0 && (
+                                                                    {traceabilityOrders.slice(0, 12).map((order) => (
+                                                                        <tr key={order.id} className="hover:bg-surface/40">
+                                                                            <td className="px-4 py-3 font-bold">#{order.id}</td>
+                                                                            <td className="px-4 py-3">{formatDateEcuador(order.created_at)}</td>
+                                                                            <td className="px-4 py-3 text-right font-semibold">{formatMoney(order.gross)}</td>
+                                                                            <td className="px-4 py-3 text-right">{formatMoney(order.net)}</td>
+                                                                            <td className="px-4 py-3 text-right">{formatMoney(order.vat)}</td>
+                                                                            <td className="px-4 py-3 text-right">{formatMoney(order.shipping)}</td>
+                                                                            <td className="px-4 py-3 text-right">
+                                                                                <button type="button" className="text-xs font-bold underline" onClick={() => handleViewOrder(order.id)}>
+                                                                                    Ver pedido
+                                                                                </button>
+                                                                            </td>
+                                                                        </tr>
+                                                                    ))}
+                                                                    {traceabilityOrders.length === 0 && (
                                                                         <tr>
-                                                                            <td colSpan={5} className="px-4 py-8 text-center text-secondary">No hay productos vendidos para auditar.</td>
+                                                                            <td colSpan={7} className="px-4 py-8 text-center text-secondary">No hay pedidos fuente para auditar en este periodo.</td>
                                                                         </tr>
                                                                     )}
                                                                 </tbody>
@@ -6337,208 +6410,248 @@ const MyAccount = () => {
                                                         </div>
                                                     </div>
 
-                                                    <div className="bg-white border border-line rounded-2xl p-5">
-                                                        <div className="heading6 mb-1">Categorías auditadas</div>
-                                                        <p className="text-secondary text-xs mb-4">Agrupación simple para revisar qué categorías explican las ventas netas.</p>
-                                                        <div className="space-y-3">
-                                                            {traceabilityCategories.slice(0, 10).map((category, idx) => {
-                                                                const refs = Array.isArray(category.order_refs)
-                                                                    ? category.order_refs
-                                                                    : String(category.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
-                                                                const categoryNet = Number(category.net_revenue ?? 0)
-                                                                const totalNet = traceabilityCategories.reduce((acc, item) => acc + Number(item.net_revenue ?? 0), 0)
-                                                                const ratio = totalNet > 0 && categoryNet > 0 ? Math.max((categoryNet / totalNet) * 100, 4) : 0
-                                                                return (
-                                                                    <div key={`${category.category}-${idx}`} className="p-3 rounded-lg border border-line bg-surface">
-                                                                        <div className="flex items-center justify-between gap-3">
-                                                                            <div className="font-semibold text-sm capitalize">{category.category || 'Sin categoría'}</div>
-                                                                            <div className="font-bold">{formatMoney(categoryNet)}</div>
+                                                    <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-6">
+                                                        <div className="bg-white border border-line rounded-2xl p-5">
+                                                            <div className="heading6 mb-1">Productos que explican el resultado</div>
+                                                            <p className="text-secondary text-xs mb-4">Lista de productos vendidos, su categoría, unidades y pedidos relacionados.</p>
+                                                            <div className="overflow-x-auto rounded-xl border border-line">
+                                                                <table className="w-full min-w-[820px] text-left text-sm">
+                                                                    <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
+                                                                        <tr>
+                                                                            <th className="px-4 py-3">Producto</th>
+                                                                            <th className="px-4 py-3">Categoría</th>
+                                                                            <th className="px-4 py-3 text-right">Unidades</th>
+                                                                            <th className="px-4 py-3 text-right">Ventas netas</th>
+                                                                            <th className="px-4 py-3">Pedidos asociados</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-line">
+                                                                        {traceabilityProducts.slice(0, 10).map((product, idx) => {
+                                                                            const refs = Array.isArray(product.order_refs)
+                                                                                ? product.order_refs
+                                                                                : String(product.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
+                                                                            return (
+                                                                                <tr key={`${product.product_id || product.product_name}-${idx}`} className="hover:bg-surface/40">
+                                                                                    <td className="px-4 py-3 font-semibold">{product.product_name}</td>
+                                                                                    <td className="px-4 py-3 capitalize">{product.category || 'Sin categoría'}</td>
+                                                                                    <td className="px-4 py-3 text-right">{Number(product.units_sold || 0).toLocaleString('es-EC')}</td>
+                                                                                    <td className="px-4 py-3 text-right font-semibold">{formatMoney(product.net_revenue)}</td>
+                                                                                    <td className="px-4 py-3 text-xs text-secondary break-words">{refs.length > 0 ? refs.join(', ') : 'Sin referencia'}</td>
+                                                                                </tr>
+                                                                            )
+                                                                        })}
+                                                                        {traceabilityProducts.length === 0 && (
+                                                                            <tr>
+                                                                                <td colSpan={5} className="px-4 py-8 text-center text-secondary">No hay productos vendidos para auditar.</td>
+                                                                            </tr>
+                                                                        )}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-white border border-line rounded-2xl p-5">
+                                                            <div className="heading6 mb-1">Categorías auditadas</div>
+                                                            <p className="text-secondary text-xs mb-4">Agrupación simple para revisar qué categorías explican las ventas netas.</p>
+                                                            <div className="space-y-3">
+                                                                {traceabilityCategories.slice(0, 10).map((category, idx) => {
+                                                                    const refs = Array.isArray(category.order_refs)
+                                                                        ? category.order_refs
+                                                                        : String(category.order_refs || '').split(',').map((value) => value.trim()).filter(Boolean)
+                                                                    const categoryNet = Number(category.net_revenue ?? 0)
+                                                                    const totalNet = traceabilityCategories.reduce((acc, item) => acc + Number(item.net_revenue ?? 0), 0)
+                                                                    const ratio = totalNet > 0 && categoryNet > 0 ? Math.max((categoryNet / totalNet) * 100, 4) : 0
+                                                                    return (
+                                                                        <div key={`${category.category}-${idx}`} className="p-3 rounded-lg border border-line bg-surface">
+                                                                            <div className="flex items-center justify-between gap-3">
+                                                                                <div className="font-semibold text-sm capitalize">{category.category || 'Sin categoría'}</div>
+                                                                                <div className="font-bold">{formatMoney(categoryNet)}</div>
+                                                                            </div>
+                                                                            <div className="mt-2 h-2 rounded-full bg-white overflow-hidden">
+                                                                                <div className="h-full bg-black rounded-full" style={{ width: `${ratio}%` }}></div>
+                                                                            </div>
+                                                                            <div className="text-xs text-secondary mt-2 break-words">
+                                                                                Pedidos asociados: {refs.length > 0 ? refs.join(', ') : 'Sin referencia'}
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="mt-2 h-2 rounded-full bg-white overflow-hidden">
-                                                                            <div className="h-full bg-black rounded-full" style={{ width: `${ratio}%` }}></div>
-                                                                        </div>
-                                                                        <div className="text-xs text-secondary mt-2 break-words">
-                                                                            Pedidos asociados: {refs.length > 0 ? refs.join(', ') : 'Sin referencia'}
-                                                                        </div>
-                                                                    </div>
-                                                                )
-                                                            })}
-                                                            {traceabilityCategories.length === 0 && (
-                                                                <div className="text-sm text-secondary">No hay categorías para auditar.</div>
-                                                            )}
+                                                                    )
+                                                                })}
+                                                                {traceabilityCategories.length === 0 && (
+                                                                    <div className="text-sm text-secondary">No hay categorías para auditar.</div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </>
+                                            )}
+                                        </div>
+                                    )}
+                                    {activeTab === 'sales-ranking' && (
+                                        <div className="tab text-content w-full">
+                                            <div className="flex items-center justify-between pb-6">
+                                                <div>
+                                                    <div className="heading5">Ranking de productos vendidos</div>
+                                                    <p className="text-secondary text-xs mt-1">
+                                                        Orden completo por desempeño comercial: unidades vendidas, ventas netas, utilidad bruta y margen bruto.
+                                                    </p>
+                                                </div>
+                                                <div className="text-sm font-bold text-secondary bg-surface px-4 py-2 rounded-lg border border-line">
+                                                    {currentDateLabel}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-8">
+                                                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
+                                                    <div>
+                                                        <div className="heading6">Resumen y orden comercial</div>
+                                                        <p className="text-secondary text-xs mt-1">
+                                                            Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con ventas completadas o entregadas.
+                                                        </p>
+                                                        <p className="text-secondary text-xs mt-1">
+                                                            Haz clic en el nombre del producto para ver su detalle (mes e histórico).
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                                                        <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
+                                                            Mes a consultar
+                                                            <input
+                                                                type="month"
+                                                                value={salesRankingMonth}
+                                                                onChange={(event) => selectReportMonth(event.target.value)}
+                                                                className="px-3 py-1.5 text-sm font-semibold rounded-md border border-line bg-white text-black focus:border-black outline-none"
+                                                            />
+                                                        </label>
+                                                        <div className="flex bg-surface p-1 rounded-lg border border-line w-fit">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSalesRankingView('month')}
+                                                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                            >
+                                                                Mes
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSalesRankingView('historical')}
+                                                                className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                            >
+                                                                Histórico total
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </>
-                                        )}
-                                    </div>
-                                    )}
-                                    {activeTab === 'sales-ranking' && (
-                                    <div className="tab text-content w-full">
-                                        <div className="flex items-center justify-between pb-6">
-                                            <div>
-                                                <div className="heading5">Ranking de productos vendidos</div>
-                                                <p className="text-secondary text-xs mt-1">
-                                                    Orden completo por desempeño comercial: unidades vendidas, ventas netas, utilidad bruta y margen bruto.
-                                                </p>
-                                            </div>
-                                            <div className="text-sm font-bold text-secondary bg-surface px-4 py-2 rounded-lg border border-line">
-                                                {currentDateLabel}
-                                            </div>
-                                        </div>
 
-                                        <div className="bg-white p-6 rounded-2xl border border-line shadow-sm mb-8">
-                                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-5">
-                                                <div>
-                                                    <div className="heading6">Resumen y orden comercial</div>
-                                                    <p className="text-secondary text-xs mt-1">
-                                                        Vista activa: {salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con ventas completadas o entregadas.
-                                                    </p>
-                                                    <p className="text-secondary text-xs mt-1">
-                                                        Haz clic en el nombre del producto para ver su detalle (mes e histórico).
-                                                    </p>
-                                                </div>
-                                                <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                                                    <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
-                                                        Mes a consultar
-                                                        <input
-                                                            type="month"
-                                                            value={salesRankingMonth}
-                                                            onChange={(event) => selectReportMonth(event.target.value)}
-                                                            className="px-3 py-1.5 text-sm font-semibold rounded-md border border-line bg-white text-black focus:border-black outline-none"
-                                                        />
-                                                    </label>
-                                                    <div className="flex bg-surface p-1 rounded-lg border border-line w-fit">
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSalesRankingView('month')}
-                                                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
-                                                        >
-                                                            Mes
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setSalesRankingView('historical')}
-                                                            className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
-                                                        >
-                                                            Histórico total
-                                                        </button>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Periodo activo</div>
+                                                        <div className="text-sm font-semibold">
+                                                            {salesRankingView === 'month'
+                                                                ? `${productSalesRanking?.period?.start || '-'} → ${productSalesRanking?.period?.end || '-'}`
+                                                                : `${productSalesRanking?.historicalPeriod?.start || '-'} → ${productSalesRanking?.historicalPeriod?.end || '-'}`
+                                                            }
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
+                                                        <div className="text-lg font-bold">{Number(salesRankingFinancial?.orders_count ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
+                                                        <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
+                                                        <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.gross ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
+                                                        <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
+                                                        <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.vat ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
+                                                        <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.shipping ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
+                                                        <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.cost ?? 0)}</div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Utilidad bruta</div>
+                                                        <div className={`text-lg font-bold ${(Number(salesRankingFinancial?.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
+                                                            {formatMoney(salesRankingFinancial?.profit ?? 0)}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg border border-line bg-surface">
+                                                        <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
+                                                        <div className="text-lg font-bold">{Number(salesRankingFinancial?.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Periodo activo</div>
-                                                    <div className="text-sm font-semibold">
-                                                        {salesRankingView === 'month'
-                                                            ? `${productSalesRanking?.period?.start || '-'} → ${productSalesRanking?.period?.end || '-'}`
-                                                            : `${productSalesRanking?.historicalPeriod?.start || '-'} → ${productSalesRanking?.historicalPeriod?.end || '-'}`
-                                                        }
-                                                    </div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
-                                                    <div className="text-lg font-bold">{Number(salesRankingFinancial?.orders_count ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
-                                                    <div className="text-lg font-bold">{Number(salesRankingTotals?.units_sold ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
-                                                    <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.gross ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
-                                                    <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
-                                                    <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.vat ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
-                                                    <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.shipping ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
-                                                    <div className="text-lg font-bold">{formatMoney(salesRankingFinancial?.cost ?? 0)}</div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Utilidad bruta</div>
-                                                    <div className={`text-lg font-bold ${(Number(salesRankingFinancial?.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
-                                                        {formatMoney(salesRankingFinancial?.profit ?? 0)}
-                                                    </div>
-                                                </div>
-                                                <div className="p-3 rounded-lg border border-line bg-surface">
-                                                    <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
-                                                    <div className="text-lg font-bold">{Number(salesRankingFinancial?.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%</div>
-                                                </div>
-                                            </div>
-
-                                            <div className="overflow-x-auto border border-line rounded-xl">
-                                                <table className="w-full min-w-[980px] text-left">
-                                                    <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
-                                                        <tr>
-                                                            <th className="px-4 py-3 text-right">#</th>
-                                                            <th className="px-4 py-3">Producto</th>
-                                                            <th className="px-4 py-3">Categoría</th>
-                                                            <th className="px-4 py-3 text-right">Pedidos ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Unidades vendidas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Ventas brutas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Ventas netas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">IVA cobrado ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Envío cobrado ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Costo de venta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Utilidad bruta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                            <th className="px-4 py-3 text-right">Margen bruto ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="divide-y divide-line">
-                                                        {salesRankingRows.map((item, index) => (
-                                                            <tr key={`${item.product_id}-${index}`} className="hover:bg-surface/40">
-                                                                <td className="px-4 py-3 text-right font-semibold text-sm">{index + 1}</td>
-                                                                <td className="px-4 py-3 text-sm font-semibold">
-                                                                    <button
-                                                                        type="button"
-                                                                        className="text-left hover:underline"
-                                                                        onClick={() => openSalesProductDetail(item)}
-                                                                    >
-                                                                        {item.product_name}
-                                                                    </button>
-                                                                </td>
-                                                                <td className="px-4 py-3 text-sm capitalize">{item.category || 'Sin categoría'}</td>
-                                                                <td className="px-4 py-3 text-sm text-right">{item.orders_count}</td>
-                                                                <td className="px-4 py-3 text-sm text-right font-semibold">{item.units_sold}</td>
-                                                                <td className="px-4 py-3 text-sm text-right">{formatMoney(item.gross_revenue)}</td>
-                                                                <td className="px-4 py-3 text-sm text-right">{formatMoney(item.net_revenue)}</td>
-                                                                <td className="px-4 py-3 text-sm text-right">{formatMoney(item.vat_amount)}</td>
-                                                                <td className="px-4 py-3 text-sm text-right">{formatMoney(item.shipping_amount)}</td>
-                                                                <td className="px-4 py-3 text-sm text-right">{formatMoney(item.cost)}</td>
-                                                                <td className={`px-4 py-3 text-sm text-right font-semibold ${(Number(item.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
-                                                                    {formatMoney(item.profit)}
-                                                                </td>
-                                                                <td className="px-4 py-3 text-sm text-right">
-                                                                    {Number(item.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
-                                                                </td>
-                                                            </tr>
-                                                        ))}
-                                                        {salesRankingRows.length === 0 && (
+                                                <div className="overflow-x-auto border border-line rounded-xl">
+                                                    <table className="w-full min-w-[980px] text-left">
+                                                        <thead className="bg-surface text-[10px] uppercase font-bold text-secondary border-b border-line">
                                                             <tr>
-                                                                <td colSpan={12} className="px-4 py-6 text-center text-secondary text-sm">
-                                                                    No hay datos de ventas para construir el ranking.
-                                                                </td>
+                                                                <th className="px-4 py-3 text-right">#</th>
+                                                                <th className="px-4 py-3">Producto</th>
+                                                                <th className="px-4 py-3">Categoría</th>
+                                                                <th className="px-4 py-3 text-right">Pedidos ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Unidades vendidas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Ventas brutas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Ventas netas ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">IVA cobrado ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Envío cobrado ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Costo de venta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Utilidad bruta ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
+                                                                <th className="px-4 py-3 text-right">Margen bruto ({salesRankingView === 'month' ? 'Mes' : 'Histórico'})</th>
                                                             </tr>
-                                                        )}
-                                                    </tbody>
-                                                </table>
+                                                        </thead>
+                                                        <tbody className="divide-y divide-line">
+                                                            {salesRankingRows.map((item, index) => (
+                                                                <tr key={`${item.product_id}-${index}`} className="hover:bg-surface/40">
+                                                                    <td className="px-4 py-3 text-right font-semibold text-sm">{index + 1}</td>
+                                                                    <td className="px-4 py-3 text-sm font-semibold">
+                                                                        <button
+                                                                            type="button"
+                                                                            className="text-left hover:underline"
+                                                                            onClick={() => openSalesProductDetail(item)}
+                                                                        >
+                                                                            {item.product_name}
+                                                                        </button>
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-sm capitalize">{item.category || 'Sin categoría'}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right">{item.orders_count}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right font-semibold">{item.units_sold}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right">{formatMoney(item.gross_revenue)}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right">{formatMoney(item.net_revenue)}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right">{formatMoney(item.vat_amount)}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right">{formatMoney(item.shipping_amount)}</td>
+                                                                    <td className="px-4 py-3 text-sm text-right">{formatMoney(item.cost)}</td>
+                                                                    <td className={`px-4 py-3 text-sm text-right font-semibold ${(Number(item.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
+                                                                        {formatMoney(item.profit)}
+                                                                    </td>
+                                                                    <td className="px-4 py-3 text-sm text-right">
+                                                                        {Number(item.margin ?? 0).toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                                                    </td>
+                                                                </tr>
+                                                            ))}
+                                                            {salesRankingRows.length === 0 && (
+                                                                <tr>
+                                                                    <td colSpan={12} className="px-4 py-6 text-center text-secondary text-sm">
+                                                                        No hay datos de ventas para construir el ranking.
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
                                     )}
 
-                                    
+
                                     {activeTab === 'local-sales' && (
                                         <LocalSalesPanel
                                             currentDateLabel={currentDateLabel}
@@ -6741,816 +6854,829 @@ const MyAccount = () => {
                                     )}
 
                                     {activeTab === 'inventory' && (
-                                    <InventoryManagementPanel
-                                        summary={inventorySummary}
-                                        rows={filteredInventoryRows}
-                                        searchQuery={inventorySearch}
-                                        statusFilter={inventoryStatusFilter}
-                                        typeFilter={inventoryTypeFilter}
-                                        purchaseInvoicesSummary={{
-                                            totalInvoices: purchaseInvoicesSummary.totalInvoices,
-                                            totalUnits: purchaseInvoicesSummary.totalUnits,
-                                            totalAmount: purchaseInvoicesSummary.totalAmount,
-                                            suppliersCount: purchaseInvoicesSummary.suppliersCount,
-                                        }}
-                                        recentPurchaseInvoices={recentPurchaseInvoices}
-                                        purchaseInvoicesLoading={purchaseInvoicesLoading}
-                                        hasPerishableProducts={hasPerishableProducts}
-                                        lowStockThreshold={INVENTORY_LOW_STOCK_THRESHOLD}
-                                        onSearchChange={setInventorySearch}
-                                        onStatusFilterChange={setInventoryStatusFilter}
-                                        onTypeFilterChange={setInventoryTypeFilter}
-                                        onClearFilters={() => {
-                                            setInventorySearch('')
-                                            setInventoryStatusFilter('all')
-                                            setInventoryTypeFilter('all')
-                                        }}
-                                        onNavigateToProducts={() => navigateToPanelTab('products')}
-                                        onNewProduct={handleNewProduct}
-                                        onReloadPurchaseInvoices={loadRecentPurchaseInvoices}
-                                        onOpenPurchaseInvoice={handleOpenPurchaseInvoice}
-                                        onOpenProductBalance={handleOpenProductBalance}
-                                        onEditProduct={handleEditProduct}
-                                        onRestockProduct={handleRestockProduct}
-                                        formatMoney={formatMoney}
-                                        formatIsoDate={formatIsoDate}
-                                        formatDateEcuador={formatDateEcuador}
-                                        formatDateTimeEcuador={formatDateTimeEcuador}
-                                    />
+                                        <InventoryManagementPanel
+                                            summary={inventorySummary}
+                                            rows={filteredInventoryRows}
+                                            searchQuery={inventorySearch}
+                                            statusFilter={inventoryStatusFilter}
+                                            typeFilter={inventoryTypeFilter}
+                                            purchaseInvoicesSummary={{
+                                                totalInvoices: purchaseInvoicesSummary.totalInvoices,
+                                                totalUnits: purchaseInvoicesSummary.totalUnits,
+                                                totalAmount: purchaseInvoicesSummary.totalAmount,
+                                                suppliersCount: purchaseInvoicesSummary.suppliersCount,
+                                            }}
+                                            recentPurchaseInvoices={recentPurchaseInvoices}
+                                            purchaseInvoicesLoading={purchaseInvoicesLoading}
+                                            hasPerishableProducts={hasPerishableProducts}
+                                            lowStockThreshold={INVENTORY_LOW_STOCK_THRESHOLD}
+                                            onSearchChange={setInventorySearch}
+                                            onStatusFilterChange={setInventoryStatusFilter}
+                                            onTypeFilterChange={setInventoryTypeFilter}
+                                            onClearFilters={() => {
+                                                setInventorySearch('')
+                                                setInventoryStatusFilter('all')
+                                                setInventoryTypeFilter('all')
+                                            }}
+                                            onNavigateToProducts={() => navigateToPanelTab('products')}
+                                            onNewProduct={handleNewProduct}
+                                            onReloadPurchaseInvoices={loadRecentPurchaseInvoices}
+                                            onOpenPurchaseInvoice={handleOpenPurchaseInvoice}
+                                            onOpenProductBalance={handleOpenProductBalance}
+                                            onEditProduct={handleEditProduct}
+                                            onRestockProduct={handleRestockProduct}
+                                            formatMoney={formatMoney}
+                                            formatIsoDate={formatIsoDate}
+                                            formatDateEcuador={formatDateEcuador}
+                                            formatDateTimeEcuador={formatDateTimeEcuador}
+                                        />
                                     )}
 
                                     {activeTab === 'products' && (
-                                    <ProductsManagementPanel
-                                        products={filteredAdminProductsList}
-                                        summary={productPublicationSummary}
-                                        activeFilter={productPublicationFilter}
-                                        activeQuickFilter={adminProductsQuickFilter}
-                                        searchQuery={adminProductsSearch}
-                                        advancedFilters={{
-                                            category: adminProductsCategoryFilter,
-                                            supplier: adminProductsSupplierFilter,
-                                            brand: adminProductsBrandFilter,
-                                            species: adminProductsSpeciesFilter,
-                                            tax: adminProductsTaxFilter,
-                                        }}
-                                        filterOptions={adminProductFilterOptions}
-                                        hasPerishableProducts={hasPerishableProducts}
-                                        onFilterChange={setProductPublicationFilter}
-                                        onQuickFilterChange={setAdminProductsQuickFilter}
-                                        onSearchChange={setAdminProductsSearch}
-                                        onAdvancedFiltersChange={(nextFilters) => {
-                                            setAdminProductsCategoryFilter(nextFilters.category)
-                                            setAdminProductsSupplierFilter(nextFilters.supplier)
-                                            setAdminProductsBrandFilter(nextFilters.brand)
-                                            setAdminProductsSpeciesFilter(nextFilters.species)
-                                            setAdminProductsTaxFilter(nextFilters.tax)
-                                        }}
-                                        onClearAdvancedFilters={() => {
-                                            setAdminProductsSearch('')
-                                            setAdminProductsCategoryFilter('all')
-                                            setAdminProductsSupplierFilter('all')
-                                            setAdminProductsBrandFilter('all')
-                                            setAdminProductsSpeciesFilter('all')
-                                            setAdminProductsTaxFilter('all')
-                                            setAdminProductsQuickFilter('all')
-                                            setProductPublicationFilter('all')
-                                        }}
-                                        onNewProduct={handleNewProduct}
-                                        onEditProduct={handleEditProduct}
-                                        onRestockProduct={handleRestockProduct}
-                                        onDuplicateVariant={handleDuplicateVariant}
-                                        onDeleteProduct={handleDeleteProduct}
-                                        onTogglePublication={handleToggleProductPublication}
-                                        publicationPendingIds={productPublicationPendingIds}
-                                        isProductEligibleForPublication={isProductEligibleForPublication}
-                                        getProductExpirationMeta={getProductExpirationMeta}
-                                        formatIsoDate={formatIsoDate}
-                                    />
+                                        <ProductsManagementPanel
+                                            products={filteredAdminProductsList}
+                                            summary={productPublicationSummary}
+                                            activeFilter={productPublicationFilter}
+                                            activeQuickFilter={adminProductsQuickFilter}
+                                            searchQuery={adminProductsSearch}
+                                            advancedFilters={{
+                                                category: adminProductsCategoryFilter,
+                                                supplier: adminProductsSupplierFilter,
+                                                brand: adminProductsBrandFilter,
+                                                species: adminProductsSpeciesFilter,
+                                                tax: adminProductsTaxFilter,
+                                            }}
+                                            filterOptions={adminProductFilterOptions}
+                                            hasPerishableProducts={hasPerishableProducts}
+                                            onFilterChange={setProductPublicationFilter}
+                                            onQuickFilterChange={setAdminProductsQuickFilter}
+                                            onSearchChange={setAdminProductsSearch}
+                                            onAdvancedFiltersChange={(nextFilters) => {
+                                                setAdminProductsCategoryFilter(nextFilters.category)
+                                                setAdminProductsSupplierFilter(nextFilters.supplier)
+                                                setAdminProductsBrandFilter(nextFilters.brand)
+                                                setAdminProductsSpeciesFilter(nextFilters.species)
+                                                setAdminProductsTaxFilter(nextFilters.tax)
+                                            }}
+                                            onClearAdvancedFilters={() => {
+                                                setAdminProductsSearch('')
+                                                setAdminProductsCategoryFilter('all')
+                                                setAdminProductsSupplierFilter('all')
+                                                setAdminProductsBrandFilter('all')
+                                                setAdminProductsSpeciesFilter('all')
+                                                setAdminProductsTaxFilter('all')
+                                                setAdminProductsQuickFilter('all')
+                                                setProductPublicationFilter('all')
+                                            }}
+                                            onNewProduct={handleNewProduct}
+                                            onEditProduct={handleEditProduct}
+                                            onRestockProduct={handleRestockProduct}
+                                            onDuplicateVariant={handleDuplicateVariant}
+                                            onDeleteProduct={handleDeleteProduct}
+                                            onTogglePublication={handleToggleProductPublication}
+                                            publicationPendingIds={productPublicationPendingIds}
+                                            isProductEligibleForPublication={isProductEligibleForPublication}
+                                            getProductExpirationMeta={getProductExpirationMeta}
+                                            formatIsoDate={formatIsoDate}
+                                        />
                                     )}
 
                                     {activeTab === 'catalogs' && (
-                                    <ProductReferenceDataPanel
-                                        data={productReferenceData}
-                                        loading={productReferenceDataLoading}
-                                        saving={productReferenceDataSaving}
-                                        focusKey={focusedReferenceCatalogKey}
-                                        onChange={setProductReferenceData}
-                                        onSave={async () => {
-                                            try {
-                                                setProductReferenceDataSaving(true)
-                                                const res = await updateProductReferenceData(productReferenceData)
-                                                setProductReferenceData(res.body)
-                                                showNotification('Catalogos operativos actualizados.')
-                                            } catch (error) {
-                                                console.error(error)
-                                                showNotification('No se pudieron guardar los catalogos.', 'error')
-                                            } finally {
-                                                setProductReferenceDataSaving(false)
-                                            }
-                                        }}
-                                    />
+                                        <ProductReferenceDataPanel
+                                            data={productReferenceData}
+                                            loading={productReferenceDataLoading}
+                                            saving={productReferenceDataSaving}
+                                            focusKey={focusedReferenceCatalogKey}
+                                            onChange={setProductReferenceData}
+                                            onSave={async () => {
+                                                try {
+                                                    setProductReferenceDataSaving(true)
+                                                    const res = await updateProductReferenceData(productReferenceData)
+                                                    setProductReferenceData(res.body)
+                                                    showNotification('Catálogos operativos actualizados.')
+                                                } catch (error) {
+                                                    console.error(error)
+                                                    showNotification('No se pudieron guardar los catálogos.', 'error')
+                                                } finally {
+                                                    setProductReferenceDataSaving(false)
+                                                }
+                                            }}
+                                            onSaveData={async (nextData) => {
+                                                try {
+                                                    setProductReferenceDataSaving(true)
+                                                    const res = await updateProductReferenceData(nextData)
+                                                    setProductReferenceData(res.body)
+                                                    showNotification('Imágenes de categoría guardadas correctamente.')
+                                                } catch (error) {
+                                                    console.error(error)
+                                                    showNotification('Las imágenes se subieron, pero no se pudieron guardar en el catálogo.', 'error')
+                                                } finally {
+                                                    setProductReferenceDataSaving(false)
+                                                }
+                                            }}
+                                        />
                                     )}
 
                                     {activeTab === 'taxes' && (
-                                    <div className="tab text-content w-full">
-                                        <div className="heading5 pb-4">Impuestos y cargos</div>
-                                        <p className="text-secondary mb-6">Configura IVA y ajustes de envío que impactan el precio final.</p>
-                                        <div className="mb-8 p-6 rounded-xl border border-line bg-surface">
-                                            <div className="flex flex-col md:flex-row md:items-end gap-4">
-                                                <div className="flex-1 group">
-                                                    <label
-                                                        htmlFor="vatRate"
-                                                        className="text-secondary text-xs uppercase font-bold mb-2 block"
-                                                        title="Incrementa el precio final del cliente. El IVA no cuenta como utilidad."
-                                                    >
-                                                        IVA (%)
-                                                    </label>
-                                                    <input
-                                                        id="vatRate"
-                                                        type="number"
-                                                        step="0.1"
-                                                        min="0"
-                                                        className="border border-line px-4 py-2 rounded-lg w-full"
-                                                        value={vatRate}
-                                                        onChange={(e) => setVatRate(Number(e.target.value))}
-                                                        disabled={vatLoading || vatSaving}
-                                                    />
-                                                    <p className="text-secondary text-xs mt-2">Los precios del catálogo se muestran con IVA incluido.</p>
-                                                    <p className="text-[11px] text-secondary mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                        Subir el IVA aumenta el total pagado por el cliente, pero no cambia la utilidad del producto.
-                                                    </p>
-                                                </div>
-                                                <button
-                                                    className="button-main py-2 px-6"
-                                                    onClick={handleSaveVat}
-                                                    disabled={vatLoading || vatSaving}
-                                                >
-                                                    {vatSaving ? 'Guardando...' : 'Guardar IVA'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <div className="mb-8 p-6 rounded-xl border border-line bg-surface">
-                                            <div className="flex flex-col lg:flex-row lg:items-end gap-4">
-                                                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                    <div className="group">
+                                        <div className="tab text-content w-full">
+                                            <div className="heading5 pb-4">Impuestos y cargos</div>
+                                            <p className="text-secondary mb-6">Configura IVA y ajustes de envío que impactan el precio final.</p>
+                                            <div className="mb-8 p-6 rounded-xl border border-line bg-surface">
+                                                <div className="flex flex-col md:flex-row md:items-end gap-4">
+                                                    <div className="flex-1 group">
                                                         <label
-                                                            htmlFor="shippingDelivery"
+                                                            htmlFor="vatRate"
                                                             className="text-secondary text-xs uppercase font-bold mb-2 block"
-                                                            title="Se suma al total del pedido cuando el cliente elige envío a domicilio."
+                                                            title="Incrementa el precio final del cliente. El IVA no cuenta como utilidad."
                                                         >
-                                                            Envío a domicilio ($)
+                                                            IVA (%)
                                                         </label>
                                                         <input
-                                                            id="shippingDelivery"
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            className="border border-line px-4 py-2 rounded-lg w-full"
-                                                            value={shippingRates.delivery}
-                                                            onChange={(e) => setShippingRates({ ...shippingRates, delivery: Number(e.target.value) })}
-                                                            disabled={shippingLoading || shippingSaving}
-                                                        />
-                                                        <p className="text-[11px] text-secondary mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            Aumentar este valor incrementa el costo final del pedido para envíos a domicilio.
-                                                        </p>
-                                                    </div>
-                                                    <div className="group">
-                                                        <label
-                                                            htmlFor="shippingPickup"
-                                                            className="text-secondary text-xs uppercase font-bold mb-2 block"
-                                                            title="Costo aplicado cuando el cliente recoge en tienda."
-                                                        >
-                                                            Retiro en tienda ($)
-                                                        </label>
-                                                        <input
-                                                            id="shippingPickup"
-                                                            type="number"
-                                                            step="0.01"
-                                                            min="0"
-                                                            className="border border-line px-4 py-2 rounded-lg w-full"
-                                                            value={shippingRates.pickup}
-                                                            onChange={(e) => setShippingRates({ ...shippingRates, pickup: Number(e.target.value) })}
-                                                            disabled={shippingLoading || shippingSaving}
-                                                        />
-                                                        <p className="text-[11px] text-secondary mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            Define el cargo por retiro en tienda; 0 significa retiro gratuito.
-                                                        </p>
-                                                    </div>
-                                                    <div className="md:col-span-2 group">
-                                                        <label
-                                                            htmlFor="shippingTaxRate"
-                                                            className="text-secondary text-xs uppercase font-bold mb-2 block"
-                                                            title="Porcentaje de IVA que se suma al costo de envío."
-                                                        >
-                                                            IVA aplicado al envío (%)
-                                                        </label>
-                                                        <input
-                                                            id="shippingTaxRate"
+                                                            id="vatRate"
                                                             type="number"
                                                             step="0.1"
                                                             min="0"
                                                             className="border border-line px-4 py-2 rounded-lg w-full"
-                                                            value={shippingRates.taxRate}
-                                                            onChange={(e) => setShippingRates({ ...shippingRates, taxRate: Number(e.target.value) })}
-                                                            disabled={shippingLoading || shippingSaving}
+                                                            value={vatRate}
+                                                            onChange={(e) => setVatRate(Number(e.target.value))}
+                                                            disabled={vatLoading || vatSaving}
                                                         />
-                                                        <p className="text-secondary text-xs mt-2">Se suma al envío para cubrir impuestos. Ej: 15% incrementa el costo final.</p>
+                                                        <p className="text-secondary text-xs mt-2">Los precios del catálogo se muestran con IVA incluido.</p>
                                                         <p className="text-[11px] text-secondary mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                            A mayor IVA de envío, mayor total del pedido cuando hay costos logísticos.
+                                                            Subir el IVA aumenta el total pagado por el cliente, pero no cambia la utilidad del producto.
                                                         </p>
                                                     </div>
+                                                    <button
+                                                        className="button-main py-2 px-6"
+                                                        onClick={handleSaveVat}
+                                                        disabled={vatLoading || vatSaving}
+                                                    >
+                                                        {vatSaving ? 'Guardando...' : 'Guardar IVA'}
+                                                    </button>
                                                 </div>
-                                                <button
-                                                    className="button-main py-2 px-6"
-                                                    onClick={handleSaveShipping}
-                                                    disabled={shippingLoading || shippingSaving}
-                                                >
-                                                    {shippingSaving ? 'Guardando...' : 'Guardar Envío'}
-                                                </button>
+                                            </div>
+                                            <div className="mb-8 p-6 rounded-xl border border-line bg-surface">
+                                                <div className="flex flex-col lg:flex-row lg:items-end gap-4">
+                                                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        <div className="group">
+                                                            <label
+                                                                htmlFor="shippingDelivery"
+                                                                className="text-secondary text-xs uppercase font-bold mb-2 block"
+                                                                title="Se suma al total del pedido cuando el cliente elige envío a domicilio."
+                                                            >
+                                                                Envío a domicilio ($)
+                                                            </label>
+                                                            <input
+                                                                id="shippingDelivery"
+                                                                type="number"
+                                                                step="0.01"
+                                                                min="0"
+                                                                className="border border-line px-4 py-2 rounded-lg w-full"
+                                                                value={shippingRates.delivery}
+                                                                onChange={(e) => setShippingRates({ ...shippingRates, delivery: Number(e.target.value) })}
+                                                                disabled={shippingLoading || shippingSaving}
+                                                            />
+                                                            <p className="text-[11px] text-secondary mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                Aumentar este valor incrementa el costo final del pedido para envíos a domicilio.
+                                                            </p>
+                                                        </div>
+                                                        <div className="group">
+                                                            <label
+                                                                htmlFor="shippingPickup"
+                                                                className="text-secondary text-xs uppercase font-bold mb-2 block"
+                                                                title="Costo aplicado cuando el cliente recoge en tienda."
+                                                            >
+                                                                Retiro en tienda ($)
+                                                            </label>
+                                                            <input
+                                                                id="shippingPickup"
+                                                                type="number"
+                                                                step="0.01"
+                                                                min="0"
+                                                                className="border border-line px-4 py-2 rounded-lg w-full"
+                                                                value={shippingRates.pickup}
+                                                                onChange={(e) => setShippingRates({ ...shippingRates, pickup: Number(e.target.value) })}
+                                                                disabled={shippingLoading || shippingSaving}
+                                                            />
+                                                            <p className="text-[11px] text-secondary mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                Define el cargo por retiro en tienda; 0 significa retiro gratuito.
+                                                            </p>
+                                                        </div>
+                                                        <div className="md:col-span-2 group">
+                                                            <label
+                                                                htmlFor="shippingTaxRate"
+                                                                className="text-secondary text-xs uppercase font-bold mb-2 block"
+                                                                title="Porcentaje de IVA que se suma al costo de envío."
+                                                            >
+                                                                IVA aplicado al envío (%)
+                                                            </label>
+                                                            <input
+                                                                id="shippingTaxRate"
+                                                                type="number"
+                                                                step="0.1"
+                                                                min="0"
+                                                                className="border border-line px-4 py-2 rounded-lg w-full"
+                                                                value={shippingRates.taxRate}
+                                                                onChange={(e) => setShippingRates({ ...shippingRates, taxRate: Number(e.target.value) })}
+                                                                disabled={shippingLoading || shippingSaving}
+                                                            />
+                                                            <p className="text-secondary text-xs mt-2">Se suma al envío para cubrir impuestos. Ej: 15% incrementa el costo final.</p>
+                                                            <p className="text-[11px] text-secondary mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                A mayor IVA de envío, mayor total del pedido cuando hay costos logísticos.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        className="button-main py-2 px-6"
+                                                        onClick={handleSaveShipping}
+                                                        disabled={shippingLoading || shippingSaving}
+                                                    >
+                                                        {shippingSaving ? 'Guardando...' : 'Guardar Envío'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
                                     )}
 
                                     {activeTab === 'prices' && (
-                                    <div className="tab text-content w-full">
-                                        <div className="heading5 pb-4">Gestión Inteligente de Precios</div>
-                                        <p className="text-secondary mb-6">Optimiza tus márgenes con sugerencias basadas en costos.</p>
-                                        <div className="mb-8 p-6 rounded-xl border border-line bg-surface">
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                                <div className="p-4 rounded-lg bg-white border border-line">
-                                                    <div className="text-xs uppercase font-bold text-secondary">Margen base</div>
-                                                    <div className="heading5">{marginSettings.baseMargin}%</div>
-                                                    <button className="text-xs underline mt-2" onClick={() => navigateToPanelTab('margins')}>Editar márgenes</button>
-                                                </div>
-                                                <div className="p-4 rounded-lg bg-white border border-line">
-                                                    <div className="text-xs uppercase font-bold text-secondary">Redondeo</div>
-                                                    <div className="heading5">${calcSettings.rounding.toFixed(2)}</div>
-                                                    <button className="text-xs underline mt-2" onClick={() => navigateToPanelTab('calculations')}>Editar cálculos</button>
-                                                </div>
-                                                <div className="p-4 rounded-lg bg-white border border-line">
-                                                    <div className="text-xs uppercase font-bold text-secondary">Descuento por volumen</div>
-                                                    <div className="heading5">{pricingRules.bulkDiscount}%</div>
-                                                    <button className="text-xs underline mt-2" onClick={() => navigateToPanelTab('pricing-rules')}>Editar reglas</button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                                            {(() => {
-                                                const summary = dashboardStats?.businessMetrics?.salesSummary
-                                                const profit = dashboardStats?.businessMetrics?.profitStats
-                                                const gross = Number(summary?.gross ?? 0)
-                                                const net = Number(summary?.net ?? 0)
-                                                const vat = Number(summary?.vat ?? 0)
-                                                const shipping = Number(summary?.shipping ?? 0)
-                                                const cost = Number(profit?.cost ?? 0)
-                                                const utilidad = Number(profit?.profit ?? 0)
-                                                return (
-                                                    <>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Venta Total</div>
-                                                            <div className="heading5">${gross.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Incluye IVA + Envío</div>
-                                                        </div>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Venta Neta</div>
-                                                            <div className="heading5">${net.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Sin IVA ni envío</div>
-                                                        </div>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">IVA Cobrado</div>
-                                                            <div className="heading5">${vat.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Impuesto del cliente</div>
-                                                        </div>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Envío Cobrado</div>
-                                                            <div className="heading5">${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Cobro al cliente</div>
-                                                        </div>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Costo (COGS)</div>
-                                                            <div className="heading5 text-orange-500">-${cost.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Costo de producto</div>
-                                                        </div>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-secondary text-xs uppercase font-bold mb-1">Utilidad Bruta</div>
-                                                            <div className="heading5 text-success">${utilidad.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                                                            <div className="text-secondary text-xs mt-1">Sin IVA</div>
-                                                        </div>
-                                                    </>
-                                                )
-                                            })()}
-                                        </div>
-
-                                        <div className="mb-6 rounded-xl border border-line bg-white p-5">
-                                            <div className="text-xs uppercase font-bold text-secondary mb-3">Resumen de costos e impuestos</div>
-                                            {(() => {
-                                                const summary = dashboardStats?.businessMetrics?.salesSummary
-                                                const profit = dashboardStats?.businessMetrics?.profitStats
-                                                const gross = Number(summary?.gross ?? 0)
-                                                const net = Number(summary?.net ?? 0)
-                                                const vat = Number(summary?.vat ?? 0)
-                                                const shipping = Number(summary?.shipping ?? 0)
-                                                const cost = Number(profit?.cost ?? 0)
-                                                const utilidad = Number(profit?.profit ?? 0)
-                                                const format = (val: number) => val.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                                return (
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 text-sm">
-                                                        <div>
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Venta total</div>
-                                                            <div className="font-semibold">${format(gross)}</div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Venta neta</div>
-                                                            <div className="font-semibold">${format(net)}</div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
-                                                            <div className="font-semibold">${format(vat)}</div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
-                                                            <div className="font-semibold">${format(shipping)}</div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Costo (COGS)</div>
-                                                            <div className="font-semibold text-orange-600">-${format(cost)}</div>
-                                                        </div>
-                                                        <div>
-                                                            <div className="text-[10px] uppercase font-bold text-secondary">Utilidad</div>
-                                                            <div className="font-semibold text-success">${format(utilidad)}</div>
-                                                        </div>
+                                        <div className="tab text-content w-full">
+                                            <div className="heading5 pb-4">Gestión Inteligente de Precios</div>
+                                            <p className="text-secondary mb-6">Optimiza tus márgenes con sugerencias basadas en costos.</p>
+                                            <div className="mb-8 p-6 rounded-xl border border-line bg-surface">
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                    <div className="p-4 rounded-lg bg-white border border-line">
+                                                        <div className="text-xs uppercase font-bold text-secondary">Margen base</div>
+                                                        <div className="heading5">{marginSettings.baseMargin}%</div>
+                                                        <button className="text-xs underline mt-2" onClick={() => navigateToPanelTab('margins')}>Editar márgenes</button>
                                                     </div>
-                                                )
-                                            })()}
-                                            <div className="text-[11px] text-secondary mt-3">Los montos se calculan sin IVA y el envío se muestra por separado.</div>
-                                        </div>
-
-                                        <div className="grid grid-cols-3 gap-6 mb-8">
-                                            <div className="p-5 rounded-xl bg-surface border border-line">
-                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Margen ponderado</div>
-                                                <div className="heading4 text-success">
-                                                    {productWeightedMargin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                                    <div className="p-4 rounded-lg bg-white border border-line">
+                                                        <div className="text-xs uppercase font-bold text-secondary">Redondeo</div>
+                                                        <div className="heading5">${calcSettings.rounding.toFixed(2)}</div>
+                                                        <button className="text-xs underline mt-2" onClick={() => navigateToPanelTab('calculations')}>Editar cálculos</button>
+                                                    </div>
+                                                    <div className="p-4 rounded-lg bg-white border border-line">
+                                                        <div className="text-xs uppercase font-bold text-secondary">Descuento por volumen</div>
+                                                        <div className="heading5">{pricingRules.bulkDiscount}%</div>
+                                                        <button className="text-xs underline mt-2" onClick={() => navigateToPanelTab('pricing-rules')}>Editar reglas</button>
+                                                    </div>
                                                 </div>
-                                                <div className="text-secondary text-xs mt-1">Ponderado por stock valorizado</div>
                                             </div>
-                                            <div className="p-5 rounded-xl bg-surface border border-line">
-                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Oportunidades de Precio</div>
-                                                <div className="heading4 text-yellow">
-                                                    {dashboardStats?.productAnalysis?.lowMarginOpportunities ?? 0} <span className="text-sm text-secondary font-normal">productos bajo margen</span>
+
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                                                {(() => {
+                                                    const summary = dashboardStats?.businessMetrics?.salesSummary
+                                                    const profit = dashboardStats?.businessMetrics?.profitStats
+                                                    const gross = Number(summary?.gross ?? 0)
+                                                    const net = Number(summary?.net ?? 0)
+                                                    const vat = Number(summary?.vat ?? 0)
+                                                    const shipping = Number(summary?.shipping ?? 0)
+                                                    const cost = Number(profit?.cost ?? 0)
+                                                    const utilidad = Number(profit?.profit ?? 0)
+                                                    return (
+                                                        <>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Venta Total</div>
+                                                                <div className="heading5">${gross.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                <div className="text-secondary text-xs mt-1">Incluye IVA + Envío</div>
+                                                            </div>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Venta Neta</div>
+                                                                <div className="heading5">${net.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                <div className="text-secondary text-xs mt-1">Sin IVA ni envío</div>
+                                                            </div>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-secondary text-xs uppercase font-bold mb-1">IVA Cobrado</div>
+                                                                <div className="heading5">${vat.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                <div className="text-secondary text-xs mt-1">Impuesto del cliente</div>
+                                                            </div>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Envío Cobrado</div>
+                                                                <div className="heading5">${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                <div className="text-secondary text-xs mt-1">Cobro al cliente</div>
+                                                            </div>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Costo (COGS)</div>
+                                                                <div className="heading5 text-orange-500">-${cost.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                <div className="text-secondary text-xs mt-1">Costo de producto</div>
+                                                            </div>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Utilidad Bruta</div>
+                                                                <div className="heading5 text-success">${utilidad.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                                                                <div className="text-secondary text-xs mt-1">Sin IVA</div>
+                                                            </div>
+                                                        </>
+                                                    )
+                                                })()}
+                                            </div>
+
+                                            <div className="mb-6 rounded-xl border border-line bg-white p-5">
+                                                <div className="text-xs uppercase font-bold text-secondary mb-3">Resumen de costos e impuestos</div>
+                                                {(() => {
+                                                    const summary = dashboardStats?.businessMetrics?.salesSummary
+                                                    const profit = dashboardStats?.businessMetrics?.profitStats
+                                                    const gross = Number(summary?.gross ?? 0)
+                                                    const net = Number(summary?.net ?? 0)
+                                                    const vat = Number(summary?.vat ?? 0)
+                                                    const shipping = Number(summary?.shipping ?? 0)
+                                                    const cost = Number(profit?.cost ?? 0)
+                                                    const utilidad = Number(profit?.profit ?? 0)
+                                                    const format = (val: number) => val.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                                    return (
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 text-sm">
+                                                            <div>
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Venta total</div>
+                                                                <div className="font-semibold">${format(gross)}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Venta neta</div>
+                                                                <div className="font-semibold">${format(net)}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
+                                                                <div className="font-semibold">${format(vat)}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
+                                                                <div className="font-semibold">${format(shipping)}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Costo (COGS)</div>
+                                                                <div className="font-semibold text-orange-600">-${format(cost)}</div>
+                                                            </div>
+                                                            <div>
+                                                                <div className="text-[10px] uppercase font-bold text-secondary">Utilidad</div>
+                                                                <div className="font-semibold text-success">${format(utilidad)}</div>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })()}
+                                                <div className="text-[11px] text-secondary mt-3">Los montos se calculan sin IVA y el envío se muestra por separado.</div>
+                                            </div>
+
+                                            <div className="grid grid-cols-3 gap-6 mb-8">
+                                                <div className="p-5 rounded-xl bg-surface border border-line">
+                                                    <div className="text-secondary text-xs uppercase font-bold mb-1">Margen ponderado</div>
+                                                    <div className="heading4 text-success">
+                                                        {productWeightedMargin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%
+                                                    </div>
+                                                    <div className="text-secondary text-xs mt-1">Ponderado por stock valorizado</div>
                                                 </div>
-                                                <div className="text-secondary text-xs mt-1">{productMissingCostCount.toLocaleString('es-EC')} sin costo registrado</div>
-                                            </div>
-                                            <div className="p-5 rounded-xl bg-surface border border-line">
-                                                <div className="text-secondary text-xs uppercase font-bold mb-1">Brecha vs objetivo</div>
-                                                <div className="heading4">
-                                                    {Math.max((marginSettings.targetMargin - productWeightedMargin), 0).toFixed(1)}%
+                                                <div className="p-5 rounded-xl bg-surface border border-line">
+                                                    <div className="text-secondary text-xs uppercase font-bold mb-1">Oportunidades de Precio</div>
+                                                    <div className="heading4 text-yellow">
+                                                        {dashboardStats?.productAnalysis?.lowMarginOpportunities ?? 0} <span className="text-sm text-secondary font-normal">productos bajo margen</span>
+                                                    </div>
+                                                    <div className="text-secondary text-xs mt-1">{productMissingCostCount.toLocaleString('es-EC')} sin costo registrado</div>
                                                 </div>
-                                                <div className="text-secondary text-xs mt-1">{productMarginSampleCount.toLocaleString('es-EC')} productos con costo y precio</div>
+                                                <div className="p-5 rounded-xl bg-surface border border-line">
+                                                    <div className="text-secondary text-xs uppercase font-bold mb-1">Brecha vs objetivo</div>
+                                                    <div className="heading4">
+                                                        {Math.max((marginSettings.targetMargin - productWeightedMargin), 0).toFixed(1)}%
+                                                    </div>
+                                                    <div className="text-secondary text-xs mt-1">{productMarginSampleCount.toLocaleString('es-EC')} productos con costo y precio</div>
+                                                </div>
                                             </div>
-                                        </div>
 
-                                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                                            {(() => {
-                                                const products = adminProductsList || []
-                                                const netSales = Number(dashboardStats?.businessMetrics?.salesSummary?.net ?? 0) || 1
-                                                const format = (val: number) => val.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                                                const risks = products.map((product: any) => {
-                                                    const basePrice = getProductBasePrice(product)
-                                                    const cost = parseMoney(product.business?.cost ?? product.cost)
-                                                    const margin = basePrice > 0 ? ((basePrice - cost) / basePrice) * 100 : 0
-                                                    return {
-                                                        id: product.id,
-                                                        name: product.name,
-                                                        margin,
-                                                        cost,
-                                                        basePrice
-                                                    }
-                                                }).sort((a: any, b: any) => a.margin - b.margin).slice(0, 5)
+                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                                                {(() => {
+                                                    const products = adminProductsList || []
+                                                    const netSales = Number(dashboardStats?.businessMetrics?.salesSummary?.net ?? 0) || 1
+                                                    const format = (val: number) => val.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                                    const risks = products.map((product: any) => {
+                                                        const basePrice = getProductBasePrice(product)
+                                                        const cost = parseMoney(product.business?.cost ?? product.cost)
+                                                        const margin = basePrice > 0 ? ((basePrice - cost) / basePrice) * 100 : 0
+                                                        return {
+                                                            id: product.id,
+                                                            name: product.name,
+                                                            margin,
+                                                            cost,
+                                                            basePrice
+                                                        }
+                                                    }).sort((a: any, b: any) => a.margin - b.margin).slice(0, 5)
 
-                                                const topProducts = (dashboardStats?.topProducts || []).map((item: any) => ({
-                                                    name: item.name,
-                                                    sold: Number(item.sold ?? 0),
-                                                    revenue: Number(item.revenue ?? 0),
-                                                    share: (Number(item.revenue ?? 0) / netSales) * 100
-                                                }))
+                                                    const topProducts = (dashboardStats?.topProducts || []).map((item: any) => ({
+                                                        name: item.name,
+                                                        sold: Number(item.sold ?? 0),
+                                                        revenue: Number(item.revenue ?? 0),
+                                                        share: (Number(item.revenue ?? 0) / netSales) * 100
+                                                    }))
 
-                                                const categories = (dashboardStats?.salesByCategory || []).slice(0, 5).map((cat: any) => ({
-                                                    name: cat.category || 'Sin categoría',
-                                                    total: Number(cat.total ?? 0),
-                                                    share: (Number(cat.total ?? 0) / netSales) * 100
-                                                }))
+                                                    const categories = (dashboardStats?.salesByCategory || []).slice(0, 5).map((cat: any) => ({
+                                                        name: cat.category || 'Sin categoría',
+                                                        total: Number(cat.total ?? 0),
+                                                        share: (Number(cat.total ?? 0) / netSales) * 100
+                                                    }))
 
-                                                const missingCostItems = products.filter((p: any) => parseMoney(p.business?.cost ?? p.cost) <= 0)
-                                                const missingCost = missingCostItems.length
+                                                    const missingCostItems = products.filter((p: any) => parseMoney(p.business?.cost ?? p.cost) <= 0)
+                                                    const missingCost = missingCostItems.length
 
-                                                return (
-                                                    <>
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-xs uppercase font-bold text-secondary mb-2">Márgenes más bajos</div>
-                                                            {missingCost > 0 && (
-                                                                <div className="text-[11px] text-orange-600 font-semibold mb-2">
-                                                                    Costos sin registrar: {missingCost}
+                                                    return (
+                                                        <>
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-xs uppercase font-bold text-secondary mb-2">Márgenes más bajos</div>
+                                                                {missingCost > 0 && (
+                                                                    <div className="text-[11px] text-orange-600 font-semibold mb-2">
+                                                                        Costos sin registrar: {missingCost}
+                                                                    </div>
+                                                                )}
+                                                                <div className="space-y-2">
+                                                                    {risks.map((item: any) => (
+                                                                        <div key={item.id} className="flex items-center justify-between text-sm">
+                                                                            <span className="truncate max-w-[70%]">{item.name}</span>
+                                                                            <span className={`font-bold ${item.margin < 20 ? 'text-red' : item.margin < 35 ? 'text-yellow' : 'text-success'}`}>
+                                                                                {item.margin.toFixed(1)}%
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
+                                                                    {risks.length === 0 && (
+                                                                        <div className="text-sm text-secondary">No hay productos para evaluar.</div>
+                                                                    )}
                                                                 </div>
-                                                            )}
-                                                            <div className="space-y-2">
-                                                                {risks.map((item: any) => (
-                                                                    <div key={item.id} className="flex items-center justify-between text-sm">
-                                                                        <span className="truncate max-w-[70%]">{item.name}</span>
-                                                                        <span className={`font-bold ${item.margin < 20 ? 'text-red' : item.margin < 35 ? 'text-yellow' : 'text-success'}`}>
-                                                                            {item.margin.toFixed(1)}%
-                                                                        </span>
+                                                                {missingCostItems.length > 0 && (
+                                                                    <div className="mt-4 border-t border-line pt-3">
+                                                                        <div className="text-[10px] uppercase font-bold text-secondary mb-2">Sin costo</div>
+                                                                        <div className="space-y-1">
+                                                                            {missingCostItems.slice(0, 4).map((item: any) => (
+                                                                                <div key={item.id} className="text-xs text-secondary truncate">{item.name}</div>
+                                                                            ))}
+                                                                            {missingCostItems.length > 4 && (
+                                                                                <div className="text-xs text-secondary">+{missingCostItems.length - 4} más</div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
-                                                                ))}
-                                                                {risks.length === 0 && (
-                                                                    <div className="text-sm text-secondary">No hay productos para evaluar.</div>
                                                                 )}
+                                                                <div className="text-[11px] text-secondary mt-3">Ordenado por margen más bajo. Los costos faltantes se listan aparte.</div>
                                                             </div>
-                                                            {missingCostItems.length > 0 && (
-                                                                <div className="mt-4 border-t border-line pt-3">
-                                                                    <div className="text-[10px] uppercase font-bold text-secondary mb-2">Sin costo</div>
-                                                                    <div className="space-y-1">
-                                                                        {missingCostItems.slice(0, 4).map((item: any) => (
-                                                                            <div key={item.id} className="text-xs text-secondary truncate">{item.name}</div>
-                                                                        ))}
-                                                                        {missingCostItems.length > 4 && (
-                                                                            <div className="text-xs text-secondary">+{missingCostItems.length - 4} más</div>
-                                                                        )}
-                                                                    </div>
+
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-xs uppercase font-bold text-secondary mb-3">Top contribuyentes</div>
+                                                                <div className="space-y-2">
+                                                                    {topProducts.map((item: any) => (
+                                                                        <div key={item.name} className="flex items-center justify-between text-sm">
+                                                                            <span className="truncate max-w-[60%]">{item.name}</span>
+                                                                            <span className="text-secondary">{item.sold} uds</span>
+                                                                            <span className="font-bold">{item.share.toFixed(1)}%</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    {topProducts.length === 0 && (
+                                                                        <div className="text-sm text-secondary">Sin ventas recientes.</div>
+                                                                    )}
                                                                 </div>
-                                                            )}
-                                                            <div className="text-[11px] text-secondary mt-3">Ordenado por margen más bajo. Los costos faltantes se listan aparte.</div>
-                                                        </div>
-
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-xs uppercase font-bold text-secondary mb-3">Top contribuyentes</div>
-                                                            <div className="space-y-2">
-                                                                {topProducts.map((item: any) => (
-                                                                    <div key={item.name} className="flex items-center justify-between text-sm">
-                                                                        <span className="truncate max-w-[60%]">{item.name}</span>
-                                                                        <span className="text-secondary">{item.sold} uds</span>
-                                                                        <span className="font-bold">{item.share.toFixed(1)}%</span>
-                                                                    </div>
-                                                                ))}
-                                                                {topProducts.length === 0 && (
-                                                                    <div className="text-sm text-secondary">Sin ventas recientes.</div>
-                                                                )}
+                                                                <div className="text-[11px] text-secondary mt-3">Participación sobre ventas netas.</div>
                                                             </div>
-                                                            <div className="text-[11px] text-secondary mt-3">Participación sobre ventas netas.</div>
-                                                        </div>
 
-                                                        <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
-                                                            <div className="text-xs uppercase font-bold text-secondary mb-3">Mix por categoría</div>
-                                                            <div className="space-y-2">
-                                                                {categories.map((cat: any) => (
-                                                                    <div key={cat.name} className="flex items-center justify-between text-sm">
-                                                                        <span className="truncate max-w-[70%]">{cat.name}</span>
-                                                                        <span className="font-bold">{cat.share.toFixed(1)}%</span>
-                                                                    </div>
-                                                                ))}
-                                                                {categories.length === 0 && (
-                                                                    <div className="text-sm text-secondary">Sin categorías vendidas.</div>
-                                                                )}
+                                                            <div className="p-5 bg-white rounded-xl border border-line shadow-sm">
+                                                                <div className="text-xs uppercase font-bold text-secondary mb-3">Mix por categoría</div>
+                                                                <div className="space-y-2">
+                                                                    {categories.map((cat: any) => (
+                                                                        <div key={cat.name} className="flex items-center justify-between text-sm">
+                                                                            <span className="truncate max-w-[70%]">{cat.name}</span>
+                                                                            <span className="font-bold">{cat.share.toFixed(1)}%</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    {categories.length === 0 && (
+                                                                        <div className="text-sm text-secondary">Sin categorías vendidas.</div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[11px] text-secondary mt-3">Distribución de ventas netas.</div>
                                                             </div>
-                                                            <div className="text-[11px] text-secondary mt-3">Distribución de ventas netas.</div>
-                                                        </div>
-                                                    </>
-                                                )
-                                            })()}
-                                        </div>
-
-                                        <div className="bg-surface p-6 rounded-xl border border-line">
-                                            <div className="flex items-center gap-4 mb-6">
-                                                <input className="border-line px-4 py-2 rounded-lg flex-1" placeholder="Buscar producto..." />
-                                                <button className="button-main py-2 px-6">Buscar</button>
+                                                        </>
+                                                    )
+                                                })()}
                                             </div>
-                                            <div className="overflow-x-auto">
-                                                <table className="w-full text-left border-collapse">
-                                                    <thead>
-                                                        <tr className="border-b border-line">
-                                                            <th className="pb-4 font-bold text-secondary text-sm">PRODUCTO</th>
-                                                            <th className="pb-4 font-bold text-secondary text-sm">COSTO</th>
-                                                            <th className="pb-4 font-bold text-secondary text-sm">BASE (SIN IVA)</th>
-                                                            <th className="pb-4 font-bold text-secondary text-sm">IVA</th>
-                                                            <th className="pb-4 font-bold text-secondary text-sm">P.V.P</th>
-                                                            <th className="pb-4 font-bold text-secondary text-sm">UTILIDAD</th>
-                                                            <th className="pb-4 font-bold text-secondary text-sm">MARGEN</th>
+
+                                            <div className="bg-surface p-6 rounded-xl border border-line">
+                                                <div className="flex items-center gap-4 mb-6">
+                                                    <input className="border-line px-4 py-2 rounded-lg flex-1" placeholder="Buscar producto..." />
+                                                    <button className="button-main py-2 px-6">Buscar</button>
+                                                </div>
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-left border-collapse">
+                                                        <thead>
+                                                            <tr className="border-b border-line">
+                                                                <th className="pb-4 font-bold text-secondary text-sm">PRODUCTO</th>
+                                                                <th className="pb-4 font-bold text-secondary text-sm">COSTO</th>
+                                                                <th className="pb-4 font-bold text-secondary text-sm">BASE (SIN IVA)</th>
+                                                                <th className="pb-4 font-bold text-secondary text-sm">IVA</th>
+                                                                <th className="pb-4 font-bold text-secondary text-sm">P.V.P</th>
+                                                                <th className="pb-4 font-bold text-secondary text-sm">UTILIDAD</th>
+                                                                <th className="pb-4 font-bold text-secondary text-sm">MARGEN</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {adminProductsList.length > 0 ? adminProductsList.map((product: any) => {
+                                                                const price = Number(product.price) || 0
+                                                                const basePrice = getProductBasePrice(product)
+                                                                const vatPart = getProductVatPart(product)
+                                                                const cost = parseMoney(product.business?.cost ?? product.cost)
+                                                                const utilidad = Math.max(basePrice - cost, 0)
+                                                                const format = (val: number) => val.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                                                return (
+                                                                    <tr key={product.id} className="border-b border-line last:border-0 hover:bg-surface duration-300">
+                                                                        <td className="py-4">
+                                                                            <div className="font-semibold text-sm">{product.name}</div>
+                                                                            <div className="text-xs text-secondary">SKU: {product.sku || product.id}</div>
+                                                                        </td>
+                                                                        <td className="py-4 font-medium text-secondary text-sm">${format(cost)}</td>
+                                                                        <td className="py-4 font-medium text-sm">${format(basePrice)}</td>
+                                                                        <td className="py-4 font-medium text-sm text-secondary">${format(vatPart)}</td>
+                                                                        <td className="py-4 font-bold text-sm">${format(price)}</td>
+                                                                        <td className="py-4 font-bold text-sm text-success">${format(utilidad)}</td>
+                                                                        <td className="py-4">
+                                                                            <span className={`px-2 py-1 rounded text-xs font-bold ${((product.business?.margin || 0) < 20) ? 'bg-red text-white' :
+                                                                                ((product.business?.margin || 0) < 35) ? 'bg-yellow text-white' : 'bg-success text-white'
+                                                                                }`}>
+                                                                                {product.business?.margin || 0}%
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                )
+                                                            }) : (
+                                                                <tr><td colSpan={7} className="py-8 text-center text-secondary">Cargando análisis de precios...</td></tr>
+                                                            )}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'store-status' && (
+                                        <StoreStatusPanel
+                                            storeStatus={storeStatus}
+                                            storeStatusLoading={storeStatusLoading}
+                                            storeStatusSaving={storeStatusSaving}
+                                            defaultPauseMessage={DEFAULT_STORE_PAUSE_MESSAGE}
+                                            formatDateTime={formatDateTimeEcuador}
+                                            setStoreStatus={setStoreStatus}
+                                            onSaveStoreStatus={handleSaveStoreStatus}
+                                        />
+                                    )}
+
+                                    {(activeTab === 'margins' || activeTab === 'calculations' || activeTab === 'pricing-rules') && (
+                                        <PricingSettingsPanel
+                                            activeTab={activeTab}
+                                            marginSettings={marginSettings}
+                                            calcSettings={calcSettings}
+                                            pricingRules={pricingRules}
+                                            setMarginSettings={setMarginSettings}
+                                            setCalcSettings={setCalcSettings}
+                                            setPricingRules={setPricingRules}
+                                            onSaveMargins={handleSavePricingMargins}
+                                            onSaveCalculations={handleSavePricingCalculations}
+                                            onSavePricingRules={handleSavePricingRules}
+                                        />
+                                    )}
+
+                                    {activeTab === 'discount-codes' && (
+                                        <DiscountCodesPanel
+                                            discountCodes={discountCodes}
+                                            discountAuditRows={discountAuditRows}
+                                            discountCodesLoading={discountCodesLoading}
+                                            discountFormSaving={discountFormSaving}
+                                            editingDiscountId={editingDiscountId}
+                                            discountForm={discountForm}
+                                            onDiscountFormChange={handleDiscountFormChange}
+                                            onDiscountFormSubmit={handleDiscountFormSubmit}
+                                            onDiscountFormReset={handleDiscountFormReset}
+                                            onDiscountEdit={handleDiscountEdit}
+                                            onDiscountToggleStatus={handleDiscountToggleStatus}
+                                            onDiscountRefresh={() => loadDiscountData()}
+                                        />
+                                    )}
+
+                                    {activeTab === 'expenses' && (
+                                        <BusinessExpensesPanel
+                                            expenses={businessExpenses}
+                                            recurrences={businessExpenseRecurrences}
+                                            summary={businessExpenseSummary}
+                                            financialPeriods={financialPeriods}
+                                            financialAdjustments={financialAdjustments}
+                                            currentFinancialPeriod={currentFinancialPeriod}
+                                            historicalSaleProducts={historicalSaleProducts}
+                                            categories={businessExpenseCategories.length > 0 ? businessExpenseCategories : [
+                                                'Arriendo',
+                                                'Sueldos',
+                                                'Servicios básicos',
+                                                'Internet / telefonía',
+                                                'Software / suscripciones',
+                                                'Marketing',
+                                                'Transporte / delivery',
+                                                'Mantenimiento',
+                                                'Contabilidad / legal',
+                                                'Otros',
+                                            ]}
+                                            filters={businessExpenseFilters}
+                                            loading={businessExpensesLoading}
+                                            saving={businessExpenseSaving}
+                                            onFiltersChange={setBusinessExpenseFilters}
+                                            onRefresh={() => reloadBusinessExpensesPanel(false)}
+                                            onCreateExpense={createBusinessExpense}
+                                            onCreateRecurrence={createBusinessExpenseRecurrence}
+                                            onUpdateStatus={updateBusinessExpenseStatus}
+                                            onToggleRecurrence={toggleBusinessExpenseRecurrence}
+                                            onPreviewFinancialPeriod={previewFinancialPeriod}
+                                            onCloseFinancialPeriod={closeFinancialPeriod}
+                                            onCreateFinancialAdjustment={createFinancialAdjustment}
+                                            onCreateHistoricalSale={createHistoricalSale}
+                                            formatMoney={formatMoney}
+                                            formatDate={formatDateEcuador}
+                                            formatDateTime={formatDateTimeEcuador}
+                                        />
+                                    )}
+
+                                    {activeTab === 'product-page' && (
+                                        <ProductPageSettingsPanel
+                                            settings={productPageSettings}
+                                            onChange={setProductPageSettings}
+                                            onSave={async () => {
+                                                try {
+                                                    const res = await updateProductPageSettings(productPageSettings)
+                                                    setProductPageSettings(res.body)
+                                                    showNotification('Ficha de producto actualizada.')
+                                                } catch (error) {
+                                                    console.error(error)
+                                                    showNotification('No se pudo guardar la ficha.', 'error')
+                                                }
+                                            }}
+                                        />
+                                    )}
+
+                                    {activeTab === 'admin-orders' && (
+                                        <AdminOrdersPanel
+                                            activeOrders={activeOrders}
+                                            counts={adminOrdersCounts}
+                                            orders={filteredAdminOrders}
+                                            onFilterChange={setActiveOrders}
+                                            onViewOrder={handleViewOrder}
+                                            getStatusBadge={getStatusBadge}
+                                            formatDateTime={formatDateTimeEcuador}
+                                        />
+                                    )}
+
+                                    {activeTab === 'shipments' && (
+                                        <ShipmentsPanel
+                                            shippingProviders={shippingProviders}
+                                            shippingPickups={shippingPickups}
+                                            pickupReadyOrders={pickupReadyOrders}
+                                            shippingRates={shippingRates}
+                                            onConfigureTaxes={() => navigateToPanelTab('taxes')}
+                                            onViewDeliveryOrders={() => {
+                                                startPanelNavigationTransition(() => {
+                                                    setActiveOrders('delivery')
+                                                    setActiveTab('admin-orders')
+                                                    setSelectedDeepDive(null)
+                                                })
+                                            }}
+                                            onViewOrder={handleViewOrder}
+                                            formatMoney={formatMoney}
+                                            formatDate={formatDateEcuador}
+                                            formatDateTime={formatDateTimeEcuador}
+                                            getStatusBadge={getStatusBadge}
+                                        />
+                                    )}
+
+                                    {activeTab === 'billing-rides' && (
+                                        <div className="tab text-content w-full">
+                                            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
+                                                <div>
+                                                    <div className="heading4">Facturas PDF enviadas</div>
+                                                    <p className="text-secondary text-sm mt-1">RIDE generados por Facturador en <span className="font-semibold text-black">storage/pdf/rides</span>.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    className="px-4 py-2 rounded-lg border border-line bg-white text-sm font-semibold hover:bg-surface disabled:opacity-60"
+                                                    onClick={loadBillingRidePdfs}
+                                                    disabled={billingRideLoading}
+                                                >
+                                                    {billingRideLoading ? 'Actualizando...' : 'Actualizar'}
+                                                </button>
+                                            </div>
+
+                                            <div className="overflow-x-auto rounded-lg border border-line bg-white">
+                                                <table className="w-full min-w-[980px] text-sm">
+                                                    <thead className="bg-surface text-[11px] uppercase text-secondary">
+                                                        <tr>
+                                                            <th className="px-3 py-2 text-left">Factura</th>
+                                                            <th className="px-3 py-2 text-left">Cliente</th>
+                                                            <th className="px-3 py-2 text-left">Correo</th>
+                                                            <th className="px-3 py-2 text-right">Total</th>
+                                                            <th className="px-3 py-2 text-left">Fecha</th>
+                                                            <th className="px-3 py-2 text-left">SRI</th>
+                                                            <th className="px-3 py-2 text-left">PDF</th>
+                                                            <th className="px-3 py-2 text-right">Acción</th>
                                                         </tr>
                                                     </thead>
-                                                    <tbody>
-                                                        {adminProductsList.length > 0 ? adminProductsList.map((product: any) => {
-                                                            const price = Number(product.price) || 0
-                                                            const basePrice = getProductBasePrice(product)
-                                                            const vatPart = getProductVatPart(product)
-                                                            const cost = parseMoney(product.business?.cost ?? product.cost)
-                                                            const utilidad = Math.max(basePrice - cost, 0)
-                                                            const format = (val: number) => val.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                                                    <tbody className="divide-y divide-line">
+                                                        {billingRidePdfs.map((ride) => {
+                                                            const sequential = [ride.establishment_code, ride.emission_point, ride.sequential].filter(Boolean).join('-') || ride.source_reference || ride.access_key
                                                             return (
-                                                                <tr key={product.id} className="border-b border-line last:border-0 hover:bg-surface duration-300">
-                                                                    <td className="py-4">
-                                                                        <div className="font-semibold text-sm">{product.name}</div>
-                                                                    <div className="text-xs text-secondary">SKU: {product.sku || product.id}</div>
+                                                                <tr key={ride.access_key} className="hover:bg-surface/50">
+                                                                    <td className="px-3 py-2">
+                                                                        <div className="font-semibold">{sequential}</div>
+                                                                        <div className="text-[11px] text-secondary break-all">{ride.access_key}</div>
                                                                     </td>
-                                                                    <td className="py-4 font-medium text-secondary text-sm">${format(cost)}</td>
-                                                                    <td className="py-4 font-medium text-sm">${format(basePrice)}</td>
-                                                                    <td className="py-4 font-medium text-sm text-secondary">${format(vatPart)}</td>
-                                                                    <td className="py-4 font-bold text-sm">${format(price)}</td>
-                                                                    <td className="py-4 font-bold text-sm text-success">${format(utilidad)}</td>
-                                                                    <td className="py-4">
-                                                                        <span className={`px-2 py-1 rounded text-xs font-bold ${((product.business?.margin || 0) < 20) ? 'bg-red text-white' :
-                                                                            ((product.business?.margin || 0) < 35) ? 'bg-yellow text-white' : 'bg-success text-white'
-                                                                            }`}>
-                                                                            {product.business?.margin || 0}%
+                                                                    <td className="px-3 py-2">
+                                                                        <div className="font-semibold">{ride.customer_name || '-'}</div>
+                                                                        <div className="text-[11px] text-secondary">{ride.customer_identification || '-'}</div>
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-secondary">{ride.customer_email || 'Sin correo'}</td>
+                                                                    <td className="px-3 py-2 text-right font-semibold">{formatMoney(ride.total ?? 0)}</td>
+                                                                    <td className="px-3 py-2">
+                                                                        <div>{ride.issue_date ? formatDateEcuador(ride.issue_date) : '-'}</div>
+                                                                        <div className="text-[11px] text-secondary">{ride.pdf_modified_at ? `PDF ${formatDateTimeEcuador(ride.pdf_modified_at)}` : 'Sin archivo generado'}</div>
+                                                                    </td>
+                                                                    <td className="px-3 py-2">
+                                                                        <span className="inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold text-secondary">{ride.sri_status || '-'}</span>
+                                                                    </td>
+                                                                    <td className="px-3 py-2">
+                                                                        <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${ride.pdf_exists ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                            {ride.pdf_exists ? 'Disponible' : 'No generado'}
                                                                         </span>
+                                                                    </td>
+                                                                    <td className="px-3 py-2 text-right">
+                                                                        <button
+                                                                            type="button"
+                                                                            className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50"
+                                                                            onClick={() => openBillingRidePdf(ride.access_key)}
+                                                                            disabled={!ride.pdf_exists}
+                                                                        >
+                                                                            Abrir PDF
+                                                                        </button>
                                                                     </td>
                                                                 </tr>
                                                             )
-                                                        }) : (
-                                                            <tr><td colSpan={7} className="py-8 text-center text-secondary">Cargando análisis de precios...</td></tr>
+                                                        })}
+                                                        {!billingRideLoading && billingRidePdfs.length === 0 && (
+                                                            <tr>
+                                                                <td colSpan={8} className="px-3 py-8 text-center text-secondary">
+                                                                    No hay RIDE PDF generados todavía.
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        {billingRideLoading && (
+                                                            <tr>
+                                                                <td colSpan={8} className="px-3 py-8 text-center text-secondary">
+                                                                    Cargando facturas PDF...
+                                                                </td>
+                                                            </tr>
                                                         )}
                                                     </tbody>
                                                 </table>
                                             </div>
                                         </div>
-                                    </div>
-                                    )}
-
-                                    {activeTab === 'store-status' && (
-                                    <StoreStatusPanel
-                                        storeStatus={storeStatus}
-                                        storeStatusLoading={storeStatusLoading}
-                                        storeStatusSaving={storeStatusSaving}
-                                        defaultPauseMessage={DEFAULT_STORE_PAUSE_MESSAGE}
-                                        formatDateTime={formatDateTimeEcuador}
-                                        setStoreStatus={setStoreStatus}
-                                        onSaveStoreStatus={handleSaveStoreStatus}
-                                    />
-                                    )}
-
-                                    {(activeTab === 'margins' || activeTab === 'calculations' || activeTab === 'pricing-rules') && (
-                                    <PricingSettingsPanel
-                                        activeTab={activeTab}
-                                        marginSettings={marginSettings}
-                                        calcSettings={calcSettings}
-                                        pricingRules={pricingRules}
-                                        setMarginSettings={setMarginSettings}
-                                        setCalcSettings={setCalcSettings}
-                                        setPricingRules={setPricingRules}
-                                        onSaveMargins={handleSavePricingMargins}
-                                        onSaveCalculations={handleSavePricingCalculations}
-                                        onSavePricingRules={handleSavePricingRules}
-                                    />
-                                    )}
-
-                                    {activeTab === 'discount-codes' && (
-                                    <DiscountCodesPanel
-                                        discountCodes={discountCodes}
-                                        discountAuditRows={discountAuditRows}
-                                        discountCodesLoading={discountCodesLoading}
-                                        discountFormSaving={discountFormSaving}
-                                        editingDiscountId={editingDiscountId}
-                                        discountForm={discountForm}
-                                        onDiscountFormChange={handleDiscountFormChange}
-                                        onDiscountFormSubmit={handleDiscountFormSubmit}
-                                        onDiscountFormReset={handleDiscountFormReset}
-                                        onDiscountEdit={handleDiscountEdit}
-                                        onDiscountToggleStatus={handleDiscountToggleStatus}
-                                        onDiscountRefresh={() => loadDiscountData()}
-                                    />
-                                    )}
-
-                                    {activeTab === 'expenses' && (
-                                    <BusinessExpensesPanel
-                                        expenses={businessExpenses}
-                                        recurrences={businessExpenseRecurrences}
-                                        summary={businessExpenseSummary}
-                                        financialPeriods={financialPeriods}
-                                        financialAdjustments={financialAdjustments}
-                                        currentFinancialPeriod={currentFinancialPeriod}
-                                        historicalSaleProducts={historicalSaleProducts}
-                                        categories={businessExpenseCategories.length > 0 ? businessExpenseCategories : [
-                                            'Arriendo',
-                                            'Sueldos',
-                                            'Servicios básicos',
-                                            'Internet / telefonía',
-                                            'Software / suscripciones',
-                                            'Marketing',
-                                            'Transporte / delivery',
-                                            'Mantenimiento',
-                                            'Contabilidad / legal',
-                                            'Otros',
-                                        ]}
-                                        filters={businessExpenseFilters}
-                                        loading={businessExpensesLoading}
-                                        saving={businessExpenseSaving}
-                                        onFiltersChange={setBusinessExpenseFilters}
-                                        onRefresh={() => reloadBusinessExpensesPanel(false)}
-                                        onCreateExpense={createBusinessExpense}
-                                        onCreateRecurrence={createBusinessExpenseRecurrence}
-                                        onUpdateStatus={updateBusinessExpenseStatus}
-                                        onToggleRecurrence={toggleBusinessExpenseRecurrence}
-                                        onPreviewFinancialPeriod={previewFinancialPeriod}
-                                        onCloseFinancialPeriod={closeFinancialPeriod}
-                                        onCreateFinancialAdjustment={createFinancialAdjustment}
-                                        onCreateHistoricalSale={createHistoricalSale}
-                                        formatMoney={formatMoney}
-                                        formatDate={formatDateEcuador}
-                                        formatDateTime={formatDateTimeEcuador}
-                                    />
-                                    )}
-
-                                    {activeTab === 'product-page' && (
-                                    <ProductPageSettingsPanel
-                                        settings={productPageSettings}
-                                        onChange={setProductPageSettings}
-                                        onSave={async () => {
-                                            try {
-                                                const res = await updateProductPageSettings(productPageSettings)
-                                                setProductPageSettings(res.body)
-                                                showNotification('Ficha de producto actualizada.')
-                                            } catch (error) {
-                                                console.error(error)
-                                                showNotification('No se pudo guardar la ficha.', 'error')
-                                            }
-                                        }}
-                                    />
-                                    )}
-
-                                    {activeTab === 'admin-orders' && (
-                                    <AdminOrdersPanel
-                                        activeOrders={activeOrders}
-                                        counts={adminOrdersCounts}
-                                        orders={filteredAdminOrders}
-                                        onFilterChange={setActiveOrders}
-                                        onViewOrder={handleViewOrder}
-                                        getStatusBadge={getStatusBadge}
-                                        formatDateTime={formatDateTimeEcuador}
-                                    />
-                                    )}
-
-                                    {activeTab === 'shipments' && (
-                                    <ShipmentsPanel
-                                        shippingProviders={shippingProviders}
-                                        shippingPickups={shippingPickups}
-                                        pickupReadyOrders={pickupReadyOrders}
-                                        shippingRates={shippingRates}
-                                        onConfigureTaxes={() => navigateToPanelTab('taxes')}
-                                        onViewDeliveryOrders={() => {
-                                            startPanelNavigationTransition(() => {
-                                                setActiveOrders('delivery')
-                                                setActiveTab('admin-orders')
-                                                setSelectedDeepDive(null)
-                                            })
-                                        }}
-                                        onViewOrder={handleViewOrder}
-                                        formatMoney={formatMoney}
-                                        formatDate={formatDateEcuador}
-                                        formatDateTime={formatDateTimeEcuador}
-                                        getStatusBadge={getStatusBadge}
-                                    />
-                                    )}
-
-                                    {activeTab === 'billing-rides' && (
-                                    <div className="tab text-content w-full">
-                                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
-                                            <div>
-                                                <div className="heading4">Facturas PDF enviadas</div>
-                                                <p className="text-secondary text-sm mt-1">RIDE generados por Facturador en <span className="font-semibold text-black">storage/pdf/rides</span>.</p>
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="px-4 py-2 rounded-lg border border-line bg-white text-sm font-semibold hover:bg-surface disabled:opacity-60"
-                                                onClick={loadBillingRidePdfs}
-                                                disabled={billingRideLoading}
-                                            >
-                                                {billingRideLoading ? 'Actualizando...' : 'Actualizar'}
-                                            </button>
-                                        </div>
-
-                                        <div className="overflow-x-auto rounded-lg border border-line bg-white">
-                                            <table className="w-full min-w-[980px] text-sm">
-                                                <thead className="bg-surface text-[11px] uppercase text-secondary">
-                                                    <tr>
-                                                        <th className="px-3 py-2 text-left">Factura</th>
-                                                        <th className="px-3 py-2 text-left">Cliente</th>
-                                                        <th className="px-3 py-2 text-left">Correo</th>
-                                                        <th className="px-3 py-2 text-right">Total</th>
-                                                        <th className="px-3 py-2 text-left">Fecha</th>
-                                                        <th className="px-3 py-2 text-left">SRI</th>
-                                                        <th className="px-3 py-2 text-left">PDF</th>
-                                                        <th className="px-3 py-2 text-right">Acción</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-line">
-                                                    {billingRidePdfs.map((ride) => {
-                                                        const sequential = [ride.establishment_code, ride.emission_point, ride.sequential].filter(Boolean).join('-') || ride.source_reference || ride.access_key
-                                                        return (
-                                                            <tr key={ride.access_key} className="hover:bg-surface/50">
-                                                                <td className="px-3 py-2">
-                                                                    <div className="font-semibold">{sequential}</div>
-                                                                    <div className="text-[11px] text-secondary break-all">{ride.access_key}</div>
-                                                                </td>
-                                                                <td className="px-3 py-2">
-                                                                    <div className="font-semibold">{ride.customer_name || '-'}</div>
-                                                                    <div className="text-[11px] text-secondary">{ride.customer_identification || '-'}</div>
-                                                                </td>
-                                                                <td className="px-3 py-2 text-secondary">{ride.customer_email || 'Sin correo'}</td>
-                                                                <td className="px-3 py-2 text-right font-semibold">{formatMoney(ride.total ?? 0)}</td>
-                                                                <td className="px-3 py-2">
-                                                                    <div>{ride.issue_date ? formatDateEcuador(ride.issue_date) : '-'}</div>
-                                                                    <div className="text-[11px] text-secondary">{ride.pdf_modified_at ? `PDF ${formatDateTimeEcuador(ride.pdf_modified_at)}` : 'Sin archivo generado'}</div>
-                                                                </td>
-                                                                <td className="px-3 py-2">
-                                                                    <span className="inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold text-secondary">{ride.sri_status || '-'}</span>
-                                                                </td>
-                                                                <td className="px-3 py-2">
-                                                                    <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${ride.pdf_exists ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                                        {ride.pdf_exists ? 'Disponible' : 'No generado'}
-                                                                    </span>
-                                                                </td>
-                                                                <td className="px-3 py-2 text-right">
-                                                                    <button
-                                                                        type="button"
-                                                                        className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50"
-                                                                        onClick={() => openBillingRidePdf(ride.access_key)}
-                                                                        disabled={!ride.pdf_exists}
-                                                                    >
-                                                                        Abrir PDF
-                                                                    </button>
-                                                                </td>
-                                                            </tr>
-                                                        )
-                                                    })}
-                                                    {!billingRideLoading && billingRidePdfs.length === 0 && (
-                                                        <tr>
-                                                            <td colSpan={8} className="px-3 py-8 text-center text-secondary">
-                                                                No hay RIDE PDF generados todavía.
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                                    {billingRideLoading && (
-                                                        <tr>
-                                                            <td colSpan={8} className="px-3 py-8 text-center text-secondary">
-                                                                Cargando facturas PDF...
-                                                            </td>
-                                                        </tr>
-                                                    )}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
                                     )}
 
                                     {activeTab === 'users' && (
-                                    <UsersManagementPanel
-                                        users={adminUsersList}
-                                        filteredUsers={filteredAdminUsers}
-                                        loading={adminDataLoading}
-                                        search={adminUsersSearch}
-                                        roleFilter={adminUsersRoleFilter}
-                                        summary={adminUsersSummary}
-                                        onSearchChange={setAdminUsersSearch}
-                                        onRoleFilterChange={setAdminUsersRoleFilter}
-                                        getUserRoleBadge={getUserRoleBadge}
-                                        formatMoney={formatMoney}
-                                        formatDate={formatDateEcuador}
-                                        formatDateTime={formatDateTimeEcuador}
-                                        currentUserId={user?.id ?? null}
-                                        onUsersMutated={reloadAdminUsers}
-                                        onUnlockUser={handleUnlockUser}
-                                        showNotification={showNotification}
-                                    />
+                                        <UsersManagementPanel
+                                            users={adminUsersList}
+                                            filteredUsers={filteredAdminUsers}
+                                            loading={adminDataLoading}
+                                            search={adminUsersSearch}
+                                            roleFilter={adminUsersRoleFilter}
+                                            summary={adminUsersSummary}
+                                            onSearchChange={setAdminUsersSearch}
+                                            onRoleFilterChange={setAdminUsersRoleFilter}
+                                            getUserRoleBadge={getUserRoleBadge}
+                                            formatMoney={formatMoney}
+                                            formatDate={formatDateEcuador}
+                                            formatDateTime={formatDateTimeEcuador}
+                                            currentUserId={user?.id ?? null}
+                                            onUsersMutated={reloadAdminUsers}
+                                            onUnlockUser={handleUnlockUser}
+                                            showNotification={showNotification}
+                                        />
                                     )}
 
                                     {activeTab === 'balances' && (
-                                    <BalancesPanel
-                                        netSales={Number(balanceSalesSummary?.net ?? 0)}
-                                        salesSummary={balanceSalesSummary}
-                                        profitStats={balanceProfitStats}
-                                        recentOrders={balanceRecentOrders}
-                                        traceabilityOrders={balanceTraceabilityOrders}
-                                        traceabilityProducts={balanceTraceabilityProducts}
-                                        formatMoney={formatMoney}
-                                        formatDate={formatDateEcuador}
-                                        onOpenOrder={handleViewOrder}
-                                        onOpenProfitAnalysis={() => {
-                                            startPanelNavigationTransition(() => {
-                                                setAdminReportSection('balance')
-                                                setActiveTab('reports')
-                                                setSelectedDeepDive('profit')
-                                            })
-                                        }}
-                                        onOpenMargins={() => navigateToPanelTab('margins')}
-                                        onOpenOrders={() => {
-                                            startPanelNavigationTransition(() => {
-                                                setActiveOrders('all')
-                                                setActiveTab('admin-orders')
-                                                setSelectedDeepDive(null)
-                                            })
-                                        }}
-                                        onOpenTaxes={() => navigateToPanelTab('taxes')}
-                                    />
+                                        <BalancesPanel
+                                            netSales={Number(balanceSalesSummary?.net ?? 0)}
+                                            salesSummary={balanceSalesSummary}
+                                            profitStats={balanceProfitStats}
+                                            recentOrders={balanceRecentOrders}
+                                            traceabilityOrders={balanceTraceabilityOrders}
+                                            traceabilityProducts={balanceTraceabilityProducts}
+                                            formatMoney={formatMoney}
+                                            formatDate={formatDateEcuador}
+                                            onOpenOrder={handleViewOrder}
+                                            onOpenProfitAnalysis={() => {
+                                                startPanelNavigationTransition(() => {
+                                                    setAdminReportSection('balance')
+                                                    setActiveTab('reports')
+                                                    setSelectedDeepDive('profit')
+                                                })
+                                            }}
+                                            onOpenMargins={() => navigateToPanelTab('margins')}
+                                            onOpenOrders={() => {
+                                                startPanelNavigationTransition(() => {
+                                                    setActiveOrders('all')
+                                                    setActiveTab('admin-orders')
+                                                    setSelectedDeepDive(null)
+                                                })
+                                            }}
+                                            onOpenTaxes={() => navigateToPanelTab('taxes')}
+                                        />
                                     )}
                                 </>
                             )}
@@ -7575,384 +7701,384 @@ const MyAccount = () => {
                                         />
                                     )}
                                     {activeTab === 'orders' && (
-                                    <CustomerOrdersPanel
-                                        activeOrders={activeOrders}
-                                        orders={filteredUserOrders}
-                                        loading={userOrdersLoading}
-                                        onFilterChange={handleActiveOrders}
-                                        onOpenOrder={(order) => {
-                                            setSelectedOrder(order)
-                                            setIsOrderModalOpen(true)
-                                        }}
-                                        getStatusBadge={getStatusBadge}
-                                        getItemNetPrice={getItemNetPrice}
-                                        formatDateTime={formatDateTimeEcuador}
-                                    />
+                                        <CustomerOrdersPanel
+                                            activeOrders={activeOrders}
+                                            orders={filteredUserOrders}
+                                            loading={userOrdersLoading}
+                                            onFilterChange={handleActiveOrders}
+                                            onOpenOrder={(order) => {
+                                                setSelectedOrder(order)
+                                                setIsOrderModalOpen(true)
+                                            }}
+                                            getStatusBadge={getStatusBadge}
+                                            getItemNetPrice={getItemNetPrice}
+                                            formatDateTime={formatDateTimeEcuador}
+                                        />
                                     )}
                                     {activeTab === 'address' && (
-                                    <div className="tab_address text-content w-full p-7 border border-line rounded-xl">
-                                        <div className="heading5 pb-4">Direcciones guardadas</div>
-                                        <form onSubmit={handleSaveAddresses}>
-                                            <div className="flex items-center justify-between mb-8 border-b border-line pb-4">
-                                                <div className="flex gap-4">
-                                                    {savedAddresses.map((addr, index) => (
+                                        <div className="tab_address text-content w-full p-7 border border-line rounded-xl">
+                                            <div className="heading5 pb-4">Direcciones guardadas</div>
+                                            <form onSubmit={handleSaveAddresses}>
+                                                <div className="flex items-center justify-between mb-8 border-b border-line pb-4">
+                                                    <div className="flex gap-4">
+                                                        {savedAddresses.map((addr, index) => (
+                                                            <button
+                                                                key={addr.id}
+                                                                type="button"
+                                                                onClick={() => setCurrentAddrIndex(index)}
+                                                                className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${currentAddrIndex === index ? 'bg-black text-white' : 'bg-surface border border-line text-secondary hover:bg-line'}`}
+                                                            >
+                                                                {addr.title}
+                                                            </button>
+                                                        ))}
+                                                        {(savedAddresses.length < 3) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={addNewAddress}
+                                                                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-success/10 text-success border border-success/20 hover:bg-success/20"
+                                                            >
+                                                                <Icon.Plus size={16} /> Agregar
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {savedAddresses.length > 1 && (
                                                         <button
-                                                            key={addr.id}
                                                             type="button"
-                                                            onClick={() => setCurrentAddrIndex(index)}
-                                                            className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${currentAddrIndex === index ? 'bg-black text-white' : 'bg-surface border border-line text-secondary hover:bg-line'}`}
+                                                            onClick={() => removeAddress(currentAddrIndex)}
+                                                            className="text-red hover:underline text-sm font-bold flex items-center gap-1"
                                                         >
-                                                            {addr.title}
-                                                        </button>
-                                                    ))}
-                                                    {(savedAddresses.length < 3) && (
-                                                        <button
-                                                            type="button"
-                                                            onClick={addNewAddress}
-                                                            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold bg-success/10 text-success border border-success/20 hover:bg-success/20"
-                                                        >
-                                                            <Icon.Plus size={16} /> Agregar
+                                                            <Icon.Trash size={16} /> Eliminar actual
                                                         </button>
                                                     )}
                                                 </div>
-                                                {savedAddresses.length > 1 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => removeAddress(currentAddrIndex)}
-                                                        className="text-red hover:underline text-sm font-bold flex items-center gap-1"
-                                                    >
-                                                        <Icon.Trash size={16} /> Eliminar actual
-                                                    </button>
-                                                )}
-                                            </div>
 
-                                            <button
-                                                type='button'
-                                                className={`tab_btn flex items-center justify-between w-full pb-1.5 border-b border-line ${activeAddress === 'shipping' ? 'active' : ''}`}
-                                                onClick={() => handleActiveAddress('shipping')}
-                                            >
-                                                <strong className="heading6">Dirección de envío</strong>
-                                                <Icon.CaretDown className='text-2xl ic_down duration-300' />
-                                            </button>
-                                            <div className={`form_address ${activeAddress === 'shipping' ? 'block' : 'hidden'}`}>
-                                                <div className='grid sm:grid-cols-2 gap-4 gap-y-5 mt-5'>
-                                                    <div className="first-name">
-                                                        <label htmlFor="shippingFirstName" className='caption1 capitalize'>Nombre <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingFirstName" type="text" value={currentAddress.shipping.firstName} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="last-name">
-                                                        <label htmlFor="shippingLastName" className='caption1 capitalize'>Apellido <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingLastName" type="text" value={currentAddress.shipping.lastName} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="company">
-                                                        <label htmlFor="shippingCompany" className='caption1 capitalize'>Nombre de la empresa (opcional)</label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingCompany" type="text" value={currentAddress.shipping.company} onChange={handleShippingChange} />
-                                                    </div>
-                                                    <div className="country">
-                                                        <label htmlFor="shippingCountry" className='caption1 capitalize'>País / Región <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingCountry" type="text" value={currentAddress.shipping.country} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="street">
-                                                        <label htmlFor="shippingStreet" className='caption1 capitalize'>Dirección <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingStreet" type="text" value={currentAddress.shipping.street} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="city">
-                                                        <label htmlFor="shippingCity" className='caption1 capitalize'>Ciudad <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingCity" type="text" value={currentAddress.shipping.city} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="state">
-                                                        <label htmlFor="shippingState" className='caption1 capitalize'>Estado / Provincia <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingState" type="text" value={currentAddress.shipping.state} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="zip">
-                                                        <label htmlFor="shippingZip" className='caption1 capitalize'>Código Postal <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingZip" type="text" value={currentAddress.shipping.zip} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="phone">
-                                                        <label htmlFor="shippingPhone" className='caption1 capitalize'>Teléfono <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingPhone" type="text" value={currentAddress.shipping.phone} onChange={handleShippingChange} required />
-                                                    </div>
-                                                    <div className="email">
-                                                        <label htmlFor="shippingEmail" className='caption1 capitalize'>Correo electrónico <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingEmail" type="email" value={currentAddress.shipping.email} onChange={handleShippingChange} required />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <button
-                                                type='button'
-                                                className={`tab_btn flex items-center justify-between w-full mt-8 pb-1.5 border-b border-line ${activeAddress === 'billing' ? 'active' : ''}`}
-                                                onClick={() => handleActiveAddress('billing')}
-                                            >
-                                                <strong className="heading6">Dirección de facturación</strong>
-                                                <Icon.CaretDown className='text-2xl ic_down duration-300' />
-                                            </button>
-                                            <div className={`form_address ${activeAddress === 'billing' ? 'block' : 'hidden'}`}>
-                                                <div className={`flex items-center gap-3 mt-4 px-4 py-3 bg-surface rounded-lg border border-line ${currentAddress.isSame ? 'bg-success/5 border-success/30' : ''}`}>
-                                                    <input
-                                                        type="checkbox"
-                                                        id="sameAsShippingBilling"
-                                                        checked={currentAddress.isSame}
-                                                        onChange={toggleSameAsShipping}
-                                                        className="w-4 h-4 cursor-pointer"
-                                                    />
-                                                    <label htmlFor="sameAsShippingBilling" className="caption1 cursor-pointer font-bold text-secondary">Usar la misma dirección de envío también para facturación</label>
-                                                </div>
-                                                {currentAddress.isSame && (
-                                                    <div className="mt-4 px-4 py-3 rounded-lg border border-success/25 bg-success/5 text-sm text-secondary">
-                                                        La facturación usará exactamente los mismos datos de la dirección de envío actual.
-                                                    </div>
-                                                )}
-                                                <div className={`grid sm:grid-cols-2 gap-4 gap-y-5 mt-5 ${currentAddress.isSame ? 'opacity-60' : ''}`}>
-                                                    <div className="first-name">
-                                                        <label htmlFor="billingFirstName" className='caption1 capitalize'>Nombre <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingFirstName" type="text" value={currentAddress.billing.firstName} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="last-name">
-                                                        <label htmlFor="billingLastName" className='caption1 capitalize'>Apellido <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingLastName" type="text" value={currentAddress.billing.lastName} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="company">
-                                                        <label htmlFor="billingCompany" className='caption1 capitalize'>Nombre de la empresa (opcional)</label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingCompany" type="text" value={currentAddress.billing.company} onChange={handleBillingChange} disabled={currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="country">
-                                                        <label htmlFor="billingCountry" className='caption1 capitalize'>País / Región <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingCountry" type="text" value={currentAddress.billing.country} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="street">
-                                                        <label htmlFor="billingStreet" className='caption1 capitalize'>Dirección <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingStreet" type="text" value={currentAddress.billing.street} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="city">
-                                                        <label htmlFor="billingCity" className='caption1 capitalize'>Ciudad <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingCity" type="text" value={currentAddress.billing.city} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="state">
-                                                        <label htmlFor="billingState" className='caption1 capitalize'>Estado / Provincia <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingState" type="text" value={currentAddress.billing.state} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="zip">
-                                                        <label htmlFor="billingZip" className='caption1 capitalize'>Código Postal <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingZip" type="text" value={currentAddress.billing.zip} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="phone">
-                                                        <label htmlFor="billingPhone" className='caption1 capitalize'>Teléfono <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingPhone" type="text" value={currentAddress.billing.phone} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                    <div className="email">
-                                                        <label htmlFor="billingEmail" className='caption1 capitalize'>Correo electrónico <span className='text-red'>*</span></label>
-                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingEmail" type="email" value={currentAddress.billing.email} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="block-button md:mt-10 mt-6 flex justify-end">
-                                                <button className="button-main py-3 px-10 rounded-full font-bold bg-black text-white hover:bg-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed" disabled={addressSaving || addressLoading}>
-                                                    {addressSaving ? 'Guardando...' : 'Guardar Direcciones'}
+                                                <button
+                                                    type='button'
+                                                    className={`tab_btn flex items-center justify-between w-full pb-1.5 border-b border-line ${activeAddress === 'shipping' ? 'active' : ''}`}
+                                                    onClick={() => handleActiveAddress('shipping')}
+                                                >
+                                                    <strong className="heading6">Dirección de envío</strong>
+                                                    <Icon.CaretDown className='text-2xl ic_down duration-300' />
                                                 </button>
-                                            </div>
-                                        </form>
-                                    </div>
-                                    )}
-                                    {activeTab === 'setting' && (
-                                    <div className="tab text-content w-full p-7 border border-line rounded-xl">
-                                        <div className="heading5 pb-4">Configuraciones de la cuenta</div>
-                                        <form className='form-password' onSubmit={handleSaveSettings}>
-                                            <div className="heading5 pb-4">Información Personal</div>
-                                            <div className="upload_image col-span-full">
-                                                <label htmlFor="uploadImage">Subir Avatar: <span className="text-red">*</span></label>
-                                                <div className="flex flex-wrap items-center gap-5 mt-3">
-                                                    <div className="bg_img flex-shrink-0 relative w-[7.5rem] h-[7.5rem] rounded-lg overflow-hidden bg-surface">
-                                                        <span className="ph ph-image text-5xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-secondary"></span>
-                                                        <Image
-                                                            src={'/images/avatar/1.png'}
-                                                            width={300}
-                                                            height={300}
-                                                            alt='Foto de perfil'
-                                                            className="upload_img relative z-[1] w-full h-full object-cover"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <strong className="text-button">Subir Archivo:</strong>
-                                                        <p className="caption1 text-secondary mt-1">JPG 120x120px</p>
-                                                        <div className="upload_file flex items-center gap-3 w-[220px] mt-3 px-3 py-2 border border-line rounded">
-                                                            <label htmlFor="uploadImage" className="caption2 py-1 px-3 rounded bg-line whitespace-nowrap cursor-pointer">Elegir Archivo</label>
-                                                            <input type="file" name="uploadImage" id="uploadImage" accept="image/*" className="caption2 cursor-pointer" />
+                                                <div className={`form_address ${activeAddress === 'shipping' ? 'block' : 'hidden'}`}>
+                                                    <div className='grid sm:grid-cols-2 gap-4 gap-y-5 mt-5'>
+                                                        <div className="first-name">
+                                                            <label htmlFor="shippingFirstName" className='caption1 capitalize'>Nombre <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingFirstName" type="text" value={currentAddress.shipping.firstName} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="last-name">
+                                                            <label htmlFor="shippingLastName" className='caption1 capitalize'>Apellido <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingLastName" type="text" value={currentAddress.shipping.lastName} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="company">
+                                                            <label htmlFor="shippingCompany" className='caption1 capitalize'>Nombre de la empresa (opcional)</label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingCompany" type="text" value={currentAddress.shipping.company} onChange={handleShippingChange} />
+                                                        </div>
+                                                        <div className="country">
+                                                            <label htmlFor="shippingCountry" className='caption1 capitalize'>País / Región <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingCountry" type="text" value={currentAddress.shipping.country} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="street">
+                                                            <label htmlFor="shippingStreet" className='caption1 capitalize'>Dirección <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingStreet" type="text" value={currentAddress.shipping.street} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="city">
+                                                            <label htmlFor="shippingCity" className='caption1 capitalize'>Ciudad <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingCity" type="text" value={currentAddress.shipping.city} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="state">
+                                                            <label htmlFor="shippingState" className='caption1 capitalize'>Estado / Provincia <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingState" type="text" value={currentAddress.shipping.state} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="zip">
+                                                            <label htmlFor="shippingZip" className='caption1 capitalize'>Código Postal <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingZip" type="text" value={currentAddress.shipping.zip} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="phone">
+                                                            <label htmlFor="shippingPhone" className='caption1 capitalize'>Teléfono <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingPhone" type="text" value={currentAddress.shipping.phone} onChange={handleShippingChange} required />
+                                                        </div>
+                                                        <div className="email">
+                                                            <label htmlFor="shippingEmail" className='caption1 capitalize'>Correo electrónico <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="shippingEmail" type="email" value={currentAddress.shipping.email} onChange={handleShippingChange} required />
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                            <div className='grid sm:grid-cols-2 gap-4 gap-y-5 mt-5'>
-                                                <div className="first-name">
-                                                    <label htmlFor="firstName" className='caption1 capitalize'>Nombre <span className='text-red'>*</span></label>
-                                                    <input
-                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                        id="firstName"
-                                                        type="text"
-                                                        placeholder="Nombre"
-                                                        required
-                                                        value={profile.firstName}
-                                                        onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
-                                                        disabled={profileLoading}
-                                                    />
-                                                </div>
-                                                <div className="last-name">
-                                                    <label htmlFor="lastName" className='caption1 capitalize'>Apellido <span className='text-red'>*</span></label>
-                                                    <input
-                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                        id="lastName"
-                                                        type="text"
-                                                        placeholder="Apellido"
-                                                        required
-                                                        value={profile.lastName}
-                                                        onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
-                                                        disabled={profileLoading}
-                                                    />
-                                                </div>
-                                                <div className="phone-number">
-                                                    <label htmlFor="phoneNumber" className='caption1 capitalize'>Número de Teléfono <span className='text-red'>*</span></label>
-                                                    <input
-                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                        id="phoneNumber"
-                                                        type="text"
-                                                        placeholder="Número de teléfono"
-                                                        required
-                                                        value={profile.phone}
-                                                        onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
-                                                        disabled={profileLoading}
-                                                    />
-                                                </div>
-                                                <div className="email">
-                                                    <label htmlFor="email" className='caption1 capitalize'>Correo Electrónico <span className='text-red'>*</span></label>
-                                                    <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="email" type="email" defaultValue={user.email} placeholder="Correo electrónico" required disabled />
-                                                </div>
-                                                <div className="document-type">
-                                                    <label htmlFor="documentType" className='caption1 capitalize'>Tipo de identificación <span className='text-red'>*</span></label>
-                                                    <div className="select-block mt-2">
-                                                        <select
-                                                            className="border border-line px-4 py-3 w-full rounded-lg"
-                                                            id="documentType"
-                                                            name="documentType"
-                                                            value={profile.documentType || 'default'}
-                                                            onChange={(e) => setProfile({ ...profile, documentType: e.target.value })}
-                                                            disabled={profileLoading}
-                                                            required
-                                                        >
-                                                            <option value="default" disabled>Seleccionar</option>
-                                                            <option value="Cédula">Cédula</option>
-                                                            <option value="RUC">RUC</option>
-                                                            <option value="Pasaporte">Pasaporte</option>
-                                                            <option value="Otro">Otro</option>
-                                                        </select>
-                                                        <Icon.CaretDown className='arrow-down text-lg' />
-                                                    </div>
-                                                </div>
-                                                <div className="document-number">
-                                                    <label htmlFor="documentNumber" className='caption1 capitalize'>Número de identificación <span className='text-red'>*</span></label>
-                                                    <input
-                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                        id="documentNumber"
-                                                        type="text"
-                                                        placeholder="Número de identificación"
-                                                        required
-                                                        value={profile.documentNumber}
-                                                        onChange={(e) => setProfile({ ...profile, documentNumber: e.target.value })}
-                                                        disabled={profileLoading}
-                                                    />
-                                                </div>
-                                                <div className="business-name sm:col-span-2">
-                                                    <label htmlFor="businessName" className='caption1 capitalize'>Razón social (opcional)</label>
-                                                    <input
-                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                        id="businessName"
-                                                        type="text"
-                                                        placeholder="Razón social"
-                                                        value={profile.businessName}
-                                                        onChange={(e) => setProfile({ ...profile, businessName: e.target.value })}
-                                                        disabled={profileLoading}
-                                                    />
-                                                </div>
-                                                <div className="gender">
-                                                    <label htmlFor="gender" className='caption1 capitalize'>Género <span className='text-red'>*</span></label>
-                                                    <div className="select-block mt-2">
-                                                        <select
-                                                            className="border border-line px-4 py-3 w-full rounded-lg"
-                                                            id="gender"
-                                                            name="gender"
-                                                            value={profile.gender || 'default'}
-                                                            onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
-                                                            disabled={profileLoading}
-                                                            required
-                                                        >
-                                                            <option value="default" disabled>Elegir Género</option>
-                                                            <option value="Male">Masculino</option>
-                                                            <option value="Female">Femenino</option>
-                                                            <option value="Other">Otro</option>
-                                                        </select>
-                                                        <Icon.CaretDown className='arrow-down text-lg' />
-                                                    </div>
-                                                </div>
-                                                <div className="birth">
-                                                    <label htmlFor="birth" className='caption1'>Fecha de Nacimiento <span className='text-red'>*</span></label>
-                                                    <input
-                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                        id="birth"
-                                                        type="date"
-                                                        placeholder="Fecha de Nacimiento"
-                                                        required
-                                                        value={profile.birth}
-                                                        onChange={(e) => setProfile({ ...profile, birth: e.target.value })}
-                                                        disabled={profileLoading}
-                                                    />
-                                                </div>
-                                            </div>
-                                            <div className="heading5 pb-4 lg:mt-10 mt-6">Cambiar Contraseña</div>
-                                            <p className="text-secondary text-sm mb-4">Opcional. Si cambias tu contraseña, se cerrará la sesión por seguridad.</p>
-                                            <div className="pass">
-                                                <label htmlFor="password-setting" className='caption1'>Contraseña actual</label>
-                                                <input
-                                                    className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                    id="password-setting"
-                                                    type="password"
-                                                    placeholder="Contraseña actual"
-                                                    autoComplete="current-password"
-                                                    value={passwordForm.currentPassword}
-                                                    onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
-                                                    disabled={profileSaving || profileLoading}
-                                                />
-                                            </div>
-                                            <div className="new-pass mt-5">
-                                                <label htmlFor="newPassword" className='caption1'>Nueva contraseña</label>
-                                                <input
-                                                    className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                    id="newPassword"
-                                                    type="password"
-                                                    placeholder="Mínimo 12 caracteres"
-                                                    autoComplete="new-password"
-                                                    value={passwordForm.newPassword}
-                                                    onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-                                                    disabled={profileSaving || profileLoading}
-                                                />
-                                            </div>
-                                            <div className="confirm-pass mt-5">
-                                                <label htmlFor="confirmPassword" className='caption1'>Confirmar nueva contraseña</label>
-                                                <input
-                                                    className="border-line mt-2 px-4 py-3 w-full rounded-lg"
-                                                    id="confirmPassword"
-                                                    type="password"
-                                                    placeholder="Confirmar nueva contraseña"
-                                                    autoComplete="new-password"
-                                                    value={passwordForm.confirmPassword}
-                                                    onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-                                                    disabled={profileSaving || profileLoading}
-                                                />
-                                            </div>
-                                            <div className="block-button lg:mt-10 mt-6 flex justify-end">
-                                                <button className="button-main py-3 px-10 rounded-full font-bold bg-black text-white hover:bg-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed" disabled={profileSaving || profileLoading}>
-                                                    {profileSaving ? 'Guardando...' : 'Guardar Cambios'}
+                                                <button
+                                                    type='button'
+                                                    className={`tab_btn flex items-center justify-between w-full mt-8 pb-1.5 border-b border-line ${activeAddress === 'billing' ? 'active' : ''}`}
+                                                    onClick={() => handleActiveAddress('billing')}
+                                                >
+                                                    <strong className="heading6">Dirección de facturación</strong>
+                                                    <Icon.CaretDown className='text-2xl ic_down duration-300' />
                                                 </button>
-                                            </div>
-                                        </form>
-                                    </div>
+                                                <div className={`form_address ${activeAddress === 'billing' ? 'block' : 'hidden'}`}>
+                                                    <div className={`flex items-center gap-3 mt-4 px-4 py-3 bg-surface rounded-lg border border-line ${currentAddress.isSame ? 'bg-success/5 border-success/30' : ''}`}>
+                                                        <input
+                                                            type="checkbox"
+                                                            id="sameAsShippingBilling"
+                                                            checked={currentAddress.isSame}
+                                                            onChange={toggleSameAsShipping}
+                                                            className="w-4 h-4 cursor-pointer"
+                                                        />
+                                                        <label htmlFor="sameAsShippingBilling" className="caption1 cursor-pointer font-bold text-secondary">Usar la misma dirección de envío también para facturación</label>
+                                                    </div>
+                                                    {currentAddress.isSame && (
+                                                        <div className="mt-4 px-4 py-3 rounded-lg border border-success/25 bg-success/5 text-sm text-secondary">
+                                                            La facturación usará exactamente los mismos datos de la dirección de envío actual.
+                                                        </div>
+                                                    )}
+                                                    <div className={`grid sm:grid-cols-2 gap-4 gap-y-5 mt-5 ${currentAddress.isSame ? 'opacity-60' : ''}`}>
+                                                        <div className="first-name">
+                                                            <label htmlFor="billingFirstName" className='caption1 capitalize'>Nombre <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingFirstName" type="text" value={currentAddress.billing.firstName} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="last-name">
+                                                            <label htmlFor="billingLastName" className='caption1 capitalize'>Apellido <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingLastName" type="text" value={currentAddress.billing.lastName} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="company">
+                                                            <label htmlFor="billingCompany" className='caption1 capitalize'>Nombre de la empresa (opcional)</label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingCompany" type="text" value={currentAddress.billing.company} onChange={handleBillingChange} disabled={currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="country">
+                                                            <label htmlFor="billingCountry" className='caption1 capitalize'>País / Región <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingCountry" type="text" value={currentAddress.billing.country} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="street">
+                                                            <label htmlFor="billingStreet" className='caption1 capitalize'>Dirección <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingStreet" type="text" value={currentAddress.billing.street} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="city">
+                                                            <label htmlFor="billingCity" className='caption1 capitalize'>Ciudad <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingCity" type="text" value={currentAddress.billing.city} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="state">
+                                                            <label htmlFor="billingState" className='caption1 capitalize'>Estado / Provincia <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingState" type="text" value={currentAddress.billing.state} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="zip">
+                                                            <label htmlFor="billingZip" className='caption1 capitalize'>Código Postal <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingZip" type="text" value={currentAddress.billing.zip} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="phone">
+                                                            <label htmlFor="billingPhone" className='caption1 capitalize'>Teléfono <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingPhone" type="text" value={currentAddress.billing.phone} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                        <div className="email">
+                                                            <label htmlFor="billingEmail" className='caption1 capitalize'>Correo electrónico <span className='text-red'>*</span></label>
+                                                            <input className="border-line mt-2 px-4 py-3 w-full rounded-lg disabled:bg-surface disabled:text-secondary" id="billingEmail" type="email" value={currentAddress.billing.email} onChange={handleBillingChange} disabled={currentAddress.isSame} required={!currentAddress.isSame} />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className="block-button md:mt-10 mt-6 flex justify-end">
+                                                    <button className="button-main py-3 px-10 rounded-full font-bold bg-black text-white hover:bg-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed" disabled={addressSaving || addressLoading}>
+                                                        {addressSaving ? 'Guardando...' : 'Guardar Direcciones'}
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    )}
+                                    {activeTab === 'setting' && (
+                                        <div className="tab text-content w-full p-7 border border-line rounded-xl">
+                                            <div className="heading5 pb-4">Configuraciones de la cuenta</div>
+                                            <form className='form-password' onSubmit={handleSaveSettings}>
+                                                <div className="heading5 pb-4">Información Personal</div>
+                                                <div className="upload_image col-span-full">
+                                                    <label htmlFor="uploadImage">Subir Avatar: <span className="text-red">*</span></label>
+                                                    <div className="flex flex-wrap items-center gap-5 mt-3">
+                                                        <div className="bg_img flex-shrink-0 relative w-[7.5rem] h-[7.5rem] rounded-lg overflow-hidden bg-surface">
+                                                            <span className="ph ph-image text-5xl absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-secondary"></span>
+                                                            <Image
+                                                                src={'/images/avatar/1.png'}
+                                                                width={300}
+                                                                height={300}
+                                                                alt='Foto de perfil'
+                                                                className="upload_img relative z-[1] w-full h-full object-cover"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <strong className="text-button">Subir Archivo:</strong>
+                                                            <p className="caption1 text-secondary mt-1">JPG 120x120px</p>
+                                                            <div className="upload_file flex items-center gap-3 w-[220px] mt-3 px-3 py-2 border border-line rounded">
+                                                                <label htmlFor="uploadImage" className="caption2 py-1 px-3 rounded bg-line whitespace-nowrap cursor-pointer">Elegir Archivo</label>
+                                                                <input type="file" name="uploadImage" id="uploadImage" accept="image/*" className="caption2 cursor-pointer" />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div className='grid sm:grid-cols-2 gap-4 gap-y-5 mt-5'>
+                                                    <div className="first-name">
+                                                        <label htmlFor="firstName" className='caption1 capitalize'>Nombre <span className='text-red'>*</span></label>
+                                                        <input
+                                                            className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                            id="firstName"
+                                                            type="text"
+                                                            placeholder="Nombre"
+                                                            required
+                                                            value={profile.firstName}
+                                                            onChange={(e) => setProfile({ ...profile, firstName: e.target.value })}
+                                                            disabled={profileLoading}
+                                                        />
+                                                    </div>
+                                                    <div className="last-name">
+                                                        <label htmlFor="lastName" className='caption1 capitalize'>Apellido <span className='text-red'>*</span></label>
+                                                        <input
+                                                            className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                            id="lastName"
+                                                            type="text"
+                                                            placeholder="Apellido"
+                                                            required
+                                                            value={profile.lastName}
+                                                            onChange={(e) => setProfile({ ...profile, lastName: e.target.value })}
+                                                            disabled={profileLoading}
+                                                        />
+                                                    </div>
+                                                    <div className="phone-number">
+                                                        <label htmlFor="phoneNumber" className='caption1 capitalize'>Número de Teléfono <span className='text-red'>*</span></label>
+                                                        <input
+                                                            className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                            id="phoneNumber"
+                                                            type="text"
+                                                            placeholder="Número de teléfono"
+                                                            required
+                                                            value={profile.phone}
+                                                            onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                                                            disabled={profileLoading}
+                                                        />
+                                                    </div>
+                                                    <div className="email">
+                                                        <label htmlFor="email" className='caption1 capitalize'>Correo Electrónico <span className='text-red'>*</span></label>
+                                                        <input className="border-line mt-2 px-4 py-3 w-full rounded-lg" id="email" type="email" defaultValue={user.email} placeholder="Correo electrónico" required disabled />
+                                                    </div>
+                                                    <div className="document-type">
+                                                        <label htmlFor="documentType" className='caption1 capitalize'>Tipo de identificación <span className='text-red'>*</span></label>
+                                                        <div className="select-block mt-2">
+                                                            <select
+                                                                className="border border-line px-4 py-3 w-full rounded-lg"
+                                                                id="documentType"
+                                                                name="documentType"
+                                                                value={profile.documentType || 'default'}
+                                                                onChange={(e) => setProfile({ ...profile, documentType: e.target.value })}
+                                                                disabled={profileLoading}
+                                                                required
+                                                            >
+                                                                <option value="default" disabled>Seleccionar</option>
+                                                                <option value="Cédula">Cédula</option>
+                                                                <option value="RUC">RUC</option>
+                                                                <option value="Pasaporte">Pasaporte</option>
+                                                                <option value="Otro">Otro</option>
+                                                            </select>
+                                                            <Icon.CaretDown className='arrow-down text-lg' />
+                                                        </div>
+                                                    </div>
+                                                    <div className="document-number">
+                                                        <label htmlFor="documentNumber" className='caption1 capitalize'>Número de identificación <span className='text-red'>*</span></label>
+                                                        <input
+                                                            className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                            id="documentNumber"
+                                                            type="text"
+                                                            placeholder="Número de identificación"
+                                                            required
+                                                            value={profile.documentNumber}
+                                                            onChange={(e) => setProfile({ ...profile, documentNumber: e.target.value })}
+                                                            disabled={profileLoading}
+                                                        />
+                                                    </div>
+                                                    <div className="business-name sm:col-span-2">
+                                                        <label htmlFor="businessName" className='caption1 capitalize'>Razón social (opcional)</label>
+                                                        <input
+                                                            className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                            id="businessName"
+                                                            type="text"
+                                                            placeholder="Razón social"
+                                                            value={profile.businessName}
+                                                            onChange={(e) => setProfile({ ...profile, businessName: e.target.value })}
+                                                            disabled={profileLoading}
+                                                        />
+                                                    </div>
+                                                    <div className="gender">
+                                                        <label htmlFor="gender" className='caption1 capitalize'>Género <span className='text-red'>*</span></label>
+                                                        <div className="select-block mt-2">
+                                                            <select
+                                                                className="border border-line px-4 py-3 w-full rounded-lg"
+                                                                id="gender"
+                                                                name="gender"
+                                                                value={profile.gender || 'default'}
+                                                                onChange={(e) => setProfile({ ...profile, gender: e.target.value })}
+                                                                disabled={profileLoading}
+                                                                required
+                                                            >
+                                                                <option value="default" disabled>Elegir Género</option>
+                                                                <option value="Male">Masculino</option>
+                                                                <option value="Female">Femenino</option>
+                                                                <option value="Other">Otro</option>
+                                                            </select>
+                                                            <Icon.CaretDown className='arrow-down text-lg' />
+                                                        </div>
+                                                    </div>
+                                                    <div className="birth">
+                                                        <label htmlFor="birth" className='caption1'>Fecha de Nacimiento <span className='text-red'>*</span></label>
+                                                        <input
+                                                            className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                            id="birth"
+                                                            type="date"
+                                                            placeholder="Fecha de Nacimiento"
+                                                            required
+                                                            value={profile.birth}
+                                                            onChange={(e) => setProfile({ ...profile, birth: e.target.value })}
+                                                            disabled={profileLoading}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div className="heading5 pb-4 lg:mt-10 mt-6">Cambiar Contraseña</div>
+                                                <p className="text-secondary text-sm mb-4">Opcional. Si cambias tu contraseña, se cerrará la sesión por seguridad.</p>
+                                                <div className="pass">
+                                                    <label htmlFor="password-setting" className='caption1'>Contraseña actual</label>
+                                                    <input
+                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                        id="password-setting"
+                                                        type="password"
+                                                        placeholder="Contraseña actual"
+                                                        autoComplete="current-password"
+                                                        value={passwordForm.currentPassword}
+                                                        onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                                                        disabled={profileSaving || profileLoading}
+                                                    />
+                                                </div>
+                                                <div className="new-pass mt-5">
+                                                    <label htmlFor="newPassword" className='caption1'>Nueva contraseña</label>
+                                                    <input
+                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                        id="newPassword"
+                                                        type="password"
+                                                        placeholder="Mínimo 12 caracteres"
+                                                        autoComplete="new-password"
+                                                        value={passwordForm.newPassword}
+                                                        onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                                                        disabled={profileSaving || profileLoading}
+                                                    />
+                                                </div>
+                                                <div className="confirm-pass mt-5">
+                                                    <label htmlFor="confirmPassword" className='caption1'>Confirmar nueva contraseña</label>
+                                                    <input
+                                                        className="border-line mt-2 px-4 py-3 w-full rounded-lg"
+                                                        id="confirmPassword"
+                                                        type="password"
+                                                        placeholder="Confirmar nueva contraseña"
+                                                        autoComplete="new-password"
+                                                        value={passwordForm.confirmPassword}
+                                                        onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                                                        disabled={profileSaving || profileLoading}
+                                                    />
+                                                </div>
+                                                <div className="block-button lg:mt-10 mt-6 flex justify-end">
+                                                    <button className="button-main py-3 px-10 rounded-full font-bold bg-black text-white hover:bg-primary transition-all disabled:opacity-60 disabled:cursor-not-allowed" disabled={profileSaving || profileLoading}>
+                                                        {profileSaving ? 'Guardando...' : 'Guardar Cambios'}
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
                                     )}
                                 </>
                             )}
