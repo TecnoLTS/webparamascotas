@@ -55,11 +55,6 @@ resolve_env_file() {
     exit 1
   fi
 
-  if [[ -f "${APP_DIR}/.env.production" ]]; then
-    printf '%s\n' "${APP_DIR}/.env.production"
-    return 0
-  fi
-
   if [[ -f "${APP_DIR}/.env" ]]; then
     printf '%s\n' "${APP_DIR}/.env"
     return 0
@@ -72,7 +67,7 @@ resolve_env_file() {
     return 0
   fi
 
-  echo "No se encontro .env, .env.production ni .env.example" >&2
+  echo "No se encontro .env ni .env.example" >&2
   exit 1
 }
 
