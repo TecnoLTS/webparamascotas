@@ -1180,11 +1180,13 @@ const Checkout = () => {
         if (deliveryMethod !== 'delivery' || !quote) return
 
         const knownRules = ['free_radius', 'standard_delivery', 'km_flat_rate', 'km_per_km_rate']
+        const quoteShippingRule = typeof quote.shipping_rule === 'string' ? quote.shipping_rule : ''
+        const nextShippingRule = knownRules.includes(quoteShippingRule) ? quoteShippingRule : null
         setTempAddress((prev) => ({
             ...prev,
             distanceKm: quote.distance_km ?? prev.distanceKm,
-            shippingZone: knownRules.includes(quote.shipping_rule) ? quote.shipping_rule : prev.shippingZone,
-            shippingRule: knownRules.includes(quote.shipping_rule) ? quote.shipping_rule : prev.shippingRule,
+            shippingZone: nextShippingRule ?? prev.shippingZone,
+            shippingRule: nextShippingRule ?? prev.shippingRule,
             isFreeShipping: Boolean(quote.is_free_shipping ?? prev.isFreeShipping),
             storeAddress: quote.store_address ?? prev.storeAddress,
             storeLatitude: shippingRates.storeLatitude,
