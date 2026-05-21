@@ -1,4 +1,4 @@
-import { fetchJson } from '@/lib/apiClient'
+import { fetchJson, requestApi } from '@/lib/apiClient'
 import { apiEndpoints } from './endpoints'
 
 export interface LoginResponse {
@@ -17,6 +17,16 @@ export interface LoginResponse {
 export interface OtpResponse {
     sent?: boolean
     delivery?: 'email'
+}
+
+export interface PasswordResetRequestResponse {
+    sent?: boolean
+    message?: string
+}
+
+export interface PasswordResetConfirmResponse {
+    passwordReset?: boolean
+    message?: string
 }
 
 export const login = (body: any) =>
@@ -46,3 +56,23 @@ export const verifyOtp = (body: { email: string; code: string }) =>
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
     })
+
+export const requestPasswordReset = (body: { email: string }) =>
+    requestApi<PasswordResetRequestResponse>(apiEndpoints.auth.requestPasswordReset, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    }).then((response) => ({
+        ...response.body,
+        message: response.message || response.body.message,
+    }))
+
+export const confirmPasswordReset = (body: { token: string; password: string }) =>
+    requestApi<PasswordResetConfirmResponse>(apiEndpoints.auth.confirmPasswordReset, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    }).then((response) => ({
+        ...response.body,
+        message: response.message || response.body.message,
+    }))

@@ -83,6 +83,8 @@ const authFreePaths = new Set([
   '/api/auth/register',
   '/api/auth/request-otp',
   '/api/auth/verify-otp',
+  '/api/auth/password-reset/request',
+  '/api/auth/password-reset/confirm',
   '/api/auth/verify',
   '/api/auth/session',
   '/api/contact',
@@ -591,7 +593,7 @@ export async function fetchJson<T>(path: string, init?: ApiRequestInit): Promise
   return result.body as T
 }
 
-export async function requestApi<T>(path: string, init?: ApiRequestInit): Promise<{ ok: boolean; status: number; body: T }> {
+export async function requestApi<T>(path: string, init?: ApiRequestInit): Promise<{ ok: boolean; status: number; body: T; message?: string }> {
   const result = await performReadableRequest(path, init, 'no-store')
 
   if (!result.ok) {
@@ -612,7 +614,7 @@ export async function requestApi<T>(path: string, init?: ApiRequestInit): Promis
     if (!result.envelope.ok) {
       throw new Error(result.envelope.error?.message || result.envelope.message || 'Error desconocido')
     }
-    return { ok: true, status: result.status, body: result.envelope.data as T }
+    return { ok: true, status: result.status, body: result.envelope.data as T, message: result.envelope.message }
   }
 
   return { ok: true, status: result.status, body: result.body as T }

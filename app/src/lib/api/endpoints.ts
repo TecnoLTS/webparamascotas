@@ -10,6 +10,8 @@ export const apiEndpoints = {
     register: '/api/auth/register',
     requestOtp: '/api/auth/request-otp',
     verifyOtp: '/api/auth/verify-otp',
+    requestPasswordReset: '/api/auth/password-reset/request',
+    confirmPasswordReset: '/api/auth/password-reset/confirm',
   },
   users: '/api/users',
   user: (id: string) => `/api/users/${id}`,

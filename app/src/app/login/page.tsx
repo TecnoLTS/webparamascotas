@@ -24,6 +24,8 @@ const Login = () => {
         const query = new URLSearchParams(window.location.search)
         if (query.get('registered') === 'true') {
             setSuccess('¡Cuenta creada exitosamente! Por favor, inicia sesión.')
+        } else if (query.get('reset') === 'true') {
+            setSuccess('Contraseña restablecida correctamente. Inicia sesión con tu nueva contraseña.')
         }
     }, [])
 
