@@ -33,13 +33,15 @@ ss -tn state established '( sport = :80 or sport = :443 )' 2>/dev/null \
   | sed 's/^/  - /' || true
 echo
 
-echo "Modo simple recomendado (sin conocer IPs exactas):"
-echo "  PANEL_IP_MODE=private"
-echo "  ADMIN_IP_MODE=private"
-echo "  # private permite loopback + redes privadas RFC1918"
+echo "Modo recomendado si tus IPs cambian:"
+echo "  PANEL_IP_MODE=off"
+echo "  ADMIN_IP_MODE=off"
+echo "  # Mantiene acceso admin disponible y depende de MFA, bloqueo de intentos y sesiones seguras."
 echo
-echo "Sugerencia conservadora para desarrollo:"
-echo "  PANEL_IP_ALLOWLIST=127.0.0.1,192.168.100.229,80.241.213.31"
-echo "  ADMIN_IP_ALLOWLIST=127.0.0.1,192.168.100.229,80.241.213.31"
+echo "Sugerencia si usas una VPN o IP estatica:"
+echo "  PANEL_IP_MODE=custom"
+echo "  ADMIN_IP_MODE=custom"
+echo "  PANEL_IP_ALLOWLIST=127.0.0.1,YOUR_STATIC_IP/32"
+echo "  ADMIN_IP_ALLOWLIST=127.0.0.1,YOUR_STATIC_IP/32"
 echo
-echo "Antes de activar en produccion, confirma tus IPs cliente reales."
+echo "Antes de activar custom en produccion, confirma tus IPs cliente reales."
