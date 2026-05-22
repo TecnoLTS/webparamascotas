@@ -917,6 +917,7 @@ const MyAccount = () => {
     const [adminOrdersList, setAdminOrdersList] = useState<Order[]>([])
     const [billingRidePdfs, setBillingRidePdfs] = useState<BillingRidePdf[]>([])
     const [billingRideLoading, setBillingRideLoading] = useState(false)
+    const [billingRideReissueAccessKey, setBillingRideReissueAccessKey] = useState<string | null>(null)
     const [businessExpenses, setBusinessExpenses] = useState<BusinessExpense[]>([])
     const [businessExpenseRecurrences, setBusinessExpenseRecurrences] = useState<BusinessExpenseRecurrence[]>([])
     const [businessExpenseSummary, setBusinessExpenseSummary] = useState<BusinessExpenseSummary | null>(null)
@@ -1246,6 +1247,47 @@ const MyAccount = () => {
             showNotification('Tu navegador bloqueó la apertura del PDF.', 'error')
         }
     }, [showNotification])
+
+    const cancelAndReissueBillingRide = React.useCallback(async (ride: BillingRidePdf) => {
+        const normalized = String(ride.access_key || '').replace(/\D/g, '')
+        if (!normalized) {
+            showNotification('La factura no tiene clave de acceso válida.', 'error')
+            return
+        }
+
+        const sequential = [ride.establishment_code, ride.emission_point, ride.sequential].filter(Boolean).join('-') || normalized
+        const reason = window.prompt(
+            `Se anulará localmente la factura ${sequential} y se emitirá una nueva con los mismos datos de la venta. No se creará otra venta ni se recalcularán montos.\n\nMotivo de la reemisión:`,
+            'Factura atascada en procesamiento SRI; anulada localmente y reemitida desde panel administrativo.'
+        )
+        if (reason === null) return
+
+        const cleanReason = reason.trim()
+        if (cleanReason.length < 12) {
+            showNotification('Ingresa un motivo claro para anular y reemitir la factura.', 'error')
+            return
+        }
+
+        setBillingRideReissueAccessKey(normalized)
+        try {
+            await requestApi(`/api/admin/billing/rides/${encodeURIComponent(normalized)}/cancel-and-reissue`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    reason: cleanReason,
+                    ambiente: ride.ambiente || undefined,
+                }),
+            })
+            showNotification('Factura anulada localmente y reemitida. Revisa el nuevo registro generado.')
+            await loadBillingRidePdfs()
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(error instanceof Error ? error.message : 'No se pudo anular y reemitir la factura.', 'error')
+        } finally {
+            setBillingRideReissueAccessKey(null)
+        }
+    }, [invalidateAdminPanelData, loadBillingRidePdfs, showNotification])
 
     const loadBusinessExpenses = React.useCallback(async (options?: { silent?: boolean }) => {
         if (!user || user.role !== 'admin') return
@@ -8407,6 +8449,9 @@ const MyAccount = () => {
                                                     <tbody className="divide-y divide-line">
                                                         {billingRidePdfs.map((ride) => {
                                                             const sequential = [ride.establishment_code, ride.emission_point, ride.sequential].filter(Boolean).join('-') || ride.source_reference || ride.access_key
+                                                            const status = String(ride.sri_status || '').toUpperCase()
+                                                            const canReissue = ['RECIBIDA', 'EN PROCESAMIENTO', 'PENDING', 'UNKNOWN', 'DEVUELTA', 'NO AUTORIZADO'].includes(status) && !ride.replacement_access_key
+                                                            const isReissuing = billingRideReissueAccessKey === String(ride.access_key || '').replace(/\D/g, '')
                                                             return (
                                                                 <tr key={ride.access_key} className="hover:bg-surface/50">
                                                                     <td className="px-3 py-2">
@@ -8424,7 +8469,15 @@ const MyAccount = () => {
                                                                         <div className="text-[11px] text-secondary">{ride.pdf_modified_at ? `PDF ${formatDateTimeEcuador(ride.pdf_modified_at)}` : 'Sin archivo generado'}</div>
                                                                     </td>
                                                                     <td className="px-3 py-2">
-                                                                        <span className="inline-flex rounded-full bg-surface px-2 py-1 text-[11px] font-bold text-secondary">{ride.sri_status || '-'}</span>
+                                                                        <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${status === 'AUTORIZADO' ? 'bg-emerald-100 text-emerald-700' : status === 'ANULADA_LOCAL' ? 'bg-zinc-100 text-zinc-700' : 'bg-surface text-secondary'}`}>
+                                                                            {ride.sri_status || '-'}
+                                                                        </span>
+                                                                        {ride.replacement_access_key && (
+                                                                            <div className="mt-1 text-[11px] text-secondary break-all">Reemplazada por {ride.replacement_access_key}</div>
+                                                                        )}
+                                                                        {ride.replaced_access_key && (
+                                                                            <div className="mt-1 text-[11px] text-secondary break-all">Reemite {ride.replaced_access_key}</div>
+                                                                        )}
                                                                     </td>
                                                                     <td className="px-3 py-2">
                                                                         <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${ride.pdf_exists ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -8432,6 +8485,16 @@ const MyAccount = () => {
                                                                         </span>
                                                                     </td>
                                                                     <td className="px-3 py-2 text-right">
+                                                                        {canReissue && (
+                                                                            <button
+                                                                                type="button"
+                                                                                className="mr-2 px-3 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                                                                                onClick={() => cancelAndReissueBillingRide(ride)}
+                                                                                disabled={isReissuing || billingRideLoading}
+                                                                            >
+                                                                                {isReissuing ? 'Reemitiendo...' : 'Anular y reemitir'}
+                                                                            </button>
+                                                                        )}
                                                                         <button
                                                                             type="button"
                                                                             className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50"

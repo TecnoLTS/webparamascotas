@@ -530,6 +530,10 @@ export type BillingRidePdf = {
     sequential?: string | null;
     ambiente?: string | null;
     sri_status?: string | null;
+    cancelled_at?: string | null;
+    cancellation_reason?: string | null;
+    replacement_access_key?: string | null;
+    replaced_access_key?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
     pdf_exists?: boolean;
