@@ -537,6 +537,7 @@ export type BillingRidePdf = {
     created_at?: string | null;
     updated_at?: string | null;
     pdf_exists?: boolean;
+    pdf_can_generate?: boolean;
     pdf_size?: number | null;
     pdf_modified_at?: string | null;
 }

@@ -8452,6 +8452,7 @@ const MyAccount = () => {
                                                             const status = String(ride.sri_status || '').toUpperCase()
                                                             const canReissue = ['RECIBIDA', 'EN PROCESAMIENTO', 'PENDING', 'UNKNOWN', 'DEVUELTA', 'NO AUTORIZADO'].includes(status) && !ride.replacement_access_key
                                                             const isReissuing = billingRideReissueAccessKey === String(ride.access_key || '').replace(/\D/g, '')
+                                                            const canOpenPdf = Boolean(ride.pdf_exists || ride.pdf_can_generate)
                                                             return (
                                                                 <tr key={ride.access_key} className="hover:bg-surface/50">
                                                                     <td className="px-3 py-2">
@@ -8480,8 +8481,8 @@ const MyAccount = () => {
                                                                         )}
                                                                     </td>
                                                                     <td className="px-3 py-2">
-                                                                        <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${ride.pdf_exists ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                                                            {ride.pdf_exists ? 'Disponible' : 'No generado'}
+                                                                        <span className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${ride.pdf_exists ? 'bg-emerald-100 text-emerald-700' : ride.pdf_can_generate ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                            {ride.pdf_exists ? 'Disponible' : ride.pdf_can_generate ? 'Generable' : 'No generado'}
                                                                         </span>
                                                                     </td>
                                                                     <td className="px-3 py-2 text-right">
@@ -8499,7 +8500,7 @@ const MyAccount = () => {
                                                                             type="button"
                                                                             className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50"
                                                                             onClick={() => openBillingRidePdf(ride.access_key)}
-                                                                            disabled={!ride.pdf_exists}
+                                                                            disabled={!canOpenPdf}
                                                                         >
                                                                             Abrir PDF
                                                                         </button>
