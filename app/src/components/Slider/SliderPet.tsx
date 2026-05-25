@@ -2,6 +2,19 @@
 
 import Link from 'next/link'
 import React, { useEffect, useState } from 'react'
+import {
+  ArrowRight,
+  Bone,
+  BowlFood,
+  Cat,
+  Dog,
+  Heart,
+  PawPrint,
+  ShieldCheck,
+  ShoppingBagOpen,
+  Truck,
+  TShirt,
+} from '@phosphor-icons/react/dist/ssr'
 import { versionLocalImagePath } from '@/lib/staticAsset'
 
 type SliderSuffix =
@@ -99,8 +112,8 @@ const sliderDimensions: Record<SliderSuffix, { width: number; height: number }> 
   'desktop-1440': { width: 1440, height: 281 },
   desktop: { width: 2560, height: 500 },
   fhd: { width: 3840, height: 720 },
-  qhd: { width: 5120, height: 1300 },
-  uhd: { width: 6400, height: 2200 },
+  qhd: { width: 5120, height: 1000 },
+  uhd: { width: 6400, height: 1200 },
 }
 
 const buildCandidateSources = (slide: SlideId, suffix: SliderSuffix) =>
@@ -188,10 +201,244 @@ const HeroPicture = ({
           setFallbackIndex((prev) => (prev >= fallbackCandidates.length - 1 ? prev : prev + 1))
         }}
         src={versionLocalImagePath(fallbackSrc)}
-        className="block h-full w-full object-cover object-center"
+        className={`pet-hero-image pet-hero-image--slide-${slide} block h-full w-full object-cover object-center`}
       />
     </picture>
   )
+}
+
+const SlideOneShowcase = ({ active, slide }: { active: boolean; slide: SlideContent }) => {
+  return (
+    <div className="pet-hero-showcase pet-hero-showcase--slide-1">
+      <div className="pet-hero-showcase__copy pet-hero-showcase__copy--slide-1">
+        <div className="pet-hero-showcase__badge" aria-label="Tienda online en Ecuador">
+          <span>TIENDA ONLINE EN ECUADOR</span>
+          <span className="pet-hero-showcase__flag" aria-hidden="true" />
+        </div>
+
+        <h1 className="pet-hero-showcase__title" aria-label="Todo para tu mascota en un solo lugar">
+          <span className="pet-hero-showcase__burst pet-hero-showcase__burst--left" aria-hidden="true">
+            <span />
+          </span>
+          <span className="pet-hero-showcase__title-top">Todo para tu</span>
+          <span className="pet-hero-showcase__pet-word">
+            mascota
+            <PawPrint aria-hidden="true" weight="fill" />
+          </span>
+          <span className="pet-hero-showcase__tagline">en un solo lugar</span>
+          <span className="pet-hero-showcase__burst pet-hero-showcase__burst--right" aria-hidden="true">
+            <span />
+          </span>
+        </h1>
+
+        <p className="pet-hero-showcase__subtitle">
+          Alimento, accesorios, snacks y cuidado para perros y gatos, con{' '}
+          <strong>atencion cercana y entrega a domicilio.</strong>
+        </p>
+
+        <div className="pet-hero-showcase__actions">
+          {active ? (
+            <Link className="pet-hero-showcase__cta" href={slide.ctaHref}>
+              <span className="pet-hero-showcase__cta-icon" aria-hidden="true">
+                <ShoppingBagOpen weight="bold" />
+              </span>
+              <span>Comprar ahora</span>
+            </Link>
+          ) : (
+            <span className="pet-hero-showcase__cta" aria-hidden="true">
+              <span className="pet-hero-showcase__cta-icon" aria-hidden="true">
+                <ShoppingBagOpen weight="bold" />
+              </span>
+              <span>Comprar ahora</span>
+            </span>
+          )}
+
+          <div className="pet-hero-showcase__proof" aria-label="Beneficios de compra">
+            <span className="pet-hero-showcase__proof-item">
+              <Dog aria-hidden="true" weight="bold" />
+              <span>Perros y gatos</span>
+            </span>
+            <span className="pet-hero-showcase__proof-item">
+              <Truck aria-hidden="true" weight="bold" />
+              <span>Entrega a domicilio</span>
+            </span>
+            <span className="pet-hero-showcase__proof-item">
+              <Heart aria-hidden="true" weight="bold" />
+              <span>Atencion cercana</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <PawPrint className="pet-hero-showcase__paw pet-hero-showcase__paw--top-left" aria-hidden="true" weight="fill" />
+      <PawPrint className="pet-hero-showcase__paw pet-hero-showcase__paw--right" aria-hidden="true" weight="fill" />
+      <Heart className="pet-hero-showcase__heart pet-hero-showcase__heart--dog" aria-hidden="true" weight="bold" />
+      <Cat className="pet-hero-showcase__cat-mark" aria-hidden="true" weight="duotone" />
+      <span className="pet-hero-showcase__heart-bubble" aria-hidden="true">
+        <Heart weight="fill" />
+      </span>
+      <span className="pet-hero-showcase__trail pet-hero-showcase__trail--left" aria-hidden="true" />
+      <span className="pet-hero-showcase__trail pet-hero-showcase__trail--right" aria-hidden="true" />
+    </div>
+  )
+}
+
+const SlideTwoShowcase = ({ active, slide }: { active: boolean; slide: SlideContent }) => {
+  const ctaContent = (
+    <>
+      <span>{slide.ctaLabel}</span>
+      <span className="pet-hero-showcase__cta-icon pet-hero-showcase__cta-icon--arrow" aria-hidden="true">
+        <ArrowRight weight="bold" />
+      </span>
+    </>
+  )
+
+  return (
+    <div className="pet-hero-showcase pet-hero-showcase--slide-2">
+      <div className="pet-hero-showcase__copy pet-hero-showcase__copy--slide-2">
+        <div className="pet-hero-showcase__badge pet-hero-showcase__badge--solid" aria-label="Edición Ecuador">
+          <span>EDICIÓN ECUADOR</span>
+          <span className="pet-hero-showcase__flag" aria-hidden="true" />
+        </div>
+
+        <h2 className="pet-hero-showcase__tri-title" aria-label={slide.title}>
+          <span className="pet-hero-showcase__tri-row">
+            <span className="pet-hero-showcase__tri-script">La Tri</span>
+            <span className="pet-hero-showcase__tri-white">también</span>
+          </span>
+          <span className="pet-hero-showcase__tri-line">
+            se vive en
+            <span className="pet-hero-showcase__tri-band">
+              cuatro patas
+              <PawPrint aria-hidden="true" weight="fill" />
+            </span>
+          </span>
+          <span className="pet-hero-showcase__tri-underline" aria-hidden="true" />
+          <span className="pet-hero-showcase__burst pet-hero-showcase__burst--tri" aria-hidden="true">
+            <span />
+          </span>
+        </h2>
+
+        <p className="pet-hero-showcase__subtitle pet-hero-showcase__subtitle--slide-2">
+          {slide.subtitle}
+        </p>
+
+        <div className="pet-hero-showcase__actions pet-hero-showcase__actions--slide-2">
+          {active ? (
+            <Link className="pet-hero-showcase__cta pet-hero-showcase__cta--yellow-arrow" href={slide.ctaHref}>
+              {ctaContent}
+            </Link>
+          ) : (
+            <span className="pet-hero-showcase__cta pet-hero-showcase__cta--yellow-arrow" aria-hidden="true">
+              {ctaContent}
+            </span>
+          )}
+
+          <div className="pet-hero-showcase__proof pet-hero-showcase__proof--slide-2" aria-label="Beneficios de camisetas">
+            <span className="pet-hero-showcase__proof-item">
+              <ShieldCheck aria-hidden="true" weight="bold" />
+              <span>Calidad premium</span>
+            </span>
+            <span className="pet-hero-showcase__proof-item">
+              <TShirt aria-hidden="true" weight="bold" />
+              <span>Diseño oficial de Ecuador</span>
+            </span>
+            <span className="pet-hero-showcase__proof-item">
+              <Heart aria-hidden="true" weight="bold" />
+              <span>Hechos para los fanáticos</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <PawPrint className="pet-hero-showcase__paw pet-hero-showcase__paw--top-left" aria-hidden="true" weight="fill" />
+      <PawPrint className="pet-hero-showcase__paw pet-hero-showcase__paw--tri-right" aria-hidden="true" weight="fill" />
+      <Heart className="pet-hero-showcase__heart pet-hero-showcase__heart--tri" aria-hidden="true" weight="bold" />
+      <span className="pet-hero-showcase__trail pet-hero-showcase__trail--left" aria-hidden="true" />
+      <span className="pet-hero-showcase__trail pet-hero-showcase__trail--tri-right" aria-hidden="true" />
+    </div>
+  )
+}
+
+const SlideThreeShowcase = ({ active, slide }: { active: boolean; slide: SlideContent }) => {
+  const ctaContent = (
+    <>
+      <span>{slide.ctaLabel}</span>
+      <span className="pet-hero-showcase__cta-icon pet-hero-showcase__cta-icon--arrow" aria-hidden="true">
+        <ArrowRight weight="bold" />
+      </span>
+    </>
+  )
+
+  return (
+    <div className="pet-hero-showcase pet-hero-showcase--slide-3">
+      <div className="pet-hero-showcase__copy pet-hero-showcase__copy--slide-3">
+        <div className="pet-hero-showcase__badge pet-hero-showcase__badge--daily" aria-label="Para su día a día">
+          <span>PARA SU DÍA A DÍA</span>
+          <PawPrint aria-hidden="true" weight="fill" />
+        </div>
+
+        <h2 className="pet-hero-showcase__daily-title" aria-label={slide.title}>
+          <span className="pet-hero-showcase__daily-top">Todo para su</span>
+          <span className="pet-hero-showcase__daily-main">día a día,</span>
+          <span className="pet-hero-showcase__daily-tag">
+            en un solo lugar
+            <Heart aria-hidden="true" weight="bold" />
+          </span>
+        </h2>
+
+        <p className="pet-hero-showcase__subtitle pet-hero-showcase__subtitle--slide-3">
+          {slide.subtitle}
+        </p>
+
+        <div className="pet-hero-showcase__actions pet-hero-showcase__actions--slide-3">
+          {active ? (
+            <Link className="pet-hero-showcase__cta pet-hero-showcase__cta--teal-arrow" href={slide.ctaHref}>
+              {ctaContent}
+            </Link>
+          ) : (
+            <span className="pet-hero-showcase__cta pet-hero-showcase__cta--teal-arrow" aria-hidden="true">
+              {ctaContent}
+            </span>
+          )}
+
+          <div className="pet-hero-showcase__proof pet-hero-showcase__proof--slide-3" aria-label="Beneficios para su dia a dia">
+            <span className="pet-hero-showcase__proof-item">
+              <span className="pet-hero-showcase__proof-icon" aria-hidden="true">
+                <BowlFood weight="bold" />
+              </span>
+              <span>Alimentos de alta calidad</span>
+            </span>
+            <span className="pet-hero-showcase__proof-item">
+              <span className="pet-hero-showcase__proof-icon" aria-hidden="true">
+                <Bone weight="bold" />
+              </span>
+              <span>Snacks y juguetes que los hacen felices</span>
+            </span>
+            <span className="pet-hero-showcase__proof-item">
+              <span className="pet-hero-showcase__proof-icon" aria-hidden="true">
+                <ShieldCheck weight="bold" />
+              </span>
+              <span>Cuidado diario con amor</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <PawPrint className="pet-hero-showcase__paw pet-hero-showcase__paw--top-left" aria-hidden="true" weight="fill" />
+      <PawPrint className="pet-hero-showcase__paw pet-hero-showcase__paw--daily-right" aria-hidden="true" weight="fill" />
+      <Heart className="pet-hero-showcase__heart pet-hero-showcase__heart--daily-left" aria-hidden="true" weight="bold" />
+      <span className="pet-hero-showcase__trail pet-hero-showcase__trail--daily-left" aria-hidden="true" />
+      <span className="pet-hero-showcase__trail pet-hero-showcase__trail--daily-right" aria-hidden="true" />
+    </div>
+  )
+}
+
+const SlideShowcase = ({ active, slide }: { active: boolean; slide: SlideContent }) => {
+  if (slide.id === 1) return <SlideOneShowcase active={active} slide={slide} />
+  if (slide.id === 2) return <SlideTwoShowcase active={active} slide={slide} />
+
+  return <SlideThreeShowcase active={active} slide={slide} />
 }
 
 const SliderSlideContent = ({
@@ -206,7 +453,7 @@ const SliderSlideContent = ({
   const shouldRenderImage = active || priority
 
   return (
-    <div className="slider-item relative h-full w-full overflow-hidden bg-[#46bcd3]">
+    <div className={`slider-item pet-hero-slide pet-hero-slide--${slide.id} relative h-full w-full overflow-hidden bg-[#46bcd3]`}>
       {shouldRenderImage ? (
         <HeroPicture
           alt={`Slide principal ${slide.id} de ParaMascotasEC`}
@@ -214,32 +461,7 @@ const SliderSlideContent = ({
           priority={priority}
         />
       ) : null}
-      <div className={`pet-hero-copy pet-hero-copy--slide-${slide.id}`}>
-        {slide.id === 1 ? (
-          <h1 className="pet-hero-title">
-            <span className="pet-hero-text pet-hero-text--desktop">{slide.title}</span>
-            <span className="pet-hero-text pet-hero-text--mobile">{slide.mobileTitle}</span>
-          </h1>
-        ) : (
-          <h2 className="pet-hero-title">
-            <span className="pet-hero-text pet-hero-text--desktop">{slide.title}</span>
-            <span className="pet-hero-text pet-hero-text--mobile">{slide.mobileTitle}</span>
-          </h2>
-        )}
-        <p className="pet-hero-subtitle">
-          <span className="pet-hero-text pet-hero-text--desktop">{slide.subtitle}</span>
-          <span className="pet-hero-text pet-hero-text--mobile">{slide.mobileSubtitle}</span>
-        </p>
-        {active ? (
-          <Link className="pet-hero-cta" href={slide.ctaHref}>
-            {slide.ctaLabel}
-          </Link>
-        ) : (
-          <span className="pet-hero-cta" aria-hidden="true">
-            {slide.ctaLabel}
-          </span>
-        )}
-      </div>
+      {active ? <SlideShowcase active={active} slide={slide} /> : null}
     </div>
   )
 }
@@ -312,7 +534,7 @@ const SliderPet = () => {
 
   return (
     <section
-      className="slider-block style-one pet-hero-frame mt-2 w-full overflow-hidden md:mt-3"
+      className={`slider-block style-one pet-hero-frame pet-hero-frame--slide-${slides[selectedIndex].id} mt-2 w-full overflow-hidden md:mt-3`}
       aria-roledescription="carousel"
       aria-label="Promociones principales"
       onMouseEnter={() => setIsPaused(true)}
@@ -344,8 +566,8 @@ const SliderPet = () => {
           </div>
         </div>
 
-        <div className="pet-hero-dots pointer-events-none absolute inset-x-0 bottom-1.5 z-10 flex items-center justify-center px-3 sm:bottom-5 md:bottom-6 md:px-4">
-          <div className="pet-hero-dots__track pointer-events-auto mx-auto flex items-center justify-center gap-1 rounded-full border border-black/10 bg-white/70 px-1.5 py-0.5 shadow-[0_4px_14px_rgba(0,0,0,0.14)] backdrop-blur-sm sm:gap-1.5 sm:px-2.5 sm:py-1 md:px-3 xl:gap-2">
+        <div className="pet-hero-dots pointer-events-none absolute inset-x-0 bottom-1.5 z-10 flex items-center justify-center px-3 sm:bottom-4 md:bottom-5 md:px-4">
+          <div className="pet-hero-dots__track pointer-events-auto mx-auto flex items-center justify-center gap-1 rounded-full border border-black/10 bg-white/70 px-1.5 py-0.5 shadow-[0_4px_14px_rgba(0,0,0,0.14)] backdrop-blur-sm sm:gap-1.5 sm:px-2 sm:py-0.5 md:px-2.5 xl:gap-2">
             {slides.map((slide, index) => (
               <button
                 key={slide.id}
@@ -353,10 +575,10 @@ const SliderPet = () => {
                 aria-label={`Ir al slide ${index + 1}`}
                 aria-pressed={selectedIndex === index}
                 onClick={() => goToSlide(index)}
-                className="pet-hero-dots__btn flex h-8 w-8 items-center justify-center rounded-full transition-colors duration-300 hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)] sm:h-9 sm:w-9 md:h-10 md:w-10"
+                className="pet-hero-dots__btn flex h-7 w-7 items-center justify-center rounded-full transition-colors duration-300 hover:bg-white/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--blue)] sm:h-8 sm:w-8 md:h-8 md:w-8"
               >
                 <span
-                  className={`pet-hero-dots__dot block h-2 w-2 rounded-full border transition-all duration-300 sm:h-2.5 sm:w-2.5 ${
+                  className={`pet-hero-dots__dot block h-2 w-2 rounded-full border transition-all duration-300 sm:h-2 sm:w-2 ${
                   selectedIndex === index
                     ? 'scale-110 border-[var(--blue)] bg-[var(--blue)] shadow-[0_0_0_2px_rgba(10,123,143,0.18)] sm:shadow-[0_0_0_3px_rgba(10,123,143,0.18)]'
                     : 'border-[var(--blue)]/45 bg-white hover:bg-[var(--blue)]/12'

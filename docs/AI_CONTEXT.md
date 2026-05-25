@@ -160,6 +160,126 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-05-25 - Rebalance de Proporciones Internas del Hero (Dev)
+
+Objetivo: reducir la escala interna de los elementos graficos de los 3 slides sin tocar tamanos globales, aspect ratios ni breakpoints del slider, manteniendo aire superior e inferior.
+
+Cambios frontend:
+- `app/src/styles/globals.scss` reduce tipografias, badges, CTAs, iconos y bloques de beneficios de `pet-hero-showcase*` para que el overlay no se vea sobredimensionado.
+- Se agrego un breakpoint especifico `1920-2559.98px` para el overlay nuevo; evita que FHD use una escala demasiado grande antes de saltar a QHD.
+- Slides 2 y 3 compactan beneficios y CTAs en FHD para que no rocen ni se recorten contra el limite inferior del hero.
+- Se conservan los tamanos globales del banner y las reglas existentes de tablet/movil; bajo `1280px` los beneficios siguen ocultos para priorizar CTA/copy.
+
+Verificacion:
+- Capturas Playwright actualizadas en `paramascotasec/docs/screenshots/2026-05-25-slide-showcase-proportions/`; se regeneraron las de `1920x961` despues del ajuste FHD.
+- `127.0.0.1:3000` responde `200` y `/healthz` responde `ok`.
+- `git diff --check` paso.
+- `npm run lint` sigue bloqueado por incompatibilidad preexistente de ESLint 10.4.0: `TypeError: scopeManager.addGlobals is not a function`.
+- `npm run typecheck` sigue bloqueado por configuracion preexistente TS6: `TS5101` por `baseUrl` deprecado sin `ignoreDeprecations`.
+
+### 2026-05-25 - Extension del Overlay Grafico a Slides 2 y 3 (Dev)
+
+Objetivo: aplicar a los slides 2 y 3 el mismo enfoque visual del slide 1, construyendo el tratamiento grafico con React/CSS sobre las imagenes actuales y sin cambiar los tamanos globales del slider.
+
+Cambios frontend:
+- `app/src/components/Slider/SliderPet.tsx` refactoriza el hero para que los 3 slides usen render especializado via `SlideShowcase`.
+- Slide 2 agrega `SlideTwoShowcase` con:
+  - badge `EDICION ECUADOR` con bandera CSS.
+  - titulo compuesto `La Tri` amarillo, `tambien`, `se vive en` y banda amarilla `cuatro patas`.
+  - CTA amarillo `Ver camisetas` con flecha circular.
+  - beneficios `Calidad premium`, `Diseno oficial de Ecuador`, `Hechos para los fanaticos`.
+- Slide 3 agrega `SlideThreeShowcase` con:
+  - badge `PARA SU DIA A DIA` con huella.
+  - titulo compuesto `Todo para su`, `dia a dia,` y etiqueta `en un solo lugar`.
+  - CTA teal `Ver productos` con flecha circular.
+  - beneficios con iconos circulares: alimentos, snacks/juguetes y cuidado diario.
+- `SliderPet.tsx` sincroniza dimensiones declarativas QHD/UHD con el ratio visual ya corregido (`5120x1000`, `6400x1200`).
+- Los overlays se renderizan solo para el slide activo para evitar fugas visuales de elementos absolutos durante cambios de slide.
+- `app/src/styles/globals.scss` agrega variantes `pet-hero-showcase--slide-2` y `--slide-3`, capas pseudo-elemento, CTAs, badges, bandas, beneficios y decoraciones por slide.
+- CSS responsive:
+  - beneficios visibles en desktop amplio.
+  - slide 3 compacta beneficios en `1280-1535.98px` ocultando el tercero para evitar choque con el perro y el paginador.
+  - beneficios ocultos bajo `1280px` por la regla base ya existente.
+  - movil/tablet mantienen CTA visible y copy compacto.
+- `app/src/generated/imageVersionManifest.json` fue regenerado por el prelint (`npm run images:manifest`).
+
+Despliegue/verificacion:
+- No se ejecuto deploy de produccion. El cambio quedo servido en `127.0.0.1:3000` por hot reload del contenedor dev activo.
+- Capturas Playwright guardadas en `paramascotasec/docs/screenshots/2026-05-25-slide-showcase-all/` para slides 1, 2 y 3 en:
+  - `2560x1440`
+  - `1920x961`
+  - `1366x768`
+  - `1024x768`
+  - `390x844`
+- Verificacion visual: slide 1 mantiene proporciones restauradas; slides 2 y 3 usan los fondos actuales y se aproximan a las referencias; CTAs visibles; beneficios no quedan recortados; dots visibles en slides 2/3 sin tapar contenido critico.
+- `git diff --check` paso.
+- `npm run lint` no pudo completarse por incompatibilidad preexistente de ESLint 10.4.0: `TypeError: scopeManager.addGlobals is not a function`.
+- `npm run typecheck` no pudo completarse por configuracion preexistente TS6: `TS5101` por `baseUrl` deprecado sin `ignoreDeprecations`.
+
+Pendientes:
+- QA visual manual en navegador real antes de promover a produccion, especialmente autoplay y transiciones en desktop.
+- Corregir toolchain preexistente de ESLint/TS para recuperar `npm run test`.
+
+### 2026-05-25 - Redisenio del Slide 1 Hero con Overlay Comercial (Dev)
+
+Objetivo: rehacer visualmente el slide 1 del hero para aproximarlo a la referencia adjunta, manteniendo la misma imagen de fondo actual y construyendo los efectos con codigo.
+
+Cambios frontend:
+- `app/src/components/Slider/SliderPet.tsx` agrega un render especializado para `slide.id === 1` (`SlideOneShowcase`) con:
+  - badge superior `TIENDA ONLINE EN ECUADOR` con bandera CSS.
+  - H1 compuesto `Todo para tu` + banda amarilla `mascota` + etiqueta `en un solo lugar`.
+  - CTA amarillo `Comprar ahora` con icono de bolsa.
+  - barra de beneficios con iconos (`Perros y gatos`, `Entrega a domicilio`, `Atencion cercana`).
+  - decoracion en codigo: corazones, huellas, trazos punteados y marcas tipo doodle.
+- `SliderPet.tsx` conserva el render anterior para slides 2 y 3, y agrega clase dinamica `pet-hero-frame--slide-{id}` para poder ocultar dots solo en desktop cuando el slide 1 esta activo.
+- `app/src/styles/globals.scss` agrega estilos scoped `pet-hero-showcase*`:
+  - capas pseudo-elemento sobre la imagen actual para profundidad/contraste sin reemplazar assets.
+  - tipografias, bandas, sombras, bordes punteados, CTA y decoraciones responsive.
+  - version compacta en movil/tablet con CTA visible y barra de beneficios oculta bajo 1280px.
+  - dots del carousel ocultos solo en desktop para `pet-hero-frame--slide-1`, alineado con la referencia y evitando solapes con CTA/beneficios.
+- Correccion posterior solicitada por el usuario:
+  - Se revierte cualquier cambio de proporcion/altura exclusivo del slide 1; quedan intactos los aspect-ratio y breakpoints globales del hero que ya estaban funcionando.
+  - Se eliminan los recortes CSS duplicados de perro/gato; vuelve a usarse la imagen actual del slide como fondo unico.
+  - Se conserva solo el tratamiento grafico dentro del marco original: badge, H1 compuesto, banda `mascota`, CTA, beneficios y doodles.
+- Ajuste posterior para pantallas 1440p/QHD:
+  - `app/src/styles/globals.scss` corrige el breakpoint `min-width: 2560px` de `aspect-ratio: 5120 / 1300` a `5120 / 1000`, reduciendo el alto visual del hero en pantallas 2560x1440 de ~646px a ~500px.
+  - El breakpoint `min-width: 3840px` pasa de `6400 / 2200` a `6400 / 1200` para evitar la misma desproporcion en 4K.
+  - El overlay `pet-hero-showcase` baja en QHD con `--pet-showcase-top: clamp(46px, 2.35vw, 68px)` para distribuir mejor titulo, subtitulo, CTA y beneficios dentro del nuevo alto.
+- Ajuste menor posterior: se corrigen ambos doodles junto al titulo (`pet-hero-showcase__burst--left/right`) redefiniendo cada trazo con posicion propia para que se lean como rayos separados, no como flechas.
+- Ajuste fino posterior contra referencia:
+  - Badge superior mas ancho y centrado en desktop (`min-width` responsive) para acercarse al pill de la referencia.
+  - Titulo/banda `mascota` ligeramente mas dominante en `>=1280px`, con rayos mas largos y separados alrededor del titulo.
+  - Se agrega override compacto para `1280-1919.98px` porque ese rango tiene menor alto de hero; evita recorte del CTA/barra de beneficios tras agrandar el bloque superior.
+  - CTA y barra de beneficios en desktop grande bajan su altura maxima a `clamp(..., 50px)` para no quedar pegados al borde inferior.
+
+Despliegue/verificacion:
+- No se ejecuto deploy de produccion. El cambio quedo servido en el contenedor dev activo `paramascotasec-app-dev` via hot reload.
+- `curl http://127.0.0.1:3000/healthz` responde `ok` y `/` responde HTTP 200.
+- CSS servido local confirma reglas `pet-hero-showcase*` en `/_next/static/css/app/layout.css` y no contiene los overrides retirados (`aspect-ratio: 1920 / 670`, `min-height: clamp(440px, 35vw, 680px)`, recortes `pet-hero-showcase__animal`).
+- `git diff --check` paso.
+- Capturas Playwright guardadas en `paramascotasec/docs/screenshots/2026-05-25-slide1-showcase/`:
+  - `home_slide1_1920x961_restored_proportions.png`
+  - `home_slide1_1366x768_restored_proportions.png`
+  - `home_slide1_1024x768_restored_proportions.png`
+  - `home_slide1_390x844_restored_proportions.png`
+  - `home_slide1_2560x1440_qhd_fix_v2.png`
+  - `home_slide1_1920x961_after_qhd_fix.png`
+  - `home_slide1_1366x768_after_qhd_fix.png`
+  - `home_slide1_burst_right_flipped_1920x961.png`
+  - `home_slide1_burst_right_outward_v2_1920x961.png`
+  - `home_slide1_title_rays_v1_1920x961.png`
+  - `home_slide1_reference_tune_v2_1366x768.png`
+  - `home_slide1_reference_tune_v3_1920x961.png`
+  - `home_slide1_reference_tune_v3_2560x1440.png`
+- CSS servido local confirma `aspect-ratio: 5120/1000`, `aspect-ratio: 6400/1200` y el nuevo `--pet-showcase-top` QHD; ya no aparece `5120/1300`.
+- CSS servido local confirma posiciones independientes para los trazos de `pet-hero-showcase__burst--left/right`, evitando el efecto de flecha.
+- CSS servido local confirma el override `1280-1919.98px`, el nuevo `--pet-showcase-title-top: clamp(42px, 3.2vw, 66px)` para desktop grande y CTA/barra con altura maxima de `50px`.
+- `npm run lint` no pudo completarse por incompatibilidad preexistente de ESLint 10.4.0: `TypeError: scopeManager.addGlobals is not a function`.
+- `npm run typecheck` no pudo completarse por configuracion preexistente TS6: `TS5101` por `baseUrl` deprecado sin `ignoreDeprecations`.
+
+Pendientes:
+- QA visual final en navegador real del usuario y, si se aprueba, promover a produccion usando scripts de deploy.
+
 ### 2026-05-25 - Rebuild Responsive del Slider Hero en Movil (Dev)
 
 Objetivo: corregir recorte del CTA y exceso de texto apretado en el hero principal en resoluciones moviles.
