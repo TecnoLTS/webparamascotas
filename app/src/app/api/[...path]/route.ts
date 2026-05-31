@@ -40,11 +40,44 @@ const buildTargetUrl = (req: NextRequest) => {
   return `${base}${path}${req.nextUrl.search}`
 }
 
-const forward = async (req: NextRequest) => {
-  const targetUrl = buildTargetUrl(req)
-  const headers = new Headers(req.headers)
-  headers.delete('content-length')
-  headers.delete('x-internal-proxy-token')
+const forwardedHeaderNames = [
+  'accept',
+  'accept-language',
+  'authorization',
+  'content-type',
+  'cookie',
+  'origin',
+  'referer',
+  'user-agent',
+  'x-csrf-token',
+  'x-requested-with',
+  'x-real-ip',
+  'x-xsrf-token',
+]
+
+const hopByHopResponseHeaders = [
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]
+
+const buildForwardHeaders = (req: NextRequest) => {
+  const headers = new Headers()
+  for (const name of forwardedHeaderNames) {
+    const value = req.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+
+  const forwardedFor = req.headers.get('x-forwarded-for')
+  if (forwardedFor) headers.set('x-forwarded-for', forwardedFor)
+
   const tenantHost = resolveTenantHost(req.headers.get('x-forwarded-host') || req.headers.get('host'))
   const forwardedProto = resolveRequestProto(req.headers.get('x-forwarded-proto'), req.url)
   if (tenantHost) {
@@ -53,11 +86,17 @@ const forward = async (req: NextRequest) => {
   }
   headers.set('x-forwarded-proto', forwardedProto)
   attachInternalProxyToken(headers)
+  return headers
+}
+
+const forward = async (req: NextRequest) => {
+  const targetUrl = buildTargetUrl(req)
+  const headers = buildForwardHeaders(req)
 
   const init: RequestInit = {
     method: req.method,
     headers,
-    body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.text(),
+    body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer(),
     cache: 'no-store',
   }
 
@@ -69,8 +108,9 @@ const forward = async (req: NextRequest) => {
   }
 
   const resHeaders = new Headers(res?.headers)
-  resHeaders.delete('content-encoding')
-  resHeaders.delete('content-length')
+  for (const name of hopByHopResponseHeaders) {
+    resHeaders.delete(name)
+  }
   resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   resHeaders.set('Pragma', 'no-cache')
   resHeaders.set('Expires', '0')
@@ -80,11 +120,21 @@ const forward = async (req: NextRequest) => {
     appendLogoutCookies(resHeaders)
   }
 
-  const body = res ? await res.arrayBuffer() : new TextEncoder().encode(JSON.stringify({ ok: true }))
-  const status = res?.status ?? 200
+  if (!res) {
+    resHeaders.set('Content-Type', 'application/json; charset=utf-8')
+    return new Response(
+      JSON.stringify({ ok: false, error: { message: 'No se pudo conectar con el backend.' } }),
+      {
+        status: 502,
+        headers: resHeaders,
+      }
+    )
+  }
+
+  const body = await res.arrayBuffer()
 
   return new Response(body, {
-    status,
+    status: res.status,
     headers: resHeaders,
   })
 }

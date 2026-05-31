@@ -106,6 +106,26 @@ const getForwardedHost = (req: NextRequest) =>
 const getForwardedProto = (req: NextRequest) =>
   (req.headers.get('x-forwarded-proto') || req.nextUrl.protocol.replace(':', '') || '').split(',')[0]?.trim().toLowerCase()
 
+const applySecurityHeaders = (
+  headers: Headers,
+  req: NextRequest,
+  csp: string,
+  cspReportOnly: string,
+  nonce: string,
+) => {
+  headers.set('Content-Security-Policy', csp)
+  headers.set('Content-Security-Policy-Report-Only', cspReportOnly)
+  headers.set('x-nonce', nonce)
+  headers.set('X-Content-Type-Options', 'nosniff')
+  headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self), payment=(), usb=(), bluetooth=()')
+  headers.set('X-Frame-Options', 'SAMEORIGIN')
+
+  if (getForwardedProto(req) === 'https') {
+    headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')
+  }
+}
+
 const buildCanonicalHostRedirect = (req: NextRequest) => {
   const host = getForwardedHost(req)
   const proto = getForwardedProto(req)
@@ -168,17 +188,13 @@ export function middleware(req: NextRequest) {
 
   const canonicalHostRedirect = buildCanonicalHostRedirect(req)
   if (canonicalHostRedirect) {
-    canonicalHostRedirect.headers.set('Content-Security-Policy', csp)
-    canonicalHostRedirect.headers.set('Content-Security-Policy-Report-Only', cspReportOnly)
-    canonicalHostRedirect.headers.set('x-nonce', nonce)
+    applySecurityHeaders(canonicalHostRedirect.headers, req, csp, cspReportOnly, nonce)
     return canonicalHostRedirect
   }
 
   const legacyRedirect = redirectLegacySeoRoutes(req)
   if (legacyRedirect) {
-    legacyRedirect.headers.set('Content-Security-Policy', csp)
-    legacyRedirect.headers.set('Content-Security-Policy-Report-Only', cspReportOnly)
-    legacyRedirect.headers.set('x-nonce', nonce)
+    applySecurityHeaders(legacyRedirect.headers, req, csp, cspReportOnly, nonce)
     return legacyRedirect
   }
 
@@ -196,9 +212,7 @@ export function middleware(req: NextRequest) {
           'cache-control': 'no-store',
         },
       })
-      blockedResponse.headers.set('Content-Security-Policy', csp)
-      blockedResponse.headers.set('Content-Security-Policy-Report-Only', cspReportOnly)
-      blockedResponse.headers.set('x-nonce', nonce)
+      applySecurityHeaders(blockedResponse.headers, req, csp, cspReportOnly, nonce)
       return blockedResponse
     }
   }
@@ -208,9 +222,7 @@ export function middleware(req: NextRequest) {
       headers: requestHeaders,
     },
   })
-  response.headers.set('Content-Security-Policy', csp)
-  response.headers.set('Content-Security-Policy-Report-Only', cspReportOnly)
-  response.headers.set('x-nonce', nonce)
+  applySecurityHeaders(response.headers, req, csp, cspReportOnly, nonce)
   return response
 }
 

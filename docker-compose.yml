@@ -4,8 +4,8 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      target: runner
       args:
-        APP_ENV: production
         NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
         NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
@@ -13,6 +13,13 @@ services:
     container_name: paramascotasec-app
     hostname: paramascotasec-app
     restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       TZ: America/Guayaquil
       NODE_ENV: production
@@ -25,12 +32,12 @@ services:
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
       NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
       BACKEND_URL_INTERNAL: ${BACKEND_URL_INTERNAL:-http://paramascotasec-backend-web/api}
-      INTERNAL_PROXY_TOKEN: ${INTERNAL_PROXY_TOKEN}
+      INTERNAL_PROXY_TOKEN_FILE: /run/secrets/internal_proxy_token
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
       PANEL_IP_MODE: ${PANEL_IP_MODE:-off}
       PANEL_IP_ALLOWLIST: ${PANEL_IP_ALLOWLIST:-}
     working_dir: /app
-    command: npm run start -- --hostname 0.0.0.0 --port ${PORT:-3000}
+    command: node_modules/.bin/next start --hostname 0.0.0.0 --port ${PORT:-3000}
     healthcheck:
       test: ["CMD", "node", "-e", "const net=require('net');const socket=net.connect({host:'127.0.0.1',port:Number(process.env.PORT||3000)});socket.on('connect',()=>{socket.end();process.exit(0)});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1500)"]
       interval: 30s
@@ -40,7 +47,14 @@ services:
     ports:
       - "${APP_BIND_IP:-127.0.0.1}:${PORT:-3000}:${PORT:-3000}"
     volumes:
-      - ./app/public/uploads:/app/public/uploads
+      - ./app/public/uploads:/app/public/uploads:rw
+    tmpfs:
+      - /tmp:size=128m,mode=1777
+      - /app/.next/cache:size=512m,uid=10001,gid=10001,mode=1777
+    secrets:
+      - source: internal_proxy_token
+        target: internal_proxy_token
+        mode: 0444
     networks:
       edge:
         aliases:
@@ -52,6 +66,7 @@ services:
     build:
       context: ./app
       dockerfile: Dockerfile
+      target: dev
       args:
         APP_ENV: development
         NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
@@ -76,7 +91,7 @@ services:
       NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
       NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
       BACKEND_URL_INTERNAL: ${BACKEND_URL_INTERNAL:-http://paramascotasec-backend-web/api}
-      INTERNAL_PROXY_TOKEN: ${INTERNAL_PROXY_TOKEN}
+      INTERNAL_PROXY_TOKEN_FILE: /run/secrets/internal_proxy_token
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
       PANEL_IP_MODE: ${PANEL_IP_MODE:-off}
       PANEL_IP_ALLOWLIST: ${PANEL_IP_ALLOWLIST:-}
@@ -109,7 +124,11 @@ services:
       retries: 20
       start_period: 30s
     ports:
-      - "${APP_DEV_BIND_IP:-0.0.0.0}:${PORT:-3000}:${PORT:-3000}"
+      - "${APP_DEV_BIND_IP:-127.0.0.1}:${PORT:-3000}:${PORT:-3000}"
+    secrets:
+      - source: internal_proxy_token
+        target: internal_proxy_token
+        mode: 0444
     networks:
       edge:
         aliases:
@@ -124,3 +143,7 @@ networks:
 volumes:
   paramascotasec_node_modules:
   paramascotasec_next_build:
+
+secrets:
+  internal_proxy_token:
+    environment: INTERNAL_PROXY_TOKEN

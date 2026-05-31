@@ -1,48 +1,78 @@
 # syntax=docker/dockerfile:1.7
-FROM node:26-alpine
+ARG NODE_IMAGE=node:24-alpine
 
-ENV TZ=America/Guayaquil
-ENV NEXT_TELEMETRY_DISABLED=1
+FROM ${NODE_IMAGE} AS base
+
+ENV TZ=America/Guayaquil \
+    NEXT_TELEMETRY_DISABLED=1
+
 RUN npm install -g npm@11.16.0 --no-audit --no-fund && \
     apk add --no-cache tzdata && \
     ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 WORKDIR /app
 
-# Control de ambiente (development | production)
-ARG APP_ENV=production
-ARG NEXT_PUBLIC_BASE_URL=
-ARG NEXT_PUBLIC_BACKEND_URL=
-ARG NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME=pm_csrf
-ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
-ENV APP_ENV=${APP_ENV}
-ENV NODE_ENV=development
-ENV NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL}
-ENV NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
-ENV NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME=${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME}
-ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+FROM base AS dev
 
-# Instala dependencias para build de producción.
-# En desarrollo se omite aquí porque /app y /app/node_modules se montan por volumen
-# y el entrypoint sincroniza dependencias solo cuando hace falta.
-COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    if [ "$APP_ENV" = "production" ]; then NODE_ENV=development npm ci; else echo "Skip dependency install in development image"; fi \
-    && mkdir -p /app/node_modules \
-    && sha1sum /app/package-lock.json | awk '{print $1}' > /app/node_modules/.package-lock.hash
+ENV APP_ENV=development \
+    NODE_ENV=development
 
-# Copia el código de la app
-COPY . .
-
-# Build de producción de Next (omitido en dev para que el contenedor arranque más rápido).
-# Luego se eliminan devDependencies para reducir imagen final de runtime.
-RUN --mount=type=cache,target=/app/.next/cache \
-    if [ "$APP_ENV" = "production" ]; then NODE_ENV=production npm run build && npm prune --omit=dev --ignore-scripts; else echo "Skip build in development"; fi
-
-# Copia el entrypoint
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 EXPOSE 3000
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["sh", "-c", "if [ \"$APP_ENV\" = \"development\" ]; then npm run dev -- --hostname 0.0.0.0 --port 3000; else npm run start -- --hostname 0.0.0.0 --port 3000; fi"]
+CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0", "--port", "3000"]
+
+FROM base AS deps
+
+COPY package*.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+FROM base AS builder
+
+ARG NEXT_PUBLIC_BASE_URL=
+ARG NEXT_PUBLIC_BACKEND_URL=
+ARG NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME=pm_csrf
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+
+ENV APP_ENV=production \
+    NODE_ENV=production \
+    NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL} \
+    NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL} \
+    NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME=${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME} \
+    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build && \
+    npm prune --omit=dev --ignore-scripts
+
+FROM base AS runner
+
+ENV APP_ENV=production \
+    NODE_ENV=production \
+    PORT=3000
+
+RUN addgroup -S -g 10001 app && \
+    adduser -S -D -H -u 10001 -G app appuser
+
+COPY --from=builder --chown=10001:10001 /app/package*.json ./
+COPY --from=builder --chown=10001:10001 /app/next.config.js ./next.config.js
+COPY --from=builder --chown=10001:10001 /app/public ./public
+COPY --from=builder --chown=10001:10001 /app/.next ./.next
+COPY --from=builder --chown=10001:10001 /app/node_modules ./node_modules
+COPY --chown=root:root docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+
+RUN chmod 755 /usr/local/bin/docker-entrypoint.sh && \
+    mkdir -p /app/public/uploads /app/.next/cache && \
+    chown -R 10001:10001 /app
+
+USER appuser
+
+EXPOSE 3000
+
+ENTRYPOINT ["docker-entrypoint.sh"]
+CMD ["node_modules/.bin/next", "start", "--hostname", "0.0.0.0", "--port", "3000"]

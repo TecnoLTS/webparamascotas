@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+if [ -z "${INTERNAL_PROXY_TOKEN:-}" ] && [ -n "${INTERNAL_PROXY_TOKEN_FILE:-}" ] && [ -r "$INTERNAL_PROXY_TOKEN_FILE" ]; then
+  INTERNAL_PROXY_TOKEN="$(cat "$INTERNAL_PROXY_TOKEN_FILE")"
+  export INTERNAL_PROXY_TOKEN
+fi
+
 lock_hash_file="/app/node_modules/.package-lock.hash"
 # Evita que falle si el hash previo o el lock no existen aún.
 current_hash="$(sha1sum /app/package-lock.json 2>/dev/null | awk '{print $1}' || true)"
@@ -16,6 +21,10 @@ dependencies_ready() {
 if [ "$APP_ENV" = "production" ]; then
   if ! dependencies_ready; then
     echo "Faltan dependencias de producción dentro de la imagen."
+    exit 1
+  fi
+  if [ ! -f /app/.next/BUILD_ID ]; then
+    echo "Falta el build de Next dentro de la imagen."
     exit 1
   fi
 else
@@ -35,12 +44,6 @@ else
   fi
   echo "$current_hash" > "$lock_hash_file"
   fi
-fi
-
-# Build en caliente si estamos en producción y falta el build
-if [ "$APP_ENV" = "production" ] && [ ! -f /app/.next/BUILD_ID ]; then
-  echo "Construyendo Next para producción..."
-  npm run build
 fi
 
 exec "$@"

@@ -1,5 +1,6 @@
-import { promises as fs } from 'fs'
+import { createReadStream, promises as fs } from 'fs'
 import path from 'path'
+import { Readable } from 'stream'
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
@@ -11,7 +12,6 @@ const contentTypes: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.jpg': 'image/jpeg',
   '.png': 'image/png',
-  '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
 }
 
@@ -46,14 +46,19 @@ export async function GET(
       return new NextResponse('Not found', { status: 404 })
     }
 
-    const body = await fs.readFile(/* turbopackIgnore: true */ filePath)
     const contentType = contentTypes[path.extname(filePath).toLowerCase()] || 'application/octet-stream'
+    if (contentType === 'application/octet-stream') {
+      return new NextResponse('Not found', { status: 404 })
+    }
+
+    const body = Readable.toWeb(createReadStream(/* turbopackIgnore: true */ filePath)) as ReadableStream<Uint8Array>
 
     return new NextResponse(body, {
       headers: {
         'Cache-Control': 'public, max-age=31536000, immutable',
-        'Content-Length': String(body.byteLength),
+        'Content-Length': String(stat.size),
         'Content-Type': contentType,
+        'X-Content-Type-Options': 'nosniff',
       },
     })
   } catch {

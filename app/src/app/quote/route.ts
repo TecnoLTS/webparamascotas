@@ -26,12 +26,17 @@ export async function POST(req: Request) {
   attachInternalProxyToken(outboundHeaders)
 
   const url = resolveBackendUrl()
-  const res = await fetch(url, {
-    method: 'POST',
-    cache: 'no-store',
-    headers: outboundHeaders,
-    body: JSON.stringify(payload),
-  })
+  let res: Response
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: outboundHeaders,
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    return NextResponse.json({ ok: false, error: { message: 'No se pudo conectar con el backend.' } }, { status: 502 })
+  }
 
   const body = await res.json().catch(() => null)
   if (!res.ok) {

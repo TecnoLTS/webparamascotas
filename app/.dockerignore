@@ -1,6 +1,16 @@
 node_modules
 .next
 .git
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets
+secrets/
 npm-debug.log
 logs
 *.log

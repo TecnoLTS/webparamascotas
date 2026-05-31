@@ -6,6 +6,34 @@ export const dynamic = 'force-dynamic'
 
 const getBackendBase = () => (process.env.BACKEND_URL_INTERNAL || 'http://paramascotasec-backend-web/api').replace(/\/$/, '')
 
+const forwardedHeaderNames = [
+  'accept',
+  'accept-language',
+  'authorization',
+  'content-type',
+  'cookie',
+  'origin',
+  'referer',
+  'user-agent',
+  'x-csrf-token',
+  'x-requested-with',
+  'x-real-ip',
+  'x-xsrf-token',
+]
+
+const hopByHopResponseHeaders = [
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'proxy-authenticate',
+  'proxy-authorization',
+  'te',
+  'trailer',
+  'transfer-encoding',
+  'upgrade',
+]
+
 const buildExpiredCookie = (name: string, options?: { domain?: string; httpOnly?: boolean }) => {
   const parts = [
     `${name}=`,
@@ -42,9 +70,13 @@ export const POST = async (req: NextRequest) => {
   const base = getBackendBase()
   const targetUrl = `${base}/auth/logout${req.nextUrl.search}`
 
-  const headers = new Headers(req.headers)
-  headers.delete('content-length')
-  headers.delete('x-internal-proxy-token')
+  const headers = new Headers()
+  for (const name of forwardedHeaderNames) {
+    const value = req.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+  const forwardedFor = req.headers.get('x-forwarded-for')
+  if (forwardedFor) headers.set('x-forwarded-for', forwardedFor)
 
   const tenantHost = resolveTenantHost(req.headers.get('x-forwarded-host') || req.headers.get('host'))
   const forwardedProto = resolveRequestProto(req.headers.get('x-forwarded-proto'), req.url)
@@ -58,7 +90,7 @@ export const POST = async (req: NextRequest) => {
   const init: RequestInit = {
     method: 'POST',
     headers,
-    body: await req.text(),
+    body: await req.arrayBuffer(),
     cache: 'no-store',
   }
 
@@ -70,8 +102,9 @@ export const POST = async (req: NextRequest) => {
   }
 
   const resHeaders = new Headers(backendRes?.headers)
-  resHeaders.delete('content-encoding')
-  resHeaders.delete('content-length')
+  for (const name of hopByHopResponseHeaders) {
+    resHeaders.delete(name)
+  }
   resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   resHeaders.set('Pragma', 'no-cache')
   resHeaders.set('Expires', '0')
@@ -79,8 +112,13 @@ export const POST = async (req: NextRequest) => {
   resHeaders.set('Clear-Site-Data', '"cookies", "storage"')
   appendLogoutCookies(resHeaders)
 
-  const body = backendRes ? await backendRes.arrayBuffer() : new TextEncoder().encode(JSON.stringify({ ok: true }))
-  const status = backendRes?.status ?? 200
+  if (!backendRes) {
+    resHeaders.set('Content-Type', 'application/json; charset=utf-8')
+    return new Response(
+      JSON.stringify({ ok: false, error: { message: 'No se pudo conectar con el backend.' } }),
+      { status: 502, headers: resHeaders }
+    )
+  }
 
-  return new Response(body, { status, headers: resHeaders })
+  return new Response(await backendRes.arrayBuffer(), { status: backendRes.status, headers: resHeaders })
 }
