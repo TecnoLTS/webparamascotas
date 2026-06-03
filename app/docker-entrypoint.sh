@@ -47,8 +47,24 @@ else
 fi
 
 if [ "$(id -u)" = "0" ]; then
-  mkdir -p /app/src/generated /app/.next /app/node_modules
-  chown -R appuser:app /app/src/generated /app/.next /app/node_modules 2>/dev/null || true
+  mkdir -p \
+    /app/src/generated \
+    /app/.next \
+    /app/node_modules \
+    /app/public/images/collection/home-top/generated \
+    /app/public/images/slider/generated \
+    /app/public/uploads/products
+  touch /app/next-env.d.ts /app/tsconfig.tsbuildinfo 2>/dev/null || true
+  chown -R \
+    appuser:app \
+    /app/src/generated \
+    /app/.next \
+    /app/node_modules \
+    /app/public/images/collection/home-top/generated \
+    /app/public/images/slider/generated \
+    /app/public/uploads/products \
+    2>/dev/null || true
+  chown appuser:app /app/next-env.d.ts /app/tsconfig.tsbuildinfo 2>/dev/null || true
   exec su-exec appuser:app "$@"
 fi
 

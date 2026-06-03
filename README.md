@@ -20,9 +20,9 @@ cd /home/admincenter/contenedores/paramascotasec
 ./scripts/deploy-development.sh
 ```
 
-*(Modos internos vía `FRONTEND_DEV_RUNTIME`):*
-*   `hot`: Hot Reload. Inyecta JavaScript. Soporta `FRONTEND_DEV_BUNDLER` como `webpack` o `turbopack`. Costo alto en memoria RAM.
-*   `stable`: Compila temporalmente en formato `production` pero bajo `development`. Exige menor RAM y evita quiebres detrás del gateway.
+El despliegue de development usa `FRONTEND_DEV_RUNTIME=stable`: compila temporalmente en formato `production`, conserva `APP_ENV=development` y corre detrás del gateway con CSP estricta.
+
+`hot`/HMR no es un modo de despliegue del ambiente detrás del gateway. Si se necesita para editar UI, debe usarse como herramienta local explícita, no como validación de development.
 
 ---
 

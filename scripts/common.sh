@@ -248,12 +248,16 @@ deploy_frontend() {
 
   if [[ "${mode}" == "development" ]]; then
     dev_runtime="$(read_env_value "${env_file}" "FRONTEND_DEV_RUNTIME")"
-    dev_runtime="${dev_runtime:-hot}"
-    if [[ "${dev_runtime}" == "stable" ]]; then
-      echo "Precompilando frontend development/stable para evitar compilacion en caliente detras del gateway..."
-      compose_cmd "${env_file}" "${mode}" run --rm --no-deps app-dev \
-        sh -lc 'mkdir -p .next && rm -f .next/BUILD_ID && NODE_ENV=production npm run build'
+    dev_runtime="${dev_runtime:-stable}"
+    if [[ "${dev_runtime}" != "stable" ]]; then
+      echo "FRONTEND_DEV_RUNTIME=${dev_runtime} no es valido para deploy development detras del gateway." >&2
+      echo "Usa FRONTEND_DEV_RUNTIME=stable para mantener CSP estricta igual que production." >&2
+      exit 1
     fi
+    compose_cmd "${env_file}" "${mode}" build app-dev
+    echo "Precompilando frontend development/stable con CSP estricta detras del gateway..."
+    compose_cmd "${env_file}" "${mode}" run --rm --no-deps app-dev \
+      sh -lc 'mkdir -p .next && rm -f .next/BUILD_ID && NODE_ENV=production npm run build'
   fi
 
   compose_cmd "${env_file}" "${mode}" up -d --build --remove-orphans

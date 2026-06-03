@@ -101,11 +101,13 @@ export default async function SeoGuidePage({ params }: Props) {
     <>
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
       />

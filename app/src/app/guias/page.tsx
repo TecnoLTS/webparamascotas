@@ -73,11 +73,13 @@ export default async function GuiasPage() {
     <>
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />

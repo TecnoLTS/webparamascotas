@@ -275,17 +275,20 @@ export default async function CatalogSeoPage({ page = getAllCatalogPage(), searc
     <>
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
       />
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       {faqJsonLd ? (
         <script
           nonce={nonce}
+          suppressHydrationWarning
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
         />

@@ -115,16 +115,19 @@ export default async function SeoServicePage({ params }: Props) {
     <>
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceJsonLd) }}
       />
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />

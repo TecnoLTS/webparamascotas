@@ -6,6 +6,31 @@ const CSP_REPORT_URI = '/api/security/csp-report'
 const PRIVATE_IPV4_RULES = ['127.0.0.1/32', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']
 const CANONICAL_HOST = 'paramascotasec.com'
 const CANONICAL_ORIGIN = `https://${CANONICAL_HOST}`
+const ADMIN_PANEL_TABS = new Set([
+  'alerts',
+  'security-settings',
+  'reports',
+  'sales-ranking',
+  'products',
+  'inventory',
+  'catalogs',
+  'users',
+  'product-page',
+  'store-status',
+  'local-sales',
+  'quotations',
+  'admin-orders',
+  'shipments',
+  'billing-rides',
+  'balances',
+  'prices',
+  'taxes',
+  'margins',
+  'calculations',
+  'pricing-rules',
+  'discount-codes',
+  'expenses',
+])
 
 const normalizeIpMode = (value: string) => {
   if (['private', 'private-lan', 'lan'].includes(value)) return 'private'
@@ -80,7 +105,16 @@ const isPanelIpAllowed = (ip: string) => {
   return rules.some((rule) => ipInRule(ip, rule))
 }
 
-const shouldApplyPanelAllowlist = (pathname: string) => pathname === '/my-account' || pathname.startsWith('/my-account/')
+const isAccountRoute = (pathname: string) => pathname === '/my-account' || pathname.startsWith('/my-account/')
+
+const shouldApplyPanelAllowlist = (req: NextRequest) => {
+  if (!isAccountRoute(req.nextUrl.pathname)) return false
+
+  const requestedTab = req.nextUrl.searchParams.get('tab')?.trim() || ''
+  if (!requestedTab) return false
+
+  return ADMIN_PANEL_TABS.has(requestedTab)
+}
 
 const SEO_ROUTE_REDIRECTS: Record<string, string> = {
   '/tienda/alimento-para-perros': '/tienda/alimento-perros',
@@ -149,6 +183,8 @@ const redirectLegacySeoRoutes = (req: NextRequest) => {
   return null
 }
 
+const buildScriptSrc = (nonce: string) => ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"].join(' ')
+
 const buildCsp = (nonce: string) =>
   [
     "default-src 'self'",
@@ -156,7 +192,7 @@ const buildCsp = (nonce: string) =>
     "frame-ancestors 'self'",
     "object-src 'none'",
     "form-action 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `script-src ${buildScriptSrc(nonce)}`,
     "style-src 'self' 'unsafe-inline' https:",
     "img-src 'self' data: https:",
     "connect-src 'self' https: wss:",
@@ -172,7 +208,7 @@ const buildStrictReportOnlyCsp = (nonce: string) =>
     "frame-ancestors 'self'",
     "object-src 'none'",
     "form-action 'self'",
-    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
+    `script-src ${buildScriptSrc(nonce)}`,
     "style-src 'self' 'unsafe-inline' https:",
     "img-src 'self' data: https:",
     "connect-src 'self' https: wss:",
@@ -181,7 +217,7 @@ const buildStrictReportOnlyCsp = (nonce: string) =>
     `report-uri ${CSP_REPORT_URI}`,
   ].join('; ')
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const nonce = btoa(crypto.randomUUID()).replace(/=+$/g, '')
   const csp = buildCsp(nonce)
   const cspReportOnly = buildStrictReportOnlyCsp(nonce)
@@ -202,7 +238,7 @@ export function middleware(req: NextRequest) {
   requestHeaders.set('x-nonce', nonce)
   requestHeaders.set('Content-Security-Policy', csp)
 
-  if (shouldApplyPanelAllowlist(req.nextUrl.pathname) && normalizeIpMode(PANEL_IP_MODE) !== 'off') {
+  if (shouldApplyPanelAllowlist(req) && normalizeIpMode(PANEL_IP_MODE) !== 'off') {
     const clientIp = getClientIp(req)
     if (!isPanelIpAllowed(clientIp)) {
       const blockedResponse = new NextResponse('Acceso al panel restringido desde esta IP.', {

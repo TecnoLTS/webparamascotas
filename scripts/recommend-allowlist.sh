@@ -33,7 +33,12 @@ ss -tn state established '( sport = :80 or sport = :443 )' 2>/dev/null \
   | sed 's/^/  - /' || true
 echo
 
-echo "Modo recomendado si tus IPs cambian:"
+echo "Modo recomendado si administras desde LAN/VPN:"
+echo "  PANEL_IP_MODE=private"
+echo "  ADMIN_IP_MODE=private"
+echo "  # Permite loopback y redes privadas RFC1918; bloquea administracion desde Internet abierto."
+echo
+echo "Si tus IPs publicas cambian y no tienes VPN:"
 echo "  PANEL_IP_MODE=off"
 echo "  ADMIN_IP_MODE=off"
 echo "  # Mantiene acceso admin disponible y depende de MFA, bloqueo de intentos y sesiones seguras."

@@ -84,7 +84,7 @@ services:
       APP_ENV: development
       NEXT_PUBLIC_APP_ENV: development
       NEXT_TELEMETRY_DISABLED: 1
-      FRONTEND_DEV_RUNTIME: ${FRONTEND_DEV_RUNTIME:-hot}
+      FRONTEND_DEV_RUNTIME: ${FRONTEND_DEV_RUNTIME:-stable}
       FRONTEND_DEV_BUNDLER: ${FRONTEND_DEV_BUNDLER:-webpack}
       PORT: ${PORT:-3000}
       API_FETCH_TIMEOUT_MS: ${API_FETCH_TIMEOUT_MS:-15000}
@@ -100,7 +100,7 @@ services:
     working_dir: /app
     command: >
       sh -lc '
-        runtime="$${FRONTEND_DEV_RUNTIME:-hot}";
+        runtime="$${FRONTEND_DEV_RUNTIME:-stable}";
         bundler="$${FRONTEND_DEV_BUNDLER:-webpack}";
         if [ "$$runtime" = "hot" ]; then
           mkdir -p .next .next/dev .next/cache;

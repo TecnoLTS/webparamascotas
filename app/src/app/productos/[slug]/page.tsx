@@ -135,6 +135,7 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
     <>
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(generateProductJsonLd(currentProduct, {
@@ -147,6 +148,7 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
       />
       <script
         nonce={nonce}
+        suppressHydrationWarning
         type="application/ld+json"
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(breadcrumbJsonLd),

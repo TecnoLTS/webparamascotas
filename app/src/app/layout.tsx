@@ -88,6 +88,7 @@ export default async function RootLayout({
           <ClientModals serverTimeLeft={serverTimeLeft} />
           <script
             nonce={nonce}
+            suppressHydrationWarning
             type="application/ld+json"
             dangerouslySetInnerHTML={{
               __html: JSON.stringify(generatePetStoreJsonLd(site))
@@ -95,6 +96,7 @@ export default async function RootLayout({
           />
           <script
             nonce={nonce}
+            suppressHydrationWarning
             type="application/ld+json"
             dangerouslySetInnerHTML={{
               __html: JSON.stringify(generateWebSiteJsonLd(site))

@@ -18,27 +18,45 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 - No guardar secretos, passwords, tokens reales, certificados, llaves `.p12` ni datos sensibles de clientes.
 - La raiz `/home/admincenter/contenedores` no es repo Git; los componentes (`paramascotasec`, `paramascotasec-backend`, `Facturador`, `Gateway`, `paramascotasec-DB`) son repos separados.
 
+## Contexto operativo actual
+
+- Ambiente local por defecto: `development`; no asumir `production` salvo pedido explicito del usuario.
+- IP LAN del sistema en este ambiente: `192.168.100.229`.
+- El Gateway development puede exponerse por esa IP segun configuracion de `GATEWAY_BIND_IP`; usar scripts de development para cambios y verificaciones locales.
+
 ## Despliegue critico
 
 **Nunca ejecutar `docker compose up` directamente**: rompe el ruteo SSL y el aislamiento por perfiles. Usar siempre scripts de deploy.
 
 ```bash
-# Workspace completo, en este orden:
 cd /home/admincenter/contenedores
-./deploy-development.sh       # dev: certificado autofirmado
-./deploy-production.sh        # prod: Let's Encrypt
 
-# Orden orquestado por scripts/deploy-workspace.sh:
-# Facturador -> DB -> Backend -> Frontend -> Gateway
+# Workspace completo:
+./deploy-development.sh       # development: certificado autofirmado
+./deploy-production.sh        # production: Let's Encrypt
 
-# Componente individual:
-cd <component> && ./scripts/deploy-{mode}.sh
+# Servicio individual development:
+./scripts/deploy-development.sh facturador
+./scripts/deploy-development.sh db
+./scripts/deploy-development.sh backend
+./scripts/deploy-development.sh frontend
+./scripts/deploy-development.sh gateway
 
-# Bootstrap de DB vacia (requiere DB + Backend corriendo):
-cd paramascotasec-backend
-RUN_DB_SETUP=1 ./scripts/deploy-development.sh
+# Servicio individual production:
+./scripts/deploy-production.sh facturador
+./scripts/deploy-production.sh db
+./scripts/deploy-production.sh backend
+./scripts/deploy-production.sh frontend
+./scripts/deploy-production.sh gateway
+
+# Operaciones puntuales:
+RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend
+RUN_DB_MIGRATIONS=1 ./scripts/deploy-development.sh facturador
 ```
 
+Servicios validos para wrappers individuales: `facturador`, `db`, `backend`, `frontend`, `gateway`.
+Orden del despliegue completo: Facturador -> DB -> Backend -> Frontend -> Gateway.
+Development usa `.env.development`; production usa `.env`.
 PostgreSQL major actual: 18. La DB principal usa `postgres18_data` y conserva `postgres16_data` para rollback; Facturador usa el volumen Docker `postgres18-data` y conserva `postgres-data` para rollback.
 
 ## Red
@@ -50,6 +68,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - `paramascotasec-services-internal`: Gateway, Backend App y Facturador Nginx (`facturador`).
 - Redes de egreso no publicadas: Backend App para SMTP; Facturador service/worker para SRI y SMTP.
 - En desarrollo, los puertos locales de diagnostico del Facturador se publican mediante sidecars (`billing-nginx-local`, `billing-postgres-local`) en `127.0.0.1`; los servicios reales y DBs permanecen en redes internas.
+- Mantener el aislamiento de redes tambien en development: no conectar contenedores internos a `bridge`/egreso temporal como solucion normal. Si una tarea exige egreso para instalar dependencias o diagnosticar, preferir los scripts/imagenes/caches previstos; cualquier excepcion debe ser explicita, temporal, documentada y revertida antes de cerrar.
 
 | Servicio | Host interno | Notas |
 |----------|--------------|-------|
@@ -83,7 +102,7 @@ npm run test         # lint + typecheck
 
 - Prebuild: `npm run images:manifest` antes de dev/build/lint/start; `images:home-performance` e `images:upload-variants` antes de build.
 - Perfiles frontend exclusivos: `development` usa `paramascotasec-app-dev`; `production` usa `paramascotasec-app`. Los scripts remueven el perfil opuesto.
-- Dev runtime via `FRONTEND_DEV_RUNTIME`: `hot` por defecto; `stable` precompila produccion detras del gateway.
+- Dev runtime de despliegue via `FRONTEND_DEV_RUNTIME=stable`: precompila produccion bajo `APP_ENV=development` detras del gateway con CSP estricta. `hot`/HMR no es un modo valido para el deploy del ambiente; usarlo solo como herramienta local explicita fuera de la validacion por gateway.
 
 ## Backend `paramascotasec-backend`
 
@@ -109,7 +128,7 @@ npm run test         # lint + typecheck
 ## Gateway
 
 - Fragil para SSL y perfiles: nunca levantar manualmente con `docker compose up`.
-- Usar `Gateway/scripts/deploy-development.sh` o `Gateway/scripts/deploy-production.sh`.
+- Usar `./scripts/deploy-development.sh gateway` o `./scripts/deploy-production.sh gateway` desde la raiz del workspace.
 - Dominios publicados: solo `paramascotasec.com` y `www.paramascotasec.com`; no usar subdominio `api` ni dominios de terceros.
 - En desarrollo `GATEWAY_BIND_IP` debe apuntar a localhost/LAN; en produccion publica solo `80/443`.
 - `certbot` corre solo en produccion via perfil `certbot`.
@@ -143,7 +162,7 @@ scripts/check-container-connectivity.sh production
 
 - Auth: JWT HS256 en cookie httpOnly y Bearer opcional. Payload: `sub`, `email`, `name`, `role`, `tenant_id`, `jti`.
 - CSRF: requerido para mutaciones API excepto auth/contact/health/quote. Header `X-CSRF-Token` debe coincidir con cookie `pm_csrf`.
-- Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren `role='admin'` y allowlist IP opcional (`ADMIN_IP_MODE`, `ADMIN_IP_ALLOWLIST`).
+- Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren `role='admin'` y allowlist IP (`ADMIN_IP_MODE=private` por defecto en dev/prod; usar `custom` para IP publica fija).
 - Bloqueo de cuenta: despues de `AUTH_LOGIN_MAX_ATTEMPTS` (default 5), bloqueo por `AUTH_LOGIN_LOCK_MINUTES` (default 15).
 - MFA: OTP por email para admins (`request-otp`, `verify-otp`).
 - Proxy interno: `INTERNAL_PROXY_TOKEN` permite auth inter-contenedores sin login.
@@ -159,7 +178,7 @@ cd paramascotasec-backend
 docker stop $(docker ps -aq) 2>/dev/null || true
 docker system prune -a --volumes -f
 ./deploy-development.sh
-cd paramascotasec-backend && RUN_DB_SETUP=1 ./scripts/deploy-development.sh
+RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend
 ```
 
 Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando el objetivo dependa de ellas y haya confirmacion clara.
@@ -174,6 +193,169 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `paramascotasec/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-02 - Correccion Frontend Development CSP e Hidratacion
+
+Objetivo: corregir que la home quedara en skeletons sin mostrar productos y que `/my-account` quedara en `Cargando tu cuenta...` en development.
+
+Causa:
+- El despliegue development estaba corriendo `next dev --webpack` detras del gateway; ese runtime usa `eval` para hot reload y no es compatible con una CSP estricta.
+- Next dev tambien reportaba un hydration warning por el atributo `nonce` en scripts JSON-LD; el navegador oculta ese atributo al comparar el DOM hidratado.
+
+Cambios:
+- Se elimino la excepcion `unsafe-eval` de la CSP aplicada y de report-only; development y production quedan con politica estricta.
+- `FRONTEND_DEV_RUNTIME=stable` queda como modo canonical de despliegue development; los defaults de `docker-compose.yml` y `scripts/common.sh` pasan a `stable`.
+- `scripts/common.sh` rechaza `FRONTEND_DEV_RUNTIME` distinto de `stable` en deploy development para no levantar HMR detras del gateway.
+- Se retiro `NEXT_PUBLIC_CSP_ALLOW_UNSAFE_EVAL` de compose/env example/development.
+- Los scripts JSON-LD con nonce agregan `suppressHydrationWarning` para evitar avisos falsos de hidratacion.
+
+Operacion y verificacion:
+- Se redeplego solo Frontend development con `./scripts/deploy-development.sh frontend`; no se desplego production.
+- `npm run typecheck` y `git diff --check` pasaron en el frontend.
+- `./scripts/check-container-connectivity.sh development` paso completo; `/api/products` devuelve 127 productos publicos.
+- Playwright contra `https://paramascotasec.com` resuelto a `192.168.100.229` encontro `.pm-product-card__name`, la captura full-page muestra catalogo real, y `/my-account` sin sesion muestra el formulario de login.
+
+### 2026-06-02 - Emision de Factura de Prueba SRI Pruebas para Precision
+
+Objetivo: generar un comprobante real en SRI pruebas desde development para validar la correccion de decimales/centavos del Facturador sin tocar production.
+
+Operacion y resultado:
+- Se emitio por el endpoint development del Facturador `POST /api/test/v1/invoices`, usando SRI `pruebas` y sin desplegar production.
+- Comprobante autorizado: `001-001-000000120`, clave de acceso/autorizacion `0206202601175968768200110010010000001202082890613`, source reference `precision-test-20260602185204`.
+- Caso validado: precio bruto esperado `19.90` con IVA 15%; detalle guardado con `quantity=1.000000`, `unit_price=17.304348`, `line_subtotal=17.304348`, `tax_amount=2.595652`.
+- XML generado, firmado y autorizado conserva precision en `cantidad=1.000000` y `precioUnitario=17.304348`; totales oficiales quedan `totalSinImpuestos=17.30`, IVA `valor=2.60`, `importeTotal=19.90`, pago `total=19.90`.
+- Se genero ademas una venta POS backend completada y sin impacto de inventario: `ORD-20260602185846-BF66984F`, total `16.20`, source reference `backend-pos-precision-20260602185846`; emitio SRI pruebas autorizado `001-001-000000121`, clave `0206202601175968768200110010010000001211829837317`.
+- La prueba backend verifico `OrderController -> Facturador`: `OrderItem.price_net=14.0870`, `net_total=14.0870`, `tax_amount=2.1130`; `invoice_details` guardo `quantity=1.000000`, `unit_price=14.087000`, `line_subtotal=14.087000`, `tax_amount=2.113000`; XML autorizado `totalSinImpuestos=14.09`, IVA `2.11`, `importeTotal=16.20`.
+- Intentos previos de diagnostico: `001-001-000000118` fue `NO AUTORIZADO` por razon social de consumidor final distinta de `CONSUMIDOR FINAL`; `001-001-000000119` fue `DEVUELTA` por `ERROR SECUENCIAL REGISTRADO`. Ambos quedaron en SRI pruebas y no afectan production.
+
+### 2026-06-02 - Cierre de Pendientes Preflight sin Emision SRI
+
+Objetivo: corregir pendientes detectados en development para mejorar preparacion production sin generar facturas ni documentos SRI.
+
+Cambios:
+- `PANEL_IP_MODE` y `ADMIN_IP_MODE` quedan en `private` para development y production; los scripts ya no normalizan backend dev a `off`.
+- `PANEL_IP_MODE` no debe bloquear el panel de cliente (`/my-account` sin pestaña admin); solo aplica a deep links administrativos dentro de `/my-account` y las APIs admin se protegen server-side.
+- Gateway enruta rutas admin API (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`) por Next/proxy interno para preservar IP real y permitir enforcement server-side de allowlist.
+- Facturador runtime sube a PHP 8.5 con imagen Debian bookworm; `composer.json` exige `php ^8.5`.
+- Se agrega runner `Facturador/scripts/test-phpunit.sh` con `docker/Dockerfile.phpunit` PHP 8.5 para evitar depender del PHP del host.
+- Tests del Facturador se alinean con namespaces/API actuales (`AccessKey::fromValue/create`) y RUC invalido real.
+
+Operacion y verificacion:
+- Se redeplego solo development por scripts: `facturador`, `backend`, `frontend`, `gateway`.
+- No se desplego production y no se llamaron endpoints de emision SRI; las pruebas fueron locales o de conectividad.
+- Antes y despues del trabajo, Facturador mantuvo conteos `AUTORIZADO=88` y `ANULADA_LOCAL=1`; no aparecieron comprobantes pendientes ni logs de procesamiento del worker.
+- `Facturador/scripts/test-phpunit.sh` paso con 16 tests / 38 assertions en PHP 8.5.
+- `./scripts/check-env-secrets.sh all`, `./scripts/check-container-connectivity.sh development`, `./scripts/check-paramascotas.sh`, `docker exec nginx-gateway nginx -t` y `git diff --check` pasaron.
+
+### 2026-06-02 - Preflight Produccion desde Development
+
+Objetivo: estimar si el workspace esta listo para pasar a produccion sin desplegar produccion.
+
+Cambios:
+- Frontend Next 16: se migro la politica de seguridad de `middleware.ts` a `src/proxy.ts`, que es la convencion activa cuando el proyecto usa `src/app`; la CSP con nonce vuelve a salir por Next y por Gateway.
+- `app/tsconfig.json` actualiza `ignoreDeprecations` a `6.0` para TypeScript 6 y desbloquea el typecheck estandar.
+- `app/docker-entrypoint.sh` da propiedad a `next-env.d.ts` y `tsconfig.tsbuildinfo` en development para que Next dev no quede bloqueado por permisos al correr como `appuser`.
+- `scripts/check-paramascotas.sh` queda ejecutable.
+
+Verificacion:
+- No se desplego produccion.
+- `./scripts/check-env-secrets.sh all` paso con 0 fallos y 0 advertencias; renderizo compose production y valido que solo Gateway publique 80/443.
+- `npm run build`, `npm run lint`, `npm run typecheck` y `./scripts/check-paramascotas.sh` pasaron.
+- `./scripts/check-container-connectivity.sh development` paso completo con catalogo publico de 127 productos.
+- CSP activa validada por Gateway en `https://paramascotasec.com/` resolviendo a `192.168.100.229`.
+- Egreso TCP hacia SRI produccion `cel.sri.gob.ec:443` respondio OK desde `billing-service`, sin emitir documentos.
+
+Riesgo pendiente:
+- Si los administradores necesitan entrar desde Internet sin VPN/LAN, `PANEL_IP_MODE=private` / `ADMIN_IP_MODE=private` bloqueara ese acceso; en ese caso configurar `custom` con IPs publicas fijas antes del corte productivo.
+
+### 2026-06-02 - Fix Permisos Schema Public en Modulos Financieros Development
+
+Objetivo: corregir errores de consola/admin en development por `SQLSTATE[42501] permission denied for schema public` al cargar datos que instanciaban `FinancialPeriodRepository`.
+
+Causa:
+- `FinancialPeriodRepository`, `BusinessExpenseRepository` y `PosRepository` ejecutaban `CREATE TABLE IF NOT EXISTS` / `CREATE INDEX` en runtime.
+- El rol de aplicacion `paramascotasec_backend_app` tiene permisos DML sobre tablas existentes, pero no permiso DDL `CREATE` sobre el schema `public`, como corresponde para runtime.
+
+Cambios:
+- Se agrego `db/migrations/023_add_financial_expense_pos_tables.sql` para crear tablas/indexes de periodos financieros, ajustes, gastos y POS, con grants DML/sequence al rol backend cuando exista.
+- `scripts/bootstrap_schema.php` queda alineado para DBs nuevas.
+- Los repositorios financieros/gastos/POS ya no ejecutan DDL en runtime; ahora verifican que las tablas requeridas existan y fallan con mensaje operativo si falta bootstrap/migracion.
+
+Operacion y verificacion:
+- Se aplico la migracion en development con `psql` dentro de `next-test-db`, sin imprimir secretos.
+- Se redeplego solo backend development con `./scripts/deploy-development.sh backend`.
+- Reproduccion directa OK: `FinancialPeriodRepository`, `BusinessExpenseRepository` y `PosRepository` instancian sin error.
+- `./scripts/check-container-connectivity.sh development` paso completo.
+
+### 2026-06-02 - Comandos Claros de Despliegue por Ambiente
+
+Objetivo: ordenar la operacion para que existan dos comandos generales y comandos simples por servicio desde la raiz del workspace.
+
+Cambios:
+- Se agregaron wrappers raiz `scripts/deploy-development.sh <servicio>` y `scripts/deploy-production.sh <servicio>` para `facturador`, `db`, `backend`, `frontend` y `gateway`.
+- `README.md` quedo como guia corta de despliegues, reglas de ambiente, operaciones puntuales y verificaciones.
+- `AGENTS.md` y `paramascotasec/docs/AI_CONTEXT.md` documentan los wrappers canonicos y reemplazan los comandos antiguos por carpeta para deploys individuales.
+
+Decisiones:
+- Se mantienen `./deploy-development.sh` y `./deploy-production.sh` como unicos comandos generales del workspace.
+- Los wrappers por servicio solo despachan a scripts existentes; no ejecutan `docker compose up` directamente.
+
+### 2026-06-02 - Precision SRI en Facturas Development
+
+Objetivo: evitar redondeos prematuros en facturas SRI nuevas, preservando precision compatible con SRI en calculos internos y dejando centavos solo en campos oficiales del XML.
+
+Causa:
+- Backend enviaba algunos valores con 4-6 decimales, pero el Facturador recortaba despues en `Money`, `calculateTaxes`, XML, `invoice_details` y RIDE con `round(..., 2)` / `number_format(..., 2)`.
+- `invoice_details` guardaba `quantity`, `discount` y `line_subtotal` con escala 2 y no persistia `tax_amount`, dificultando auditoria/regeneracion sin perdida.
+
+Cambios:
+- Backend `OrderController::buildFacturadorPayload` ahora prioriza `price_net`, `net_total` y `tax_amount` ya calculados por la orden cuando existen, y envia montos al Facturador como strings decimales de 6 posiciones.
+- Facturador conserva montos internos a 6 decimales: `Money` ya no redondea en constructor y `EmitInvoice::calculateTaxes` agrupa base/IVA con escala 6.
+- `XmlInvoiceBuilder` emite `cantidad` y `precioUnitario` con 6 decimales; subtotales, descuentos, IVA, pagos y total se formatean a 2 decimales como salida oficial SRI.
+- `invoice_details` sube precision a `NUMERIC(18,6)` para `quantity`, `discount`, `line_subtotal` y agrega `tax_amount NUMERIC(18,6)` mediante `db/migrations/007_invoice_detail_precision.sql`; `db/init/001_schema.sql` queda alineado.
+- RIDE muestra cantidad/precio unitario con 6 decimales y mantiene totales oficiales a centavos.
+
+Operacion:
+- Se aplico solo en development.
+- Se redeplegaron Backend y Facturador con scripts development; Facturador requirio `RUN_DB_MIGRATIONS=1`.
+- El volumen DB del Facturador aceptaba la credencial de `.env`; se alineo el rol `billing_user` con `.env.development` sin imprimir secretos para que el runtime development y migraciones conecten correctamente.
+- Durante el deploy orquestado, `paramascotasec-app-dev` no tenia egreso por estar solo en `paramascotasec-web-internal`; se conecto temporalmente a `bridge` solo para completar `npm ci` y luego se desconecto. El frontend quedo nuevamente solo en `paramascotasec-web-internal`.
+
+Verificacion:
+- Prueba enfocada XML: `docker run --rm -v /home/admincenter/contenedores/Facturador:/app -w /app pm-facturador-php85-check ./vendor/bin/phpunit tests/Integration/Infrastructure/XmlInvoiceBuilderTest.php` paso con 3 tests / 17 assertions; valida `precioUnitario=17.304348`, `subtotal=17.30`, `IVA=2.60`, `total=19.90` y mezcla IVA 0/15.
+- Sintaxis PHP de Backend y Facturador paso; `git diff --check` paso en ambos repos.
+- Migracion verificada: `invoice_details.quantity`, `unit_price`, `discount`, `line_subtotal` y `tax_amount` quedan con escala 6.
+- `./scripts/check-container-connectivity.sh development` paso completo; Gateway development quedo en `192.168.100.229:80/443`, frontend dev healthy, Facturador en `APP_ENV=development` y `SRI_ENVIRONMENT=pruebas`.
+- Suite completa del Facturador sigue bloqueada por tests preexistentes no relacionados (`App\...`, constructor privado de `AccessKey`, caso viejo de `RucTest`).
+
+### 2026-06-02 - Correccion de RIDE PDF del Facturador
+
+Objetivo: corregir PDFs RIDE que salian con `Sin detalles` y totales/IVA incompletos, observado en la factura `001-001-000000036`.
+
+Causa:
+- El generador de RIDE solo usaba `invoice_details`; facturas historicas/importadas sin filas en esa tabla quedaban sin productos aunque tuvieran encabezado autorizado.
+- La factura `001-001-000000036` provenia de `sri-import-001-001-000000036` con `raw_request` marcado como `Importacion historica sin detalle de items ni XML local`, sin orden local vinculada y sin XML autorizado guardado.
+- Se detecto deriva operativa: el volumen PostgreSQL del Facturador aceptaba la credencial de `.env.development`, mientras el servicio production usaba `.env`; se alineo el password del rol DB con `.env` sin imprimir secretos.
+
+Cambios Facturador:
+- `RidePdfInvoiceDataFactory` ahora construye datos del RIDE en cascada:
+  - usa `invoice_details` cuando existen;
+  - si faltan, intenta parsear XML autorizado/firmado guardado;
+  - si faltan XML y detalles, reconstruye desde `raw_request.items`;
+  - para imports historicos `user_provided_sri_report` sin detalle local, genera una linea explicita `SRI-IMPORT / Factura historica importada sin detalle de productos` e infiere subtotal/IVA 15% desde `valor_total_reportado`.
+- `public/index.php` ya no sirve cache PDF a ciegas: al abrir `ride.pdf` regenera el RIDE; si faltan datos intenta recuperar XML autorizado desde SRI sin enviar correo; si aun no hay detalle, falla en vez de emitir un PDF incompleto.
+- Se agregaron pruebas unitarias para fallback por `raw_request.items`, XML guardado e import historico sin items/XML.
+
+Operacion:
+- Se redeplego solo Facturador production con `Facturador/scripts/deploy-production.sh`.
+- Se regeneraron 36 PDFs historicos autorizados importados sin detalle; todos respondieron OK por la ruta interna.
+
+Verificacion:
+- `001-001-000000036` ahora genera PDF con linea `SRI-IMPORT`, subtotal 15% `17.30`, IVA 15% `2.60` y total `19.90`; ya no aparece `Sin detalles`.
+- Una factura normal reciente (`001-001-000000090`) sigue generando desde `invoice_details` reales y no usa `SRI-IMPORT`.
+- `docker exec billing-service` conecta OK a DB con `.env` production; `https://paramascotasec.com/facturador/health` responde 200 al Gateway local.
+- Prueba enfocada: `docker run --rm -v /home/admincenter/contenedores/Facturador:/app -w /app pm-facturador-php85-check ./vendor/bin/phpunit tests/Unit/Infrastructure/Services/RidePdfInvoiceDataFactoryTest.php` paso con 3 tests / 22 assertions.
+- Suite completa del Facturador sigue bloqueada por tests preexistentes (namespaces `App\...`, constructor privado de `AccessKey`, constructor de `XmlInvoiceBuilder` sin config).
 
 ### 2026-05-31 - Restauracion Completa de Data Development
 
