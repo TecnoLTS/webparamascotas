@@ -155,6 +155,7 @@ scripts/check-container-connectivity.sh production
 - IVA default: 15% Ecuador. `tax_exempt` por producto; soporta carritos mixtos exentos/no exentos.
 - Envio: gratis en Centro/Norte Quito; USD 5.00 para Sur/Valles. Se determina desde direccion via `GET /api/settings/shipping`.
 - Descuentos: server-side; tipos porcentaje o fijo; soportan `min_subtotal`, `max_discount`, `max_uses`.
+- Consumidor final: `9999999999999` solo se permite hasta USD 50.00 oficiales. Ventas mayores deben tener cedula o RUC valido del cliente; backend y Facturador bloquean el caso antes de emitir.
 - Inventario FIFO: `inventory_lots` rastrea lotes de compra; ordenes consumen lotes antiguos primero; costos se restauran al cancelar.
 - Sitio unico: solo `paramascotasec.com` y `www.paramascotasec.com`; `DEFAULT_TENANT=paramascotasec`; dominios ajenos deben quedar rechazados por el Gateway.
 
@@ -193,6 +194,62 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `paramascotasec/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-03 - Restore Development desde Backup Production
+
+Objetivo: recuperar la visibilidad del catalogo en development despues de restaurar DB principal y Facturador desde backups cifrados de production.
+
+Causa:
+- El backup production restauro el rol `paramascotasec_backend_app` con credenciales/permisos distintos a `.env.development`; el backend quedo con `/api/health` en 503 por `password authentication failed`.
+- Tras alinear password, el backend aun no podia ver tablas como `ProductReferenceCatalog` por falta de `USAGE` en schema `public` y grants DML sobre la DB real `DB_DATABASE`.
+
+Cambios:
+- Se alineo en development el password del rol runtime del backend con `paramascotasec-backend/.env.development`, sin imprimir secretos.
+- Se restauraron permisos runtime: `GRANT USAGE ON SCHEMA public`, DML sobre tablas y uso/lectura de secuencias para `paramascotasec_backend_app`.
+- `paramascotasec-DB/scripts/restore-from-backup.sh` ahora llama una rutina idempotente que, despues de un restore, ajusta automaticamente el rol del backend segun `.env`/`.env.development` del modo destino.
+
+Operacion y verificacion:
+- No se reimporto ni se limpio data; los conteos restaurados se conservaron.
+- API por Gateway `https://paramascotasec.com/api/products` devuelve 123 productos publicos y `/tienda` renderiza tarjetas reales.
+- Facturador development autentica con `billing_user` en `billing_service`; no se emitieron comprobantes SRI.
+- `./scripts/check-container-connectivity.sh development` paso completo.
+
+### 2026-06-02 - Regla Consumidor Final Maximo USD 50
+
+Objetivo: aplicar correctamente la regla SRI de consumidor final: no generar facturas como consumidor final por montos mayores a USD 50.00.
+
+Cambios:
+- Backend `OrderController` centraliza resolucion de cliente para Facturador: documento faltante, tipo consumidor final o identificacion invalida caen a `9999999999999` solo si el total oficial no supera USD 50.00.
+- `store()` valida la cotizacion server-side antes de crear la orden; `updateStatus()` valida antes de pasar a `completed`/`delivered`; ambos responden `409 FINAL_CONSUMER_LIMIT_EXCEEDED` si una venta mayor a USD 50.00 quedaria como consumidor final.
+- Facturador `EmitInvoice` bloquea `9999999999999` mayor a USD 50.00 antes de reservar secuencial, firmar XML o llamar al SRI.
+- Facturador valida la identificacion del cliente antes de reservar secuencial para evitar consumo de numeracion por solicitudes directas con cedula/RUC invalido.
+
+Operacion y verificacion:
+- Se redeplego solo development con `./scripts/deploy-development.sh facturador` y `./scripts/deploy-development.sh backend`; no se desplego production.
+- No se emitieron nuevos documentos SRI. El ultimo comprobante en Facturador siguio siendo `001-001-000000121` (`AUTORIZADO`, creado `2026-06-02 18:58:46-05`).
+- `Facturador/scripts/test-phpunit.sh --filter 'EmitInvoiceFinalConsumerLimitTest|XmlInvoiceBuilderTest|RucTest'` paso con 9 tests / 30 assertions.
+- Sintaxis PHP backend completa, `./scripts/check-container-connectivity.sh development`, `./scripts/check-env-secrets.sh all` y `./scripts/check-paramascotas.sh` pasaron.
+- Prueba PHP interna del backend: consumidor final USD 50.01 queda bloqueado; cedula valida `1702527887` con USD 50.01 queda permitida.
+
+### 2026-06-02 - Alineacion Development con Correcciones de Facturacion Production
+
+Objetivo: comparar la conversacion de production sobre facturacion/RIDE con el workspace development y dejar ambos ambientes alineados en reglas fiscales y operativas.
+
+Hallazgos:
+- Development ya contenia las correcciones principales de production: RIDE desde datos locales (`invoice_details` y `raw_request.items` antes que XML), exclusion de anuladas por defecto en listados RIDE, `include_cancelled`, idempotencia por `source_reference`, indice unico parcial, sincronizacion backend -> Facturador por orden existente, consumidor final `9999999999999` como tipo SRI `07`, candados de mantenimiento/reemision y 404/409 limpio para PDFs anulados.
+- Diferencia encontrada: la cedula `1702527887` aceptada en production no estaba aceptada explicitamente en development.
+
+Cambios:
+- `Facturador/src/Shared/Domain/ValueObjects/Identification.php` acepta `1702527887` como excepcion controlada de cedula y devuelve tipo SRI `05`.
+- `paramascotasec-backend/src/Controllers/OrderController.php` acepta la misma cedula antes de aplicar fallback a consumidor final.
+
+Operacion y verificacion:
+- Se redeplego solo development por scripts: `./scripts/deploy-development.sh facturador` y `./scripts/deploy-development.sh backend`.
+- No se emitieron facturas, no se generaron documentos nuevos y no se consulto al SRI.
+- Prueba runtime Facturador: `1702527887=05` y `9999999999999=07`.
+- Prueba runtime Backend por reflexion: `validateEcuadorCedula('1702527887')` devuelve `true`.
+- Facturador DB development: 93 cabeceras, 0 duplicados activos por `source_reference`, 1 factura anulada/reemplazada local.
+- `Facturador/scripts/test-phpunit.sh --filter 'XmlInvoiceBuilderTest|RucTest'`, `./scripts/check-paramascotas.sh` y `./scripts/check-container-connectivity.sh development` pasaron.
 
 ### 2026-06-02 - Correccion Frontend Development CSP e Hidratacion
 
