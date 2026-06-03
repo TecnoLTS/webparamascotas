@@ -101,7 +101,7 @@ export const siteConfig: SiteConfig = {
   },
   social: {
     facebook: 'https://www.facebook.com/paramascotasec',
-    instagram: 'https://www.instagram.com/paramascotasec',
+    instagram: 'https://www.instagram.com/paramascotas_ec/',
   },
   categories: PET_HOME_CATEGORY_CARDS,
   categoryFilters: PET_CATEGORY_FILTERS,

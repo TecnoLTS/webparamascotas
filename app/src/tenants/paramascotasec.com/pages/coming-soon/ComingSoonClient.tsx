@@ -64,7 +64,7 @@ const ComingSoon = () => {
                                 <Link href={'https://www.facebook.com/'} target='_blank'>
                                     <div className="icon-facebook text-xl"></div>
                                 </Link>
-                                <Link href={'https://www.instagram.com/'} target='_blank'>
+                                <Link href={'https://www.instagram.com/paramascotas_ec/'} target='_blank'>
                                     <div className="icon-instagram text-xl"></div>
                                 </Link>
                                 <Link href={'https://www.youtube.com/'} target='_blank'>

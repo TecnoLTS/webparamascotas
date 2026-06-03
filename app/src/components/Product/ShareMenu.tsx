@@ -101,7 +101,7 @@ const ShareMenu: React.FC<Props> = ({ product }) => {
             <button
               type="button"
               className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm hover:bg-surface"
-              onClick={() => handleOpen(`https://www.instagram.com/`, true)}
+              onClick={() => handleOpen(`https://www.instagram.com/paramascotas_ec/`, true)}
             >
               <Icon.InstagramLogo className="text-lg" />
               Instagram

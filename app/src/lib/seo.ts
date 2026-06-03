@@ -317,7 +317,7 @@ export function generateOrganizationJsonLd(options?: { baseUrl?: string; name?: 
         hasMerchantReturnPolicy: buildMerchantReturnPolicy(siteUrl),
         sameAs: options?.sameAs ?? [
             'https://www.facebook.com/paramascotasec',
-            'https://www.instagram.com/paramascotasec',
+            'https://www.instagram.com/paramascotas_ec/',
         ],
     }
 }

@@ -111,13 +111,13 @@ const Instagram: React.FC = () => {
         <div className="heading">
           <div className="heading3 text-center">Siguenos en Instagram</div>
           <div className="text-center mt-3">
-            <a 
-              href="https://www.instagram.com/petstation_ec/" 
-              target="_blank" 
-              rel="noreferrer" 
+            <a
+              href="https://www.instagram.com/paramascotas_ec/"
+              target="_blank"
+              rel="noreferrer"
               className="text-button-uppercase"
             >
-              @petstation_ec
+              @paramascotas_ec
             </a>
           </div>
         </div>
@@ -148,10 +148,10 @@ const Instagram: React.FC = () => {
       </div>
 
       <div className="text-center mt-10">
-        <a 
-          href="https://www.instagram.com/petstation_ec/" 
-          target="_blank" 
-          rel="noreferrer" 
+        <a
+          href="https://www.instagram.com/paramascotas_ec/"
+          target="_blank"
+          rel="noreferrer"
           className="button-main"
         >
           Ver más en Instagram

@@ -52,7 +52,7 @@ const StoreList = () => {
                                                 <Link href={'https://www.facebook.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
                                                     <div className="icon-facebook"></div>
                                                 </Link>
-                                                <Link href={'https://www.instagram.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
+                                                <Link href={'https://www.instagram.com/paramascotas_ec/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
                                                     <div className="icon-instagram"></div>
                                                 </Link>
                                                 <Link href={'https://www.youtube.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
@@ -97,7 +97,7 @@ const StoreList = () => {
                                                 <Link href={'https://www.facebook.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
                                                     <div className="icon-facebook"></div>
                                                 </Link>
-                                                <Link href={'https://www.instagram.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
+                                                <Link href={'https://www.instagram.com/paramascotas_ec/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
                                                     <div className="icon-instagram"></div>
                                                 </Link>
                                                 <Link href={'https://www.youtube.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
@@ -156,7 +156,7 @@ const StoreList = () => {
                                                 <Link href={'https://www.facebook.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
                                                     <div className="icon-facebook"></div>
                                                 </Link>
-                                                <Link href={'https://www.instagram.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
+                                                <Link href={'https://www.instagram.com/paramascotas_ec/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">
                                                     <div className="icon-instagram"></div>
                                                 </Link>
                                                 <Link href={'https://www.youtube.com/'} target='_blank' className="item bg-white w-10 h-10 rounded-full flex items-center justify-center hover:bg-black hover:text-white duration-300">

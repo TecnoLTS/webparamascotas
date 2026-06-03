@@ -128,7 +128,7 @@ const BlogDetailTwo = () => {
                                         <Link href={'https://www.facebook.com/'} target='_blank' className='bg-surface w-10 h-10 flex items-center justify-center rounded-full duration-300 hover:bg-black hover:text-white'>
                                             <div className="icon-facebook duration-100"></div>
                                         </Link>
-                                        <Link href={'https://www.instagram.com/'} target='_blank' className='bg-surface w-10 h-10 flex items-center justify-center rounded-full duration-300 hover:bg-black hover:text-white'>
+                                        <Link href={'https://www.instagram.com/paramascotas_ec/'} target='_blank' className='bg-surface w-10 h-10 flex items-center justify-center rounded-full duration-300 hover:bg-black hover:text-white'>
                                             <div className="icon-instagram duration-100"></div>
                                         </Link>
                                         <Link href={'https://www.twitter.com/'} target='_blank' className='bg-surface w-10 h-10 flex items-center justify-center rounded-full duration-300 hover:bg-black hover:text-white'>
@@ -395,7 +395,7 @@ const BlogDetailTwo = () => {
                                     <Link href={'https://www.facebook.com/'} target='_blank' className=''>
                                         <div className="icon-facebook md:text-xl duration-100"></div>
                                     </Link>
-                                    <Link href={'https://www.instagram.com/'} target='_blank' className=''>
+                                    <Link href={'https://www.instagram.com/paramascotas_ec/'} target='_blank' className=''>
                                         <div className="icon-instagram md:text-xl duration-100"></div>
                                     </Link>
                                     <Link href={'https://www.twitter.com/'} target='_blank' className=''>
