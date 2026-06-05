@@ -357,7 +357,7 @@ export default function QuotationsPanel(props: QuotationsPanelProps) {
           {localSaleQuoteHistory.length > 0 && (
             <div className="mt-3 flex items-center justify-between gap-2 text-xs text-secondary">
               <div>
-                {localSaleQuoteHistory.length} cotización{localSaleQuoteHistory.length === 1 ? '' : 'es'} guardada{localSaleQuoteHistory.length === 1 ? '' : 's'} para seguimiento.
+                Últimas {localSaleQuoteHistory.length} cotización{localSaleQuoteHistory.length === 1 ? '' : 'es'} cargada{localSaleQuoteHistory.length === 1 ? '' : 's'} para seguimiento.
               </div>
               <button
                 type="button"
@@ -438,7 +438,7 @@ export default function QuotationsPanel(props: QuotationsPanelProps) {
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
                   <div className="text-[10px] uppercase font-bold text-secondary">Historial de cotizaciones</div>
-                  <div className="text-xs text-secondary mt-1">Selecciona una cotización para reimprimirla o convertirla a venta.</div>
+                  <div className="text-xs text-secondary mt-1">Listado reciente cargado. Selecciona una cotización para reimprimirla o convertirla a venta.</div>
                 </div>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">

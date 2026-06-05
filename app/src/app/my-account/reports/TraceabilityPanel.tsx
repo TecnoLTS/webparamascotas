@@ -3,6 +3,7 @@
 import React from 'react'
 import type {
   ReportPeriodSummary,
+  SalesReportView,
   SalesRankingRow,
   TraceabilityIssue,
   TraceabilityIssueSeverity,
@@ -24,10 +25,10 @@ type TraceabilityPanelProps = {
   categories: ReportPeriodSummary['categories']
   periodLabel: string
   salesRankingMonth: string
-  salesRankingView: 'month' | 'historical' | 'daily'
+  salesRankingView: SalesReportView
   selectedRankingMonthLabel: string
   selectReportMonth: (month: string) => void
-  setSalesRankingView: (view: 'month' | 'historical' | 'daily') => void
+  setSalesRankingView: (view: SalesReportView) => void
   summary: TraceabilitySummary
   onViewOrder: (orderId: string) => void
   onOpenProduct: (productId?: string | null) => void
@@ -94,6 +95,13 @@ export default function TraceabilityPanel({
 }: TraceabilityPanelProps) {
   const [severityFilter, setSeverityFilter] = React.useState<TraceabilityIssueSeverity | 'all'>('all')
   const [typeFilter, setTypeFilter] = React.useState<TraceabilityIssueType | 'all'>('all')
+  const activeViewLabel = salesRankingView === 'daily'
+    ? 'Día'
+    : salesRankingView === 'week'
+      ? 'Semana'
+      : salesRankingView === 'month'
+        ? selectedRankingMonthLabel
+        : 'Todo'
 
   const typeOptions = React.useMemo(() => {
     return Array.from(new Set(issues.map((issue) => issue.type)))
@@ -115,7 +123,7 @@ export default function TraceabilityPanel({
             <div className="heading6">Control de trazabilidad</div>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-secondary">
               <span className="rounded-md border border-line bg-surface px-2.5 py-1">
-                Vista: <span className="text-black">{salesRankingView === 'daily' ? 'Día' : salesRankingView === 'month' ? selectedRankingMonthLabel : 'Histórico'}</span>
+                Vista: <span className="text-black">{activeViewLabel}</span>
               </span>
               <span className="rounded-md border border-line bg-surface px-2.5 py-1">
                 Rango: <span className="text-black">{periodLabel}</span>
@@ -126,7 +134,7 @@ export default function TraceabilityPanel({
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            {salesRankingView !== 'daily' && (
+            {salesRankingView === 'month' && (
               <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
                 Mes
                 <input
@@ -141,11 +149,14 @@ export default function TraceabilityPanel({
               <button type="button" onClick={() => setSalesRankingView('daily')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'daily' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
                 Día
               </button>
+              <button type="button" onClick={() => setSalesRankingView('week')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'week' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
+                Semana
+              </button>
               <button type="button" onClick={() => setSalesRankingView('month')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
                 Mes
               </button>
               <button type="button" onClick={() => setSalesRankingView('historical')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
-                Histórico
+                Todo
               </button>
             </div>
           </div>

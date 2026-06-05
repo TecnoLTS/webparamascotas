@@ -556,6 +556,10 @@ export default React.memo(function InventoryManagementPanel({
                     <p className="text-secondary text-sm mt-1">
                         Controla stock, perecibles, vencimientos y valor inmovilizado del catalogo.
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-secondary">
+                        <span className="rounded-md border border-line bg-surface px-2.5 py-1">Alcance: <span className="text-black">inventario actual</span></span>
+                        <span className="rounded-md border border-line bg-surface px-2.5 py-1">Rotación: <span className="text-black">últimos {intelligence?.parameters?.window_days ?? 30} días</span></span>
+                    </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                     <button
@@ -673,7 +677,7 @@ export default React.memo(function InventoryManagementPanel({
                         <div>
                             <div className="heading6">Ultimas facturas de compra</div>
                             <p className="text-sm text-secondary mt-1">
-                                Trazabilidad reciente de ingresos de inventario y costos de compra.
+                                Trazabilidad reciente de ingresos de inventario y costos de compra. No es un total histórico.
                             </p>
                         </div>
                         <button

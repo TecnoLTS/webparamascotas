@@ -695,6 +695,9 @@ export default function LocalSalesPanel(props: LocalSalesPanelProps) {
                                                                     ? `Turno activo: ${posActiveShift?.id || '-'}`
                                                                     : 'No hay turno activo. Abre caja para vender.'}
                                                             </p>
+                                                            <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                                                                Alcance: <span className="ml-1 text-black">turno activo</span>
+                                                            </div>
                                                         </div>
                                                         <button
                                                             type="button"

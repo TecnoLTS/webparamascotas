@@ -3,8 +3,10 @@
 import React from 'react'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
+import { requestApi } from '@/lib/apiClient'
 import type { ProductPublicationFilter } from '../types'
 import { getAdminProductEntityId, resolveProductVariantLabel } from '../productFormUtils'
+import { withTransientRetry } from '../utils'
 
 type AdminProductAdvancedFilters = {
     category: string;
@@ -92,6 +94,7 @@ type ProductsManagementPanelProps = {
         expirationDate: string;
         badge: { label: string; className: string };
     };
+    formatMoney: (value: any) => string;
     formatIsoDate: (value?: string | null) => string;
 }
 
@@ -119,6 +122,88 @@ const resolveAdminProductImage = (product: any) => {
     return appendAdminImageCacheKey(imageSrc || '/images/product/1.webp', product)
 }
 
+const toMovementNumber = (value: unknown) => {
+    const parsed = Number(value ?? 0)
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0
+}
+
+const formatMovementNumber = (value: unknown) =>
+    toMovementNumber(value).toLocaleString('es-EC', { maximumFractionDigits: 0 })
+
+type ProductMovementPeriod = 'day' | 'week' | 'month' | 'all'
+
+type ProductMovementDetail = {
+    product: {
+        id: string;
+        name: string;
+        category: string;
+        sku: string;
+        quantity: number;
+        sold_field: number;
+    };
+    period: {
+        key: ProductMovementPeriod;
+        label: string;
+        start_date: string | null;
+        end_date: string | null;
+        timezone: string;
+    };
+    sales: {
+        orders_count: number;
+        units_sold: number;
+        gross_revenue: number;
+        net_revenue: number;
+        cost: number;
+        profit: number;
+        last_sale_at?: string | null;
+        orders: Array<{
+            id: string;
+            created_at?: string | null;
+            status: string;
+            quantity: number;
+            net_total: number;
+            cost_total: number;
+            profit: number;
+            customer_name?: string | null;
+            customer_email?: string | null;
+        }>;
+    };
+    purchases: {
+        entries_count: number;
+        invoices_count: number;
+        purchased_units: number;
+        remaining_units: number;
+        purchase_cost: number;
+        last_purchase_at?: string | null;
+        lots: Array<{
+            id: string;
+            purchase_invoice_id?: string | null;
+            invoice_number?: string | null;
+            supplier_name?: string | null;
+            purchase_date?: string | null;
+            purchased_quantity: number;
+            remaining_quantity: number;
+            unit_cost: number;
+            purchase_total: number;
+        }>;
+    };
+    inventory: {
+        current_stock: number;
+        purchase_entries_total: number;
+        purchased_units_total: number;
+        remaining_purchase_units_total: number;
+        remaining_lot_units_total: number;
+        open_lots_count: number;
+    };
+}
+
+const MOVEMENT_PERIOD_OPTIONS: Array<{ key: ProductMovementPeriod; label: string }> = [
+    { key: 'day', label: 'Día' },
+    { key: 'week', label: 'Semana' },
+    { key: 'month', label: 'Mes' },
+    { key: 'all', label: 'Todo' },
+]
+
 export default React.memo(function ProductsManagementPanel({
     products,
     summary,
@@ -142,6 +227,7 @@ export default React.memo(function ProductsManagementPanel({
     publicationPendingIds,
     isProductEligibleForPublication,
     getProductExpirationMeta,
+    formatMoney,
     formatIsoDate,
 }: ProductsManagementPanelProps) {
     const hasAdvancedFilters = searchQuery.trim().length > 0
@@ -220,6 +306,57 @@ export default React.memo(function ProductsManagementPanel({
             )
         })
     }, [products])
+    const [movementProduct, setMovementProduct] = React.useState<any | null>(null)
+    const [movementPeriod, setMovementPeriod] = React.useState<ProductMovementPeriod>('month')
+    const [movementDetail, setMovementDetail] = React.useState<ProductMovementDetail | null>(null)
+    const [movementLoading, setMovementLoading] = React.useState(false)
+    const [movementError, setMovementError] = React.useState<string | null>(null)
+    const movementProductId = React.useMemo(
+        () => String(movementProduct ? getAdminProductEntityId(movementProduct) : '').trim(),
+        [movementProduct],
+    )
+    const openMovementDetail = React.useCallback((product: any) => {
+        setMovementProduct(product)
+        setMovementPeriod('month')
+        setMovementDetail(null)
+        setMovementError(null)
+    }, [])
+    const closeMovementDetail = React.useCallback(() => {
+        if (movementLoading) return
+        setMovementProduct(null)
+        setMovementDetail(null)
+        setMovementError(null)
+    }, [movementLoading])
+
+    React.useEffect(() => {
+        if (!movementProductId) return
+
+        let active = true
+        setMovementLoading(true)
+        setMovementError(null)
+
+        withTransientRetry(() => requestApi<ProductMovementDetail>(
+            `/api/products/${encodeURIComponent(movementProductId)}/movement?period=${encodeURIComponent(movementPeriod)}`
+        ))
+            .then((res) => {
+                if (!active) return
+                setMovementDetail(res.body)
+            })
+            .catch((error) => {
+                if (!active) return
+                setMovementDetail(null)
+                setMovementError(error instanceof Error && error.message.trim()
+                    ? error.message
+                    : 'No se pudo cargar el movimiento del producto.')
+            })
+            .finally(() => {
+                if (active) setMovementLoading(false)
+            })
+
+        return () => {
+            active = false
+        }
+    }, [movementPeriod, movementProductId])
 
     return (
         <div className="tab text-content w-full">
@@ -563,6 +700,16 @@ export default React.memo(function ProductsManagementPanel({
                                             <button
                                                 type="button"
                                                 className="inline-flex items-center gap-1 rounded-full px-2 py-2 hover:bg-line transition-colors"
+                                                onClick={() => openMovementDetail(product)}
+                                                title="Ver movimiento"
+                                                aria-label="Ver ventas y compras por período"
+                                            >
+                                                <Icon.ChartBar size={18} />
+                                                <span className="hidden xl:inline text-xs font-semibold">Movimiento</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="inline-flex items-center gap-1 rounded-full px-2 py-2 hover:bg-line transition-colors"
                                                 onClick={() => onRestockProduct(product)}
                                                 title="Registrar compra"
                                                 aria-label="Registrar compra"
@@ -614,6 +761,228 @@ export default React.memo(function ProductsManagementPanel({
                     </tbody>
                 </table>
             </div>
+
+            {movementProduct && (
+                <div
+                    className="fixed inset-0 z-[220] flex items-center justify-center bg-black/50 p-4"
+                    onClick={closeMovementDetail}
+                >
+                    <div
+                        className="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-2xl bg-white shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 border-b border-line p-5">
+                            <div className="min-w-0">
+                                <div className="heading5 truncate">
+                                    {movementDetail?.product?.name || movementProduct?.name || 'Movimiento del producto'}
+                                </div>
+                                <div className="mt-1 flex flex-wrap gap-2 text-xs text-secondary">
+                                    <span>{movementDetail?.product?.category || movementProduct?.category || 'Sin categoría'}</span>
+                                    {(movementDetail?.product?.sku || movementProduct?.attributes?.sku) && (
+                                        <span>SKU {movementDetail?.product?.sku || movementProduct?.attributes?.sku}</span>
+                                    )}
+                                    {movementDetail?.period && (
+                                        <span>
+                                            {movementDetail.period.label}
+                                            {movementDetail.period.start_date && movementDetail.period.end_date
+                                                ? `: ${formatIsoDate(movementDetail.period.start_date)} - ${formatIsoDate(movementDetail.period.end_date)}`
+                                                : ''}
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                className="rounded-full p-2 text-secondary transition-colors hover:bg-surface hover:text-black disabled:opacity-50"
+                                onClick={closeMovementDetail}
+                                disabled={movementLoading}
+                                aria-label="Cerrar movimiento"
+                            >
+                                <Icon.X size={22} />
+                            </button>
+                        </div>
+
+                        <div className="overflow-y-auto p-5">
+                            <div className="mb-5 flex flex-wrap gap-2">
+                                {MOVEMENT_PERIOD_OPTIONS.map((option) => {
+                                    const isActive = movementPeriod === option.key
+                                    return (
+                                        <button
+                                            key={option.key}
+                                            type="button"
+                                            className={`rounded-full border px-4 py-2 text-sm font-bold transition-colors ${
+                                                isActive
+                                                    ? 'border-black bg-black text-white'
+                                                    : 'border-line bg-white text-secondary hover:border-black hover:text-black'
+                                            }`}
+                                            onClick={() => setMovementPeriod(option.key)}
+                                            disabled={movementLoading && isActive}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+
+                            {movementError && (
+                                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red">
+                                    {movementError}
+                                </div>
+                            )}
+
+                            {movementLoading && !movementDetail ? (
+                                <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-line bg-surface text-sm text-secondary">
+                                    Cargando movimiento del producto...
+                                </div>
+                            ) : movementDetail ? (
+                                <div className="space-y-5">
+                                    <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+                                        <div className="rounded-xl border border-line bg-surface p-4">
+                                            <div className="text-[10px] font-bold uppercase text-secondary">Pedidos</div>
+                                            <div className="mt-1 text-xl font-bold">{formatMovementNumber(movementDetail.sales.orders_count)}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-line bg-surface p-4">
+                                            <div className="text-[10px] font-bold uppercase text-secondary">Vendido</div>
+                                            <div className="mt-1 text-xl font-bold">{formatMovementNumber(movementDetail.sales.units_sold)} uds</div>
+                                        </div>
+                                        <div className="rounded-xl border border-line bg-surface p-4">
+                                            <div className="text-[10px] font-bold uppercase text-secondary">Comprado</div>
+                                            <div className="mt-1 text-xl font-bold">{formatMovementNumber(movementDetail.purchases.purchased_units)} uds</div>
+                                        </div>
+                                        <div className="rounded-xl border border-line bg-surface p-4">
+                                            <div className="text-[10px] font-bold uppercase text-secondary">Facturas compra</div>
+                                            <div className="mt-1 text-xl font-bold">{formatMovementNumber(movementDetail.purchases.invoices_count || movementDetail.purchases.entries_count)}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-line bg-surface p-4">
+                                            <div className="text-[10px] font-bold uppercase text-secondary">Venta neta</div>
+                                            <div className="mt-1 text-xl font-bold">{formatMoney(movementDetail.sales.net_revenue)}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-line bg-surface p-4">
+                                            <div className="text-[10px] font-bold uppercase text-secondary">Utilidad</div>
+                                            <div className={`mt-1 text-xl font-bold ${Number(movementDetail.sales.profit ?? 0) < 0 ? 'text-red' : 'text-success'}`}>
+                                                {formatMoney(movementDetail.sales.profit)}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                                        <div className="rounded-xl border border-line bg-white p-4">
+                                            <div className="text-sm font-bold">Inventario actual</div>
+                                            <div className="mt-3 space-y-2 text-sm">
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Stock ficha</span>
+                                                    <span className="font-bold">{formatMovementNumber(movementDetail.inventory.current_stock)} uds</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Comprado histórico</span>
+                                                    <span className="font-bold">{formatMovementNumber(movementDetail.inventory.purchased_units_total)} uds</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Restante en lotes</span>
+                                                    <span className="font-bold">{formatMovementNumber(movementDetail.inventory.remaining_lot_units_total)} uds</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Lotes abiertos</span>
+                                                    <span className="font-bold">{formatMovementNumber(movementDetail.inventory.open_lots_count)}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl border border-line bg-white p-4">
+                                            <div className="text-sm font-bold">Ventas del período</div>
+                                            <div className="mt-3 space-y-2 text-sm">
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Venta bruta</span>
+                                                    <span className="font-bold">{formatMoney(movementDetail.sales.gross_revenue)}</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Costo</span>
+                                                    <span className="font-bold">{formatMoney(movementDetail.sales.cost)}</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Última venta</span>
+                                                    <span className="font-bold">{movementDetail.sales.last_sale_at ? formatIsoDate(String(movementDetail.sales.last_sale_at).slice(0, 10)) : '-'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl border border-line bg-white p-4">
+                                            <div className="text-sm font-bold">Compras del período</div>
+                                            <div className="mt-3 space-y-2 text-sm">
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Costo compra</span>
+                                                    <span className="font-bold">{formatMoney(movementDetail.purchases.purchase_cost)}</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Restante de esas compras</span>
+                                                    <span className="font-bold">{formatMovementNumber(movementDetail.purchases.remaining_units)} uds</span>
+                                                </div>
+                                                <div className="flex justify-between gap-4">
+                                                    <span className="text-secondary">Última compra</span>
+                                                    <span className="font-bold">{movementDetail.purchases.last_purchase_at ? formatIsoDate(String(movementDetail.purchases.last_purchase_at).slice(0, 10)) : '-'}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+                                        <div className="rounded-xl border border-line bg-white">
+                                            <div className="border-b border-line px-4 py-3 text-sm font-bold">Pedidos del período</div>
+                                            <div className="max-h-[320px] overflow-y-auto">
+                                                {movementDetail.sales.orders.length > 0 ? movementDetail.sales.orders.map((order) => (
+                                                    <div key={order.id} className="border-b border-line px-4 py-3 last:border-0">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="min-w-0">
+                                                                <div className="break-all text-sm font-bold">#{order.id}</div>
+                                                                <div className="text-xs text-secondary">
+                                                                    {order.created_at ? formatIsoDate(String(order.created_at).slice(0, 10)) : '-'} · {order.status}
+                                                                </div>
+                                                                <div className="truncate text-xs text-secondary">
+                                                                    {order.customer_name || order.customer_email || 'Cliente sin nombre'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="shrink-0 text-right text-sm">
+                                                                <div className="font-bold">{formatMovementNumber(order.quantity)} uds</div>
+                                                                <div className="text-xs text-secondary">{formatMoney(order.net_total)}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )) : (
+                                                    <div className="px-4 py-8 text-center text-sm text-secondary">Sin ventas en este período.</div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="rounded-xl border border-line bg-white">
+                                            <div className="border-b border-line px-4 py-3 text-sm font-bold">Compras del período</div>
+                                            <div className="max-h-[320px] overflow-y-auto">
+                                                {movementDetail.purchases.lots.length > 0 ? movementDetail.purchases.lots.map((lot) => (
+                                                    <div key={lot.id} className="border-b border-line px-4 py-3 last:border-0">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="min-w-0">
+                                                                <div className="break-all text-sm font-bold">{lot.invoice_number || 'Factura sin número'}</div>
+                                                                <div className="text-xs text-secondary">
+                                                                    {lot.purchase_date ? formatIsoDate(String(lot.purchase_date).slice(0, 10)) : '-'} · {lot.supplier_name || 'Sin proveedor'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="shrink-0 text-right text-sm">
+                                                                <div className="font-bold">{formatMovementNumber(lot.purchased_quantity)} uds</div>
+                                                                <div className="text-xs text-secondary">{formatMoney(lot.purchase_total)}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )) : (
+                                                    <div className="px-4 py-8 text-center text-sm text-secondary">Sin compras registradas en este período.</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     )
 })

@@ -460,6 +460,7 @@ export const buildProductRankingDecisionRows = (
 
     return {
       ...row,
+      sku: toText((row as any).sku) || toText(inventory?.sku),
       contribution_pct: percentOf(net, totalNet),
       stock_current: stock,
       coverage_days: coverageDays,
@@ -507,6 +508,7 @@ export const buildProductRankingActionItems = (
       id: `ranking:${row.recommended_action}:${row.product_id}`,
       product_id: row.product_id,
       product_name: row.product_name,
+      sku: row.sku,
       category: row.category,
       action: row.recommended_action,
       action_label: row.action_label,
@@ -532,6 +534,7 @@ export const buildProductRankingActionItems = (
       id: `inventory:${productId}`,
       product_id: productId,
       product_name: inventory.name,
+      sku: inventory.sku,
       category: inventory.category || 'Sin categoria',
       action: hasOverstock ? 'reduce_or_promote' : 'review_no_sales',
       action_label: getRankingActionLabel(hasOverstock ? 'reduce_or_promote' : 'review_no_sales'),

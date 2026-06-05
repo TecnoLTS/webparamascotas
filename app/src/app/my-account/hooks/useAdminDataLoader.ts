@@ -19,6 +19,7 @@ import type {
   DashboardStats,
   InventoryIntelligence,
   Order,
+  SalesReportView,
   ShippingPickup,
   ShippingProvider,
 } from '../types'
@@ -34,7 +35,7 @@ type UseAdminDataLoaderParams = {
   activeTab?: string
   salesRankingMonth: string
   salesRankingDate: string
-  salesRankingView?: 'month' | 'historical' | 'daily'
+  salesRankingView?: SalesReportView
   user: AccountUser | null
   adminReloadNonce: number
   passiveRefreshNonce?: number

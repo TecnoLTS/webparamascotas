@@ -40,7 +40,7 @@ export default function BillingRidesPanel({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between mb-4">
         <div>
           <div className="heading4">Facturas PDF enviadas</div>
-          <p className="text-secondary text-sm mt-1">RIDE generados por Facturador en <span className="font-semibold text-black">storage/pdf/rides</span>.</p>
+          <p className="text-secondary text-sm mt-1">RIDE generados por Facturador en <span className="font-semibold text-black">storage/pdf/rides</span>. Listado histórico cargado.</p>
         </div>
         <button
           type="button"

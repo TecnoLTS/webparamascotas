@@ -375,9 +375,12 @@ export default function DiscountCodesPanel({
                     </div>
 
                     <div className="rounded-2xl border border-line bg-white p-5">
-                        <div className="flex items-center gap-2 mb-4">
-                            <Icon.ClockCounterClockwise size={18} />
-                            <div className="text-xs uppercase font-bold tracking-wide text-secondary">Auditoría reciente</div>
+                        <div className="flex items-start gap-2 mb-4">
+                            <Icon.ClockCounterClockwise size={18} className="mt-0.5" />
+                            <div>
+                                <div className="text-xs uppercase font-bold tracking-wide text-secondary">Auditoría reciente</div>
+                                <div className="mt-1 text-xs text-secondary">Movimientos más recientes cargados; el uso de cada cupón es acumulado.</div>
+                            </div>
                         </div>
                         <div className="space-y-3">
                             {discountAuditRows.length === 0 ? (

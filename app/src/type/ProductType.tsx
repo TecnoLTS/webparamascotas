@@ -94,6 +94,11 @@ export interface ProductType {
             remainingUnits?: number,
             lastPurchaseAt?: string | null
         },
+        salesHistory?: {
+            ordersCount?: number,
+            soldUnits?: number,
+            lastSaleAt?: string | null
+        },
         procurement?: {
             openLotsCount?: number,
             remainingUnitsTotal?: number,

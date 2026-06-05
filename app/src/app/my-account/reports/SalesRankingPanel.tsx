@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { ProductRankingActionItem, ProductRankingDecisionRow } from '../types'
+import type { ProductRankingActionItem, ProductRankingDecisionRow, SalesReportView } from '../types'
 
 type SalesRankingPanelProps = {
   currentDateLabel: string
@@ -10,7 +10,7 @@ type SalesRankingPanelProps = {
   openSalesProductDetail: (item: ProductRankingDecisionRow) => void
   productRankingActionItems: ProductRankingActionItem[]
   productRankingDecisionRows: ProductRankingDecisionRow[]
-  productSalesRanking: any
+  periodLabel: string
   salesRankingFinancial: {
     orders_count: number
     gross: number
@@ -23,10 +23,10 @@ type SalesRankingPanelProps = {
   } | null
   salesRankingMonth: string
   salesRankingTotals?: { units_sold?: number; net_revenue?: number } | null
-  salesRankingView: 'month' | 'historical' | 'daily'
+  salesRankingView: SalesReportView
   selectReportMonth: (month: string) => void
   selectedRankingMonthLabel: string
-  setSalesRankingView: (view: 'month' | 'historical' | 'daily') => void
+  setSalesRankingView: (view: SalesReportView) => void
   totalUnitsSold: number
   onExportRanking: () => void
   onOpenProduct: (productId?: string | null) => void
@@ -50,6 +50,9 @@ const normalizeSearch = (value: unknown) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/[^a-z0-9.]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 
 const formatPercent = (value: number) =>
@@ -76,7 +79,7 @@ export default function SalesRankingPanel({
   openSalesProductDetail,
   productRankingActionItems,
   productRankingDecisionRows,
-  productSalesRanking,
+  periodLabel,
   salesRankingFinancial,
   salesRankingMonth,
   salesRankingTotals,
@@ -111,7 +114,7 @@ export default function SalesRankingPanel({
         if (categoryFilter !== 'all' && item.category !== categoryFilter) return false
         if (actionFilter !== 'all' && item.recommended_action !== actionFilter) return false
         if (!query) return true
-        const haystack = normalizeSearch(`${item.product_name} ${item.category} ${item.supplier} ${item.action_label}`)
+        const haystack = normalizeSearch(`${item.product_name} ${item.sku} ${item.product_id} ${item.category} ${item.supplier} ${item.action_label}`)
         return haystack.includes(query)
       })
       .sort((a, b) => {
@@ -142,11 +145,13 @@ export default function SalesRankingPanel({
     return { missingCost, marginRisk, restock, overstock, topContribution }
   }, [productRankingDecisionRows])
 
-  const activePeriodLabel = salesRankingView === 'daily'
-    ? `${productSalesRanking?.rangePeriod?.start || '-'} → ${productSalesRanking?.rangePeriod?.end || '-'}`
-    : salesRankingView === 'month'
-      ? `${productSalesRanking?.period?.start || '-'} → ${productSalesRanking?.period?.end || '-'}`
-      : `${productSalesRanking?.historicalPeriod?.start || '-'} → ${productSalesRanking?.historicalPeriod?.end || '-'}`
+  const activeViewLabel = salesRankingView === 'daily'
+    ? 'Día'
+    : salesRankingView === 'week'
+      ? 'Semana'
+      : salesRankingView === 'month'
+        ? selectedRankingMonthLabel
+        : 'Todo'
 
   return (
     <div className="tab text-content w-full">
@@ -176,12 +181,12 @@ export default function SalesRankingPanel({
           <div>
             <div className="heading6">Resumen y decisión comercial</div>
             <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-secondary">
-              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Vista: <span className="text-black">{salesRankingView === 'daily' ? 'Día' : salesRankingView === 'month' ? selectedRankingMonthLabel : 'Histórico'}</span></span>
-              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Periodo: <span className="text-black">{activePeriodLabel}</span></span>
+              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Vista: <span className="text-black">{activeViewLabel}</span></span>
+              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Periodo: <span className="text-black">{periodLabel}</span></span>
             </div>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            {salesRankingView !== 'daily' && (
+            {salesRankingView === 'month' && (
               <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
                 Mes
                 <input
@@ -196,11 +201,14 @@ export default function SalesRankingPanel({
               <button type="button" onClick={() => setSalesRankingView('daily')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'daily' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
                 Día
               </button>
+              <button type="button" onClick={() => setSalesRankingView('week')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'week' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
+                Semana
+              </button>
               <button type="button" onClick={() => setSalesRankingView('month')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
                 Mes
               </button>
               <button type="button" onClick={() => setSalesRankingView('historical')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
-                Histórico
+                Todo
               </button>
             </div>
           </div>
@@ -267,6 +275,7 @@ export default function SalesRankingPanel({
                     <div className="mt-2 text-sm font-bold">{item.product_name}</div>
                     <div className="mt-1 text-xs text-secondary">{item.detail}</div>
                     <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-semibold text-secondary">
+                      {item.sku && <span>SKU {item.sku}</span>}
                       <span>Stock {item.stock_current === null ? '-' : item.stock_current.toLocaleString('es-EC')}</span>
                       <span>Proveedor {item.supplier || '-'}</span>
                       {item.suggested_purchase_qty > 0 && <span>Compra +{item.suggested_purchase_qty.toLocaleString('es-EC')}</span>}
@@ -298,7 +307,7 @@ export default function SalesRankingPanel({
             type="search"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar producto, proveedor o acción"
+            placeholder="Buscar producto, SKU, proveedor o acción"
             className="rounded-lg border border-line bg-white px-3 py-2 text-sm outline-none focus:border-black"
           />
           <select
@@ -362,6 +371,9 @@ export default function SalesRankingPanel({
                     <button type="button" className="text-left hover:underline" onClick={() => openSalesProductDetail(item)}>
                       {item.product_name}
                     </button>
+                    {item.sku && (
+                      <div className="mt-1 text-[11px] font-medium text-secondary">SKU {item.sku}</div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm capitalize">{item.category || 'Sin categoría'}</td>
                   <td className="px-4 py-3">

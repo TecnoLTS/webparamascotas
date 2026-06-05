@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { requestApi } from '@/lib/apiClient'
-import type { DashboardStats } from '../types'
+import type { DashboardStats, SalesReportView } from '../types'
 
 type AccountUser = {
   id: string
@@ -65,7 +65,7 @@ export type ReportDataResult = {
 type UseReportDataParams = {
   activeTab?: string
   user: AccountUser | null
-  salesRankingView: 'month' | 'historical' | 'daily'
+  salesRankingView: SalesReportView
   salesRankingMonth: string
   salesRankingDate: string
   adminReloadNonce: number
@@ -106,11 +106,15 @@ export function useReportData({
 
     const cacheKey = salesRankingView === 'historical'
       ? 'historical'
+      : salesRankingView === 'week'
+        ? 'week'
       : salesRankingView === 'daily' && salesRankingDate
         ? `daily:${salesRankingDate}`
         : `month:${salesRankingMonth}`
     const query = salesRankingView === 'historical'
       ? '?scope=historical'
+      : salesRankingView === 'week'
+        ? '?scope=week'
       : salesRankingView === 'daily' && salesRankingDate
         ? `?date=${encodeURIComponent(salesRankingDate)}`
         : `?period=${encodeURIComponent(salesRankingMonth)}`

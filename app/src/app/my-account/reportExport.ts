@@ -6,6 +6,7 @@ import type {
   ProductRankingActionItem,
   ProductRankingDecisionRow,
   PurchaseInvoiceSummary,
+  SalesReportView,
   SalesRankingRow,
   TraceabilityIssue,
   TraceabilitySummary,
@@ -44,7 +45,7 @@ type ExportContext = {
   currentDateLabel: string
   selectedRankingMonth: string
   selectedRankingMonthLabel: string
-  salesRankingView: 'month' | 'historical' | 'range' | 'daily'
+  salesRankingView: SalesReportView | 'range'
   dashboardStats: DashboardStats | null
   financialScopeLabel: string
   financialSummary: ReportFinancialSummary
@@ -177,6 +178,13 @@ const getSalesRankingKey = (row: SalesRankingExportRow): string => {
   const productId = normalizeKeyPart(row.product_id)
   if (productId) return `id:${productId}`
   return `name:${normalizeKeyPart(row.product_name)}|${normalizeKeyPart(row.category)}`
+}
+
+const getSalesViewExportLabel = (view: ExportContext['salesRankingView']): string => {
+  if (view === 'month') return 'Mensual'
+  if (view === 'week') return 'Semanal'
+  if (view === 'daily' || view === 'range') return 'Diaria'
+  return 'Todo'
 }
 
 const getSalesCategoryKey = (row: SalesCategoryExportRow): string => normalizeKeyPart(row.category)
@@ -445,7 +453,7 @@ const buildCoverSheet = (context: ExportContext): WorksheetDefinition => {
       metricRow('Estados de venta incluidos', textCell((periodReport?.realized_statuses ?? ['completed', 'delivered']).join(', '))),
       ...(context.section === 'sales'
         ? [
-            metricRow('Vista de ventas', textCell(context.salesRankingView === 'month' ? 'Mensual' : (context.salesRankingView === 'range' || context.salesRankingView === 'daily') ? 'Diaria' : 'Histórica')),
+            metricRow('Vista de ventas', textCell(getSalesViewExportLabel(context.salesRankingView))),
             metricRow('Mes seleccionado', textCell(context.salesRankingView === 'month' ? context.selectedRankingMonthLabel : 'No aplica')),
             metricRow('Clave mes', textCell(context.salesRankingView === 'month' ? context.selectedRankingMonth : 'No aplica')),
           ]
@@ -577,7 +585,7 @@ const buildSalesWorksheets = (context: ExportContext): WorksheetDefinition[] => 
   const { dashboardStats, salesRankingRows, selectedRankingMonth, selectedRankingMonthLabel, salesRankingView } = context
   const rankingRows = context.rankingDecisionRows?.length ? context.rankingDecisionRows : salesRankingRows
   const periodReport = dashboardStats?.businessMetrics?.report
-  const resolvedView = salesRankingView === 'daily' ? 'range' : salesRankingView
+  const resolvedView = salesRankingView === 'daily' || salesRankingView === 'week' ? 'range' : salesRankingView
   const financial = resolvedView === 'month' && periodReport
     ? {
         orders_count: periodReport.sales.orders_count,
@@ -605,7 +613,7 @@ const buildSalesWorksheets = (context: ExportContext): WorksheetDefinition[] => 
         subtitleRow('Indicadores del período comercial seleccionado.', 3),
         blankRow(),
         headerRow(['Indicador', 'Valor']),
-        metricRow('Vista activa', textCell(salesRankingView === 'month' ? 'Mensual' : (salesRankingView === 'range' || salesRankingView === 'daily') ? 'Diaria' : 'Histórica')),
+        metricRow('Vista activa', textCell(getSalesViewExportLabel(salesRankingView))),
         metricRow('Mes seleccionado', textCell(salesRankingView === 'month' ? selectedRankingMonthLabel : 'No aplica')),
         metricRow('Clave del mes', textCell(salesRankingView === 'month' ? selectedRankingMonth : 'No aplica')),
         metricRow('Pedidos', numberCell(financial?.orders_count, 'integer')),

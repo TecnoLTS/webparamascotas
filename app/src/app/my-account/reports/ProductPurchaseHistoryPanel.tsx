@@ -3,7 +3,7 @@
 import React from 'react'
 
 import { getAdminProductEntityId } from '../productFormUtils'
-import type { ProductProcurementDetail, SalesRankingRow } from '../types'
+import type { ProductProcurementDetail, SalesRankingRow, SalesReportView } from '../types'
 
 type ProductPurchaseHistoryPanelProps = {
   products: any[]
@@ -25,10 +25,15 @@ type ProductPurchaseHistoryPanelProps = {
     margin?: number
   }>
   salesPeriodLabel: string
+  salesRankingMonth: string
+  salesRankingView: SalesReportView
+  selectedRankingMonthLabel: string
   selectedProductId: string | null
   selectedDetail: ProductProcurementDetail | null
   detailLoading: boolean
   detailError: string | null
+  selectReportMonth: (month: string) => void
+  setSalesRankingView: (view: SalesReportView) => void
   onSelectProduct: (productId: string) => void
   onRetryLoadSelectedProduct: () => void
   onOpenPurchaseInvoice: (invoiceId: string) => void
@@ -64,6 +69,9 @@ const normalizeSearch = (value: unknown) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
+    .replace(/(\d),(\d)/g, '$1.$2')
+    .replace(/[^a-z0-9.]+/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim()
 
 const toNumber = (value: unknown) => {
@@ -98,10 +106,15 @@ export default function ProductPurchaseHistoryPanel({
   salesRows,
   salesOrders,
   salesPeriodLabel,
+  salesRankingMonth,
+  salesRankingView,
+  selectedRankingMonthLabel,
   selectedProductId,
   selectedDetail,
   detailLoading,
   detailError,
+  selectReportMonth,
+  setSalesRankingView,
   onSelectProduct,
   onRetryLoadSelectedProduct,
   onOpenPurchaseInvoice,
@@ -111,6 +124,13 @@ export default function ProductPurchaseHistoryPanel({
   const [viewMode, setViewMode] = React.useState<ViewMode>('sales')
   const [search, setSearch] = React.useState('')
   const [quickFilter, setQuickFilter] = React.useState<QuickFilter>('all')
+  const activeViewLabel = salesRankingView === 'daily'
+    ? 'Día'
+    : salesRankingView === 'week'
+      ? 'Semana'
+      : salesRankingView === 'month'
+        ? selectedRankingMonthLabel
+        : 'Todo'
 
   const salesByProductId = React.useMemo(() => {
     return (salesRows || []).reduce((map, row) => {
@@ -234,8 +254,8 @@ export default function ProductPurchaseHistoryPanel({
   }, [filteredRows])
 
   const selectedRow = React.useMemo(
-    () => filteredRows.find((row) => row.id === selectedProductId) || null,
-    [filteredRows, selectedProductId],
+    () => listRows.find((row) => row.id === selectedProductId) || null,
+    [listRows, selectedProductId],
   )
   const selectedSalesRow = React.useMemo(
     () => (selectedProductId ? salesByProductId.get(selectedProductId) || null : null),
@@ -315,17 +335,57 @@ export default function ProductPurchaseHistoryPanel({
 
   return (
     <div className="space-y-4">
+      <div className="rounded-2xl border border-line bg-white p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <div className="heading6">Ventas vs compras por producto</div>
+            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-secondary">
+              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Ventas: <span className="text-black">{activeViewLabel}</span></span>
+              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Periodo: <span className="text-black">{salesPeriodLabel}</span></span>
+              <span className="rounded-md border border-line bg-surface px-2.5 py-1">Compras/stock: <span className="text-black">acumulado y actual</span></span>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            {salesRankingView === 'month' && (
+              <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
+                Mes
+                <input
+                  type="month"
+                  value={salesRankingMonth}
+                  onChange={(event) => selectReportMonth(event.target.value)}
+                  className="rounded-md border border-line bg-white px-3 py-1.5 text-sm font-semibold text-black outline-none focus:border-black"
+                />
+              </label>
+            )}
+            <div className="flex w-fit rounded-lg border border-line bg-surface p-1">
+              <button type="button" onClick={() => setSalesRankingView('daily')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'daily' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
+                Día
+              </button>
+              <button type="button" onClick={() => setSalesRankingView('week')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'week' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
+                Semana
+              </button>
+              <button type="button" onClick={() => setSalesRankingView('month')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
+                Mes
+              </button>
+              <button type="button" onClick={() => setSalesRankingView('historical')} className={`rounded-md px-4 py-1.5 text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}>
+                Todo
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <div className="rounded-xl border border-line bg-white p-3">
           <div className="text-[10px] uppercase font-bold text-secondary">Total productos</div>
           <div className="mt-1 text-xl font-bold">{summary.totalProducts.toLocaleString('es-EC')}</div>
         </div>
         <div className="rounded-xl border border-line bg-white p-3">
-          <div className="text-[10px] uppercase font-bold text-secondary">Con ventas</div>
+          <div className="text-[10px] uppercase font-bold text-secondary">Con ventas período</div>
           <div className="mt-1 text-xl font-bold">{summary.productsWithSales.toLocaleString('es-EC')}</div>
         </div>
         <div className="rounded-xl border border-line bg-white p-3">
-          <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
+          <div className="text-[10px] uppercase font-bold text-secondary">Vendidas período</div>
           <div className="mt-1 text-xl font-bold">{summary.soldUnits.toLocaleString('es-EC')}</div>
         </div>
         <div className="rounded-xl border border-line bg-white p-3">
@@ -420,6 +480,8 @@ export default function ProductPurchaseHistoryPanel({
                     <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-secondary">
                       <div>Pedidos: <span className="font-semibold text-black">{row.ordersCount.toLocaleString('es-EC')}</span></div>
                       <div>Vendidas: <span className="font-semibold text-black">{row.soldUnits.toLocaleString('es-EC')}</span></div>
+                      <div>Compradas acum.: <span className="font-semibold text-black">{row.purchasedUnits.toLocaleString('es-EC')}</span></div>
+                      <div>Stock lotes: <span className="font-semibold text-black">{row.remainingUnits.toLocaleString('es-EC')}</span></div>
                       <div>Venta neta: <span className="font-semibold text-black">{formatMoney(row.soldNetRevenue)}</span></div>
                       <div>Utilidad: <span className="font-semibold text-black">{formatMoney(row.soldProfit)}</span></div>
                     </div>
@@ -490,7 +552,7 @@ export default function ProductPurchaseHistoryPanel({
 
               {selectedSalesRow ? (
                 <>
-                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
                     <div className="rounded-xl border border-line bg-surface p-3">
                       <div className="text-[10px] uppercase font-bold text-secondary">Pedidos</div>
                       <div className="mt-1 text-lg font-bold">{Number(selectedSalesRow.orders_count ?? 0).toLocaleString('es-EC')}</div>
@@ -498,6 +560,14 @@ export default function ProductPurchaseHistoryPanel({
                     <div className="rounded-xl border border-line bg-surface p-3">
                       <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
                       <div className="mt-1 text-lg font-bold">{Number(selectedSalesRow.units_sold ?? 0).toLocaleString('es-EC')}</div>
+                    </div>
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <div className="text-[10px] uppercase font-bold text-secondary">Compradas acum.</div>
+                      <div className="mt-1 text-lg font-bold">{Number(selectedRow?.purchasedUnits ?? 0).toLocaleString('es-EC')}</div>
+                    </div>
+                    <div className="rounded-xl border border-line bg-surface p-3">
+                      <div className="text-[10px] uppercase font-bold text-secondary">Stock lotes</div>
+                      <div className="mt-1 text-lg font-bold">{Number(selectedRow?.remainingUnits ?? 0).toLocaleString('es-EC')}</div>
                     </div>
                     <div className="rounded-xl border border-line bg-surface p-3">
                       <div className="text-[10px] uppercase font-bold text-secondary">Venta neta</div>

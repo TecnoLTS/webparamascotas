@@ -229,12 +229,26 @@ import type {
     PurchaseInvoiceDetail,
     PurchaseInvoiceSummary,
     ReportPeriodSummary,
+    SalesReportView,
     SalesRankingRow,
     ShippingPickup,
     ShippingProvider,
 } from './types'
 
 type ReportSalesOrder = ReportPeriodSummary['orders'][number]
+
+const resolveSalesRankingSourceView = (view: SalesReportView): 'month' | 'historical' | 'range' => {
+    if (view === 'month') return 'month'
+    if (view === 'historical') return 'historical'
+    return 'range'
+}
+
+const getSalesReportViewLabel = (view: SalesReportView, monthLabel: string) => {
+    if (view === 'daily') return 'Día'
+    if (view === 'week') return 'Semana'
+    if (view === 'month') return monthLabel
+    return 'Todo'
+}
 
 const getStableKeyPart = (value: unknown) => String(value ?? '').trim().toLowerCase()
 
@@ -658,6 +672,59 @@ const summarizeReportPeriod = (
     }
 }
 
+const summarizeDashboardTrendRows = (
+    rows: Array<{ total?: number; gross?: number; cost?: number }>,
+    fullSummary: ReportFinancialSummary,
+    scopeLabel: string,
+): ReportFinancialSummary | null => {
+    const sourceRows = Array.isArray(rows) ? rows : []
+    if (sourceRows.length === 0) return null
+
+    const gross = sourceRows.reduce((sum, row) => sum + toFinancialNumber(row.gross), 0)
+    const net = sourceRows.reduce((sum, row) => sum + toFinancialNumber(row.total), 0)
+    const cost = sourceRows.reduce((sum, row) => sum + toFinancialNumber(row.cost), 0)
+    if (gross === 0 && net === 0 && cost === 0) return null
+
+    const grossProfit = gross - cost
+    const ratio = fullSummary.gross > 0 ? Math.min(1, Math.max(0, gross / fullSummary.gross)) : 0
+    const netDiv = net > 0 ? net : (gross || 1)
+    const estimatedPeriodExpenses = fullSummary.periodExpenses * ratio
+    const estimatedPaidExpenses = fullSummary.paidExpenses * ratio
+    const estimatedFinancialAdjustments = fullSummary.financialAdjustments * ratio
+    const ordersCount = Math.max(Math.round(fullSummary.ordersCount * ratio), 0)
+    const netProfit = grossProfit - estimatedPeriodExpenses - estimatedFinancialAdjustments
+    const flowProfit = grossProfit - estimatedPaidExpenses - estimatedFinancialAdjustments
+
+    return {
+        scopeLabel,
+        ordersCount,
+        gross,
+        net,
+        vat: fullSummary.vat * ratio,
+        shipping: fullSummary.shipping * ratio,
+        cost,
+        grossProfit,
+        periodExpenses: estimatedPeriodExpenses,
+        paidExpenses: estimatedPaidExpenses,
+        pendingExpenses: fullSummary.pendingExpenses * ratio,
+        overdueExpenses: fullSummary.overdueExpenses * ratio,
+        financialAdjustments: estimatedFinancialAdjustments,
+        netProfit,
+        flowProfit,
+        grossMargin: (grossProfit / netDiv) * 100,
+        netMargin: (netProfit / netDiv) * 100,
+        flowMargin: (flowProfit / netDiv) * 100,
+        roi: cost > 0 ? (grossProfit / cost) * 100 : 0,
+        netRoi: (cost + estimatedPeriodExpenses + Math.abs(estimatedFinancialAdjustments)) > 0
+            ? (netProfit / (cost + estimatedPeriodExpenses + Math.abs(estimatedFinancialAdjustments))) * 100
+            : 0,
+        flowRoi: (cost + estimatedPaidExpenses + Math.abs(estimatedFinancialAdjustments)) > 0
+            ? (flowProfit / (cost + estimatedPaidExpenses + Math.abs(estimatedFinancialAdjustments))) * 100
+            : 0,
+        averageOrderNet: ordersCount > 0 ? net / ordersCount : 0,
+    }
+}
+
 const UsersManagementPanel = dynamic(() => import('./components/UsersManagementPanel'), {
     ssr: false,
 })
@@ -886,9 +953,9 @@ const MyAccount = () => {
     // Admin Data State
     const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null)
     const [inventoryIntelligenceState, setInventoryIntelligence] = useState<InventoryIntelligence | null>(null)
-    const [trendRange, setTrendRange] = useState<'week' | 'month'>('week')
+    const [trendRange, setTrendRange] = useState<'day' | 'week' | 'month' | 'all'>('week')
     const [trendMetric, setTrendMetric] = useState<'gross' | 'profit'>('gross')
-    const [salesRankingView, setSalesRankingView] = useState<'month' | 'historical' | 'daily'>('month')
+    const [salesRankingView, setSalesRankingView] = useState<SalesReportView>('month')
     const [salesRankingMonth, setSalesRankingMonth] = useState<string>(getCurrentMonthKey())
     const [salesRankingDate, setSalesRankingDate] = useState<string>(() => {
         const today = new Date()
@@ -3186,8 +3253,23 @@ const MyAccount = () => {
     const effectiveReportData = periodReport ?? reportDataRef.current
     const selectedRankingMonth = productSalesRanking?.selectedMonth || salesRankingMonth
     const selectedRankingMonthLabel = formatMonthKeyLabel(selectedRankingMonth)
+    const activeSalesReportViewLabel = getSalesReportViewLabel(salesRankingView, selectedRankingMonthLabel)
+    const reportPeriodMatchesActiveView = React.useCallback((report: { period?: { period_key?: string; start_date?: string; end_date?: string } } | null | undefined) => {
+        const period = report?.period
+        if (!period) return false
+        if (salesRankingView === 'month') return period.period_key === selectedRankingMonth
+        if (salesRankingView === 'week') return String(period.period_key || '').startsWith('week:')
+        if (salesRankingView === 'daily') return period.start_date === salesRankingDate && period.end_date === salesRankingDate
+        return period.start_date === '2000-01-01'
+    }, [salesRankingDate, salesRankingView, selectedRankingMonth])
+    const activePeriodReport = React.useMemo(() => {
+        const refReport = reportDataRef.current
+        if (reportPeriodMatchesActiveView(refReport)) return refReport
+        if (reportPeriodMatchesActiveView(effectiveReportData)) return effectiveReportData
+        return null
+    }, [effectiveReportData, reportPeriodMatchesActiveView])
     const salesRankingRows = React.useMemo<SalesRankingRow[]>(() => {
-        const resolvedView = salesRankingView === 'daily' ? 'range' : salesRankingView
+        const resolvedView = resolveSalesRankingSourceView(salesRankingView)
         const cacheKey = `${selectedRankingMonth}:${resolvedView}`
         const cached = rankingCacheRef.current[cacheKey]
         if (cached) return cached
@@ -3196,10 +3278,9 @@ const MyAccount = () => {
         return rows
     }, [productSalesRanking, salesRankingView, selectedRankingMonth])
     const reportSalesRankingRows = React.useMemo<SalesRankingRow[]>(() => {
-        const resolvedView = salesRankingView === 'daily' ? 'range' : salesRankingView
-        const reportData = reportDataRef.current
-        const reportProducts = reportData?.products ?? effectiveReportData?.products ?? []
-        const reportPeriodKey = reportData?.period?.period_key ?? effectiveReportData?.period?.period_key
+        const resolvedView = resolveSalesRankingSourceView(salesRankingView)
+        const reportProducts = activePeriodReport?.products ?? []
+        const reportPeriodKey = activePeriodReport?.period?.period_key
 
         const canUseReportProducts = resolvedView !== 'month' || reportPeriodKey === selectedRankingMonth
         if (canUseReportProducts && reportProducts.length > 0) {
@@ -3247,59 +3328,16 @@ const MyAccount = () => {
             }))
         }
 
-        if (resolvedView === 'month' && reportPeriodKey === selectedRankingMonth) {
-            return (effectiveReportData?.products ?? []).map((item) => ({
-                product_id: item.product_id,
-                product_name: item.product_name,
-                category: item.category,
-                orders_count: Number(item.orders_count ?? 0),
-                units_sold: Number(item.units_sold ?? 0),
-                gross_revenue: Number(item.gross_revenue ?? 0),
-                net_revenue: Number(item.net_revenue ?? 0),
-                vat_amount: Number(item.vat_amount ?? 0),
-                shipping_amount: Number(item.shipping_amount ?? 0),
-                cost: Number(item.cost ?? 0),
-                profit: Number(item.profit ?? 0),
-                margin: Number(item.margin ?? 0),
-                order_refs: Array.isArray(item.order_refs) ? item.order_refs : [],
-                month_orders_count: Number(item.orders_count ?? 0),
-                month_units_sold: Number(item.units_sold ?? 0),
-                month_gross_revenue: Number(item.gross_revenue ?? 0),
-                month_net_revenue: Number(item.net_revenue ?? 0),
-                month_vat_amount: Number(item.vat_amount ?? 0),
-                month_shipping_amount: Number(item.shipping_amount ?? 0),
-                month_cost: Number(item.cost ?? 0),
-                month_profit: Number(item.profit ?? 0),
-                month_margin: Number(item.margin ?? 0),
-                range_orders_count: 0,
-                range_units_sold: 0,
-                range_gross_revenue: 0,
-                range_net_revenue: 0,
-                range_vat_amount: 0,
-                range_shipping_amount: 0,
-                range_cost: 0,
-                range_profit: 0,
-                range_margin: 0,
-                historical_orders_count: 0,
-                historical_units_sold: 0,
-                historical_gross_revenue: 0,
-                historical_net_revenue: 0,
-                historical_vat_amount: 0,
-                historical_shipping_amount: 0,
-                historical_cost: 0,
-                historical_profit: 0,
-                historical_margin: 0,
-            }))
-        }
+        if (salesRankingView === 'week') return []
         return buildSalesRankingRows(productSalesRanking, resolvedView)
-    }, [periodReport, productSalesRanking, salesRankingView, selectedRankingMonth])
+    }, [activePeriodReport, productSalesRanking, salesRankingView, selectedRankingMonth])
     const reportSalesUnitsSold = React.useMemo(
         () => reportSalesRankingRows.reduce((acc, item) => acc + Number(item.units_sold ?? 0), 0),
         [reportSalesRankingRows]
     )
     const reportWeekUnitCount = React.useMemo(() => {
         if (trendRange !== 'week') return Math.round(reportSalesUnitsSold)
-        const orders = effectiveReportData?.orders ?? reportDataRef.current?.orders
+        const orders = activePeriodReport?.orders
         if (!orders || orders.length === 0) return Math.round(reportSalesUnitsSold)
         const now = new Date()
         const weekStart = new Date(now)
@@ -3312,12 +3350,11 @@ const MyAccount = () => {
             return orderDateStr >= weekStartStr ? sum + (Number(o.units_count) || 0) : sum
         }, 0)
         return weekUnits > 0 ? Math.round(weekUnits) : Math.round(reportSalesUnitsSold)
-    }, [trendRange, effectiveReportData, reportSalesUnitsSold])
+    }, [activePeriodReport, trendRange, reportSalesUnitsSold])
     const reportSalesCategories = React.useMemo(() => {
-        const reportData = reportDataRef.current
-        const reportCategories = reportData?.categories ?? effectiveReportData?.categories ?? []
-        const reportPeriodKey = reportData?.period?.period_key ?? effectiveReportData?.period?.period_key
-        const canUseReportCategories = (salesRankingView === 'daily' ? 'range' : salesRankingView) !== 'month' || reportPeriodKey === selectedRankingMonth
+        const reportCategories = activePeriodReport?.categories ?? []
+        const reportPeriodKey = activePeriodReport?.period?.period_key
+        const canUseReportCategories = resolveSalesRankingSourceView(salesRankingView) !== 'month' || reportPeriodKey === selectedRankingMonth
         if (canUseReportCategories && reportCategories.length > 0) {
             return reportCategories
                 .map((item) => ({ category: item.category, total: Number(item.net_revenue ?? 0) }))
@@ -3328,24 +3365,18 @@ const MyAccount = () => {
             const category = String(item.category || 'Sin categoría')
             totals.set(category, (totals.get(category) ?? 0) + Number(item.net_revenue ?? 0))
         })
-        if (salesRankingView === 'month' && effectiveReportData?.period?.period_key === selectedRankingMonth) {
-            return (effectiveReportData.categories ?? [])
-                .map((item) => ({ category: item.category, total: Number(item.net_revenue ?? 0) }))
-                .sort((a, b) => b.total - a.total)
-        }
         return Array.from(totals.entries())
             .map(([category, total]) => ({ category, total }))
             .sort((a, b) => b.total - a.total)
-    }, [effectiveReportData, reportSalesRankingRows, salesRankingView, selectedRankingMonth])
+    }, [activePeriodReport, reportSalesRankingRows, salesRankingView, selectedRankingMonth])
     const reportSalesCategoriesTotal = React.useMemo(
         () => reportSalesCategories.reduce((acc, item) => acc + Number(item.total ?? 0), 0),
         [reportSalesCategories]
     )
     const reportTraceabilityCategories = React.useMemo<ReportPeriodSummary['categories']>(() => {
-        const reportData = reportDataRef.current
-        const reportCategories = reportData?.categories ?? effectiveReportData?.categories ?? []
-        const reportPeriodKey = reportData?.period?.period_key ?? effectiveReportData?.period?.period_key
-        const canUseReportCategories = (salesRankingView === 'daily' ? 'range' : salesRankingView) !== 'month' || reportPeriodKey === selectedRankingMonth
+        const reportCategories = activePeriodReport?.categories ?? []
+        const reportPeriodKey = activePeriodReport?.period?.period_key
+        const canUseReportCategories = resolveSalesRankingSourceView(salesRankingView) !== 'month' || reportPeriodKey === selectedRankingMonth
         if (canUseReportCategories && reportCategories.length > 0) {
             return reportCategories.map((item) => ({
                 category: item.category || 'Sin categoría',
@@ -3397,31 +3428,13 @@ const MyAccount = () => {
             grouped.set(category, existing)
         })
         return Array.from(grouped.values()).sort((a, b) => Number(b.net_revenue ?? 0) - Number(a.net_revenue ?? 0))
-    }, [effectiveReportData, reportSalesRankingRows, salesRankingView, selectedRankingMonth])
+    }, [activePeriodReport, reportSalesRankingRows, salesRankingView, selectedRankingMonth])
     const reportSalesOrders = React.useMemo(() => {
-        const reportData = reportDataRef.current
-        if (reportData) {
-            if (salesRankingView === 'month') {
-                const reportPeriodKey = reportData.period?.period_key
-                if (reportPeriodKey === selectedRankingMonth) {
-                    return dedupeReportSalesOrders(reportData.orders ?? [])
-                }
-                return []
-            }
-            return dedupeReportSalesOrders(reportData.orders ?? [])
-        }
-        const report = effectiveReportData
-        if (salesRankingView === 'month') {
-            if (report?.period?.period_key === selectedRankingMonth) {
-                return dedupeReportSalesOrders(report.orders ?? [])
-            }
-            return []
-        }
-        return dedupeReportSalesOrders(report?.orders ?? [])
-    }, [effectiveReportData, selectedRankingMonth, salesRankingView])
+        return dedupeReportSalesOrders(activePeriodReport?.orders ?? [])
+    }, [activePeriodReport])
     const traceabilityReportSource = React.useMemo(() => {
-        const salesData = (effectiveReportData?.sales ?? {}) as Record<string, unknown>
-        const profitData = (effectiveReportData?.profit ?? {}) as Record<string, unknown>
+        const salesData = (activePeriodReport?.sales ?? {}) as Record<string, unknown>
+        const profitData = (activePeriodReport?.profit ?? {}) as Record<string, unknown>
         const productRows = reportSalesRankingRows.map((product) => ({
             product_id: product.product_id,
             product_name: product.product_name,
@@ -3464,7 +3477,7 @@ const MyAccount = () => {
                 net_period_margin: Number(profitData.net_period_margin ?? 0),
             },
         }
-    }, [effectiveReportData, reportSalesOrders, reportSalesRankingRows, reportTraceabilityCategories])
+    }, [activePeriodReport, reportSalesOrders, reportSalesRankingRows, reportTraceabilityCategories])
     const traceabilityIssues = React.useMemo(
         () => buildTraceabilityIssues(traceabilityReportSource),
         [traceabilityReportSource]
@@ -3515,13 +3528,16 @@ const MyAccount = () => {
         })
     }, [reportSalesOrders, salesOrderSearch, salesOrderStatusFilter, reportSalesOrderSearchCache])
     const reportSalesPeriodLabel = (() => {
-        const reportData = reportDataRef.current
-        const reportPeriod = reportData?.period ?? effectiveReportData?.period
+        const reportPeriod = activePeriodReport?.period
         if (salesRankingView === 'historical') {
             if (reportPeriod) return `${reportPeriod.start_date} → ${reportPeriod.end_date}`
             if (productSalesRanking?.historicalPeriod) {
                 return `${productSalesRanking.historicalPeriod.start || '-'} → ${productSalesRanking.historicalPeriod.end || '-'}`
             }
+        }
+        if (salesRankingView === 'week') {
+            if (reportPeriod) return `${reportPeriod.start_date} → ${reportPeriod.end_date}`
+            return '-'
         }
         if (salesRankingView === 'daily') {
             if (reportPeriod) return `${reportPeriod.start_date} → ${reportPeriod.end_date}`
@@ -3539,30 +3555,36 @@ const MyAccount = () => {
     })()
     const selectedProcurementSalesProduct = React.useMemo(() => {
         if (!selectedProductProcurementDetail) return null
-        return salesRankingRows.find((item) => item.product_id === selectedProductProcurementDetail.product_id) || null
-    }, [salesRankingRows, selectedProductProcurementDetail])
+        return reportSalesRankingRows.find((item) => item.product_id === selectedProductProcurementDetail.product_id)
+            || salesRankingRows.find((item) => item.product_id === selectedProductProcurementDetail.product_id)
+            || null
+    }, [reportSalesRankingRows, salesRankingRows, selectedProductProcurementDetail])
     const monthlySalesRankingTotals = productSalesRanking?.monthlyTotals
     const historicalSalesRankingTotals = productSalesRanking?.historicalTotals
     const dailySalesRankingTotals = productSalesRanking?.rangeTotals
-    const reportOrdersData = effectiveReportData?.orders
+    const reportOrdersData = activePeriodReport?.orders
     const totalUnitsSold = reportOrdersData ? reportOrdersData.reduce((sum, o) => sum + (Number(o.units_count) || 0), 0) : 0
     const totalCost = reportOrdersData ? reportOrdersData.reduce((sum, o) => sum + (Number(o.cost) || 0), 0) : 0
     const totalProfit = reportOrdersData ? reportOrdersData.reduce((sum, o) => sum + (Number(o.profit) || 0), 0) : 0
-    const fallbackTotals = { units_sold: totalUnitsSold, net_revenue: Number((effectiveReportData?.sales as any)?.net ?? 0), cost: totalCost, profit: totalProfit }
+    const fallbackTotals = { units_sold: totalUnitsSold, net_revenue: Number((activePeriodReport?.sales as any)?.net ?? 0), cost: totalCost, profit: totalProfit }
     const salesRankingTotals = salesRankingView === 'daily'
         ? (dailySalesRankingTotals || fallbackTotals)
-        : salesRankingView === 'month'
-            ? monthlySalesRankingTotals
-            : (historicalSalesRankingTotals || fallbackTotals)
+        : salesRankingView === 'week'
+            ? fallbackTotals
+            : salesRankingView === 'month'
+                ? monthlySalesRankingTotals
+                : (historicalSalesRankingTotals || fallbackTotals)
     const monthlySalesFinancial = productSalesRanking?.monthlyFinancial
     const historicalSalesFinancial = productSalesRanking?.historicalFinancial
     const dailySalesFinancial = productSalesRanking?.rangeFinancial
-    const reportSalesData = effectiveReportData?.sales
+    const reportSalesData = activePeriodReport?.sales
     const rawFinancial = reportSalesData || (salesRankingView === 'daily'
         ? dailySalesFinancial
-        : salesRankingView === 'month'
-            ? monthlySalesFinancial
-            : historicalSalesFinancial)
+        : salesRankingView === 'week'
+            ? null
+            : salesRankingView === 'month'
+                ? monthlySalesFinancial
+                : historicalSalesFinancial)
     const salesRankingFinancial: {orders_count:number;gross:number;net:number;vat:number;shipping:number;cost:number;profit:number;margin:number} | null = rawFinancial ? {
         orders_count: (rawFinancial as any).orders_count ?? (rawFinancial as any).total ?? 0,
         gross: (rawFinancial as any).gross ?? (rawFinancial as any).total ?? 0,
@@ -3698,107 +3720,33 @@ const MyAccount = () => {
         }
         return summarizeReportFinancialRows(reportFinancialRows, salesSummary, profitStats, reportFinancialScopeLabel)
     }, [financialTrendMode, financialTrendScope, effectiveReportData, profitStats, reportFinancialRows, reportFinancialScopeLabel, salesSummary, selectedFinancialTrendRow?.period])
+    const dayFinancialSummary = React.useMemo((): ReportFinancialSummary | null => {
+        const perf = dashboardStats?.monthlyPerformance ?? []
+        const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Guayaquil' })
+        const todayRow = [...perf].reverse().find((row) => String(row.date || row.day || '').slice(0, 10) === todayKey) ?? perf[perf.length - 1]
+        return summarizeDashboardTrendRows(todayRow ? [todayRow] : [], reportFinancialSummary, 'Día actual')
+    }, [dashboardStats?.monthlyPerformance, reportFinancialSummary])
     const weekFinancialSummary = React.useMemo((): ReportFinancialSummary | null => {
         const perf = dashboardStats?.monthlyPerformance ?? []
         const weekDays = perf.slice(-7)
-        if (weekDays.length === 0) return null
-        const gross = weekDays.reduce((s, d) => s + toFinancialNumber(d.gross), 0)
-        const net = weekDays.reduce((s, d) => s + toFinancialNumber(d.total), 0)
-        const cost = weekDays.reduce((s, d) => s + toFinancialNumber(d.cost), 0)
-        if (gross === 0 && net === 0 && cost === 0) return null
-        const grossProfit = gross - cost
-        const fullSummary = reportFinancialSummary
-        const weekRatio = fullSummary.gross > 0 ? Math.min(1, Math.max(0, gross / fullSummary.gross)) : 0
-        const netDiv = net > 0 ? net : (gross || 1)
-        const estimatedVat = fullSummary.vat * weekRatio
-        const estimatedShipping = fullSummary.shipping * weekRatio
-        const estimatedPeriodExpenses = fullSummary.periodExpenses * weekRatio
-        const estimatedPaidExpenses = fullSummary.paidExpenses * weekRatio
-        const estimatedFinancialAdjustments = fullSummary.financialAdjustments * weekRatio
-        const ordersCount = Math.max(Math.round(fullSummary.ordersCount * weekRatio), 0)
-        const netProfit = grossProfit - estimatedPeriodExpenses - estimatedFinancialAdjustments
-        const flowProfit = grossProfit - estimatedPaidExpenses - estimatedFinancialAdjustments
-        return {
-            scopeLabel: 'Semana actual',
-            ordersCount,
-            gross,
-            net,
-            vat: estimatedVat,
-            shipping: estimatedShipping,
-            cost,
-            grossProfit,
-            periodExpenses: estimatedPeriodExpenses,
-            paidExpenses: estimatedPaidExpenses,
-            pendingExpenses: fullSummary.pendingExpenses * weekRatio,
-            overdueExpenses: fullSummary.overdueExpenses * weekRatio,
-            financialAdjustments: estimatedFinancialAdjustments,
-            netProfit,
-            flowProfit,
-            grossMargin: (grossProfit / netDiv) * 100,
-            netMargin: (netProfit / netDiv) * 100,
-            flowMargin: (flowProfit / netDiv) * 100,
-            roi: cost > 0 ? (grossProfit / cost) * 100 : 0,
-            netRoi: (cost + estimatedPeriodExpenses + Math.abs(estimatedFinancialAdjustments)) > 0
-                ? (netProfit / (cost + estimatedPeriodExpenses + Math.abs(estimatedFinancialAdjustments))) * 100
-                : 0,
-            flowRoi: (cost + estimatedPaidExpenses + Math.abs(estimatedFinancialAdjustments)) > 0
-                ? (flowProfit / (cost + estimatedPaidExpenses + Math.abs(estimatedFinancialAdjustments))) * 100
-                : 0,
-            averageOrderNet: ordersCount > 0 ? net / ordersCount : 0,
-        }
+        return summarizeDashboardTrendRows(weekDays, reportFinancialSummary, 'Semana actual')
     }, [dashboardStats?.monthlyPerformance, reportFinancialSummary])
     const monthFinancialSummary = React.useMemo((): ReportFinancialSummary | null => {
         const trend = dashboardStats?.salesTrend30Days ?? []
         const now = new Date()
         const firstDayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
         const monthDays = trend.filter(d => (d.day || '') >= firstDayStr)
-        if (monthDays.length === 0) return null
-        const gross = monthDays.reduce((s, d) => s + toFinancialNumber(d.gross), 0)
-        const net = monthDays.reduce((s, d) => s + toFinancialNumber(d.total), 0)
-        const cost = monthDays.reduce((s, d) => s + toFinancialNumber(d.cost), 0)
-        if (gross === 0 && net === 0 && cost === 0) return null
-        const grossProfit = gross - cost
-        const fullSummary = reportFinancialSummary
-        const monthRatio = fullSummary.gross > 0 ? Math.min(1, Math.max(0, gross / fullSummary.gross)) : 0
-        const netDiv = net > 0 ? net : (gross || 1)
-        const estimatedVat = fullSummary.vat * monthRatio
-        const estimatedShipping = fullSummary.shipping * monthRatio
-        const estimatedPeriodExpenses = fullSummary.periodExpenses * monthRatio
-        const estimatedPaidExpenses = fullSummary.paidExpenses * monthRatio
-        const estimatedFinancialAdjustments = fullSummary.financialAdjustments * monthRatio
-        const ordersCount = Math.max(Math.round(fullSummary.ordersCount * monthRatio), 0)
-        const netProfit = grossProfit - estimatedPeriodExpenses - estimatedFinancialAdjustments
-        const flowProfit = grossProfit - estimatedPaidExpenses - estimatedFinancialAdjustments
-        return {
-            scopeLabel: 'Mes actual',
-            ordersCount,
-            gross,
-            net,
-            vat: estimatedVat,
-            shipping: estimatedShipping,
-            cost,
-            grossProfit,
-            periodExpenses: estimatedPeriodExpenses,
-            paidExpenses: estimatedPaidExpenses,
-            pendingExpenses: fullSummary.pendingExpenses * monthRatio,
-            overdueExpenses: fullSummary.overdueExpenses * monthRatio,
-            financialAdjustments: estimatedFinancialAdjustments,
-            netProfit,
-            flowProfit,
-            grossMargin: (grossProfit / netDiv) * 100,
-            netMargin: (netProfit / netDiv) * 100,
-            flowMargin: (flowProfit / netDiv) * 100,
-            roi: cost > 0 ? (grossProfit / cost) * 100 : 0,
-            netRoi: (cost + estimatedPeriodExpenses + Math.abs(estimatedFinancialAdjustments)) > 0
-                ? (netProfit / (cost + estimatedPeriodExpenses + Math.abs(estimatedFinancialAdjustments))) * 100
-                : 0,
-            flowRoi: (cost + estimatedPaidExpenses + Math.abs(estimatedFinancialAdjustments)) > 0
-                ? (flowProfit / (cost + estimatedPaidExpenses + Math.abs(estimatedFinancialAdjustments))) * 100
-                : 0,
-            averageOrderNet: ordersCount > 0 ? net / ordersCount : 0,
-        }
+        return summarizeDashboardTrendRows(monthDays, reportFinancialSummary, 'Mes actual')
     }, [dashboardStats?.salesTrend30Days, reportFinancialSummary])
-    const generalFinancialSummary = (trendRange === 'week' ? weekFinancialSummary : monthFinancialSummary) ?? reportFinancialSummary
+    const generalFinancialSummary = (
+        trendRange === 'day'
+            ? dayFinancialSummary
+            : trendRange === 'week'
+                ? weekFinancialSummary
+                : trendRange === 'month'
+                    ? monthFinancialSummary
+                    : reportFinancialSummary
+    ) ?? reportFinancialSummary
     const inventoryIntelligence = inventoryIntelligenceState ?? dashboardStats?.businessMetrics?.inventoryIntelligence ?? null
     const productRankingDecisionRows = React.useMemo<ProductRankingDecisionRow[]>(() => {
         const sourceRows = reportSalesRankingRows.length > 0 ? reportSalesRankingRows : salesRankingRows
@@ -4018,6 +3966,10 @@ const MyAccount = () => {
     const balanceAverageOrderNet = balanceSummary.averageOrderNet || Number(dashboardStats?.businessMetrics?.averageOrderValue ?? 0)
     const reportGeneralScopeLabel = React.useMemo(() => {
         const now = new Date()
+        if (trendRange === 'day') {
+            const dayLabel = formatDateEcuador(now.toISOString(), { day: '2-digit', month: 'short' })
+            return `Día actual (${dayLabel})`
+        }
         if (trendRange === 'week') {
             const weekStart = new Date(now)
             weekStart.setDate(weekStart.getDate() - 6)
@@ -4025,18 +3977,19 @@ const MyAccount = () => {
             const endLabel = formatDateEcuador(now.toISOString(), { day: '2-digit', month: 'short' })
             return `Semana actual (${startLabel} - ${endLabel})`
         }
+        if (trendRange === 'all') return 'Todo el historial visible'
         const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
         return `Mes actual (${monthNames[now.getMonth()]} ${now.getFullYear()})`
     }, [trendRange])
     const reportOrdersCount = generalFinancialSummary.ordersCount
     const reportAverageOrderNet = generalFinancialSummary.averageOrderNet || Number(dashboardStats?.businessMetrics?.averageOrderValue ?? 0)
     const generalSalesProportion = React.useMemo(() => {
-        if (trendRange === 'week' && reportFinancialSummary.gross > 0) {
-            const weekGross = weekFinancialSummary?.gross ?? 0
-            return weekGross > 0 ? Math.min(weekGross / reportFinancialSummary.gross, 1) : 1
+        if ((trendRange === 'day' || trendRange === 'week') && reportFinancialSummary.gross > 0) {
+            const scopedGross = trendRange === 'day' ? (dayFinancialSummary?.gross ?? 0) : (weekFinancialSummary?.gross ?? 0)
+            return scopedGross > 0 ? Math.min(scopedGross / reportFinancialSummary.gross, 1) : 1
         }
         return 1
-    }, [trendRange, weekFinancialSummary, reportFinancialSummary])
+    }, [dayFinancialSummary, trendRange, weekFinancialSummary, reportFinancialSummary])
     const productWeightedMargin = Number(dashboardStats?.productAnalysis?.weightedMargin ?? dashboardStats?.productAnalysis?.averageMargin ?? 0)
     const productMarginSampleCount = Number(dashboardStats?.productAnalysis?.pricedCostedProducts ?? 0)
     const productMissingCostCount = Number(dashboardStats?.productAnalysis?.missingCostCount ?? 0)
@@ -6175,7 +6128,7 @@ const MyAccount = () => {
                                                     )}
                                                     {adminReportSection === 'sales' && (
                                                         <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
-                                                            Periodo de ventas: <span className="ml-1 text-black">{salesRankingView === 'month' ? selectedRankingMonthLabel : 'Histórico total'}</span>
+                                                            Periodo de ventas: <span className="ml-1 text-black">{activeSalesReportViewLabel}</span>
                                                         </div>
                                                     )}
                                                     {adminReportSection === 'inventory' && (
@@ -6190,9 +6143,9 @@ const MyAccount = () => {
                                                     )}
                                                     {adminReportSection === 'products-purchases' && (
                                                         <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
-                                                            Ventas: <span className="ml-1 text-black">{productsPurchaseSectionSummary.productsWithSales.toLocaleString('es-EC')} SKU</span>
+                                                            Ventas período: <span className="ml-1 text-black">{productsPurchaseSectionSummary.productsWithSales.toLocaleString('es-EC')} SKU</span>
                                                             <span className="mx-1 text-secondary/60">·</span>
-                                                            Compras: <span className="ml-1 text-black">{productsPurchaseSectionSummary.productsWithPurchases.toLocaleString('es-EC')} SKU</span>
+                                                            Compras acumuladas: <span className="ml-1 text-black">{productsPurchaseSectionSummary.productsWithPurchases.toLocaleString('es-EC')} SKU</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -6240,16 +6193,42 @@ const MyAccount = () => {
                                                         <div className="flex items-center gap-2">
                                                             <div className="flex bg-surface p-0.5 rounded-lg border border-line">
                                                                 <button
-                                                                    onClick={() => setTrendRange('week')}
+                                                                    onClick={() => {
+                                                                        setTrendRange('day')
+                                                                        setSalesRankingView('daily')
+                                                                    }}
+                                                                    className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${trendRange === 'day' ? 'bg-black text-white shadow-sm' : 'text-secondary hover:text-black'}`}
+                                                                >
+                                                                    Día
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setTrendRange('week')
+                                                                        setSalesRankingView('week')
+                                                                    }}
                                                                     className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${trendRange === 'week' ? 'bg-black text-white shadow-sm' : 'text-secondary hover:text-black'}`}
                                                                 >
                                                                     Semana
                                                                 </button>
                                                                 <button
-                                                                    onClick={() => setTrendRange('month')}
+                                                                    onClick={() => {
+                                                                        setTrendRange('month')
+                                                                        selectReportMonth(getCurrentMonthKey())
+                                                                    }}
                                                                     className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${trendRange === 'month' ? 'bg-black text-white shadow-sm' : 'text-secondary hover:text-black'}`}
                                                                 >
                                                                     Mes
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setTrendRange('all')
+                                                                        setSalesRankingView('historical')
+                                                                        setFinancialTrendMode('monthly')
+                                                                        setFinancialTrendScope('total')
+                                                                    }}
+                                                                    className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${trendRange === 'all' ? 'bg-black text-white shadow-sm' : 'text-secondary hover:text-black'}`}
+                                                                >
+                                                                    Todo
                                                                 </button>
                                                             </div>
                                                             {pendingOperationalOrders > 0 && (
@@ -6328,7 +6307,9 @@ const MyAccount = () => {
                                                         <div className="flex items-center justify-between mb-3">
                                                             <div>
                                                                  <div className="text-sm font-bold">Tendencia de ventas</div>
-                                                                 <p className="text-xs text-secondary mt-1">Evolución diaria de {trendMetric === 'gross' ? 'ventas totales' : 'utilidad neta'} · {trendRange === 'week' ? 'Últimos 7 días' : 'Mes actual'}</p>
+                                                                 <p className="text-xs text-secondary mt-1">
+                                                                     Evolución diaria de {trendMetric === 'gross' ? 'ventas totales' : 'utilidad neta'} · {trendRange === 'day' ? 'Hoy' : trendRange === 'week' ? 'Últimos 7 días' : trendRange === 'month' ? 'Mes actual' : 'Todo histórico'}
+                                                                 </p>
                                                             </div>
                                                             <div className="flex items-center gap-2">
                                                                 <div className="flex bg-surface p-0.5 rounded-lg border border-line">
@@ -6357,18 +6338,27 @@ const MyAccount = () => {
                                                                  const firstDayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
                                                                  const monthData = (dashboardStats.salesTrend30Days || []).filter(d => (d.day || '') >= firstDayStr)
                                                                  const weekData = (dashboardStats.monthlyPerformance || []).slice(-7)
-                                                                 const displayData = trendRange === 'week' ? weekData : monthData
+                                                                 const dayData = weekData.slice(-1)
+                                                                 const displayData = trendRange === 'day' ? dayData : trendRange === 'week' ? weekData : monthData
                                                                  const weekAdjusted = weekData.map(adjust)
                                                                  const weekMax = Math.max(...weekAdjusted, 1)
                                                                  const monthAdjusted = monthData.map(adjust)
                                                                  const monthMax = Math.max(...monthAdjusted, 1)
-                                                                  return trendRange === 'week' ? (
+                                                                  if (trendRange === 'all') {
+                                                                      return (
+                                                                          <div className="rounded-lg border border-line bg-surface px-4 py-8 text-center">
+                                                                              <div className="text-sm font-bold">{reportGeneralScopeLabel}</div>
+                                                                              <div className="mt-1 text-xs text-secondary">El total histórico se resume en las tarjetas. Para tendencia diaria usa Día, Semana o Mes.</div>
+                                                                          </div>
+                                                                      )
+                                                                  }
+                                                                  return (trendRange === 'day' || trendRange === 'week') ? (
                                                                      <div className="flex items-end gap-1 justify-between">
-                                                                        {weekData.map((item, i) => {
+                                                                        {displayData.map((item, i) => {
                                                                             const value = adjust(item)
                                                                             const pct = (value / weekMax) * 100
                                                                             const label = formatDashboardTrendLabel(item, { weekday: 'short' })
-                                                                            const isToday = i === weekData.length - 1
+                                                                            const isToday = trendRange === 'day' || i === displayData.length - 1
                                                                             return (
                                                                                 <div key={i} className="flex flex-col items-center gap-1 flex-1 max-w-[48px] group cursor-pointer" title={`${label}: ${formatMoney(value)}`}>
                                                                                     <span className={`text-[10px] font-bold leading-tight ${value > 0 ? (isToday ? 'text-black' : 'text-black') : 'text-secondary/40'}`}>{formatMoney(value)}</span>
@@ -6566,14 +6556,14 @@ const MyAccount = () => {
                                                             <div>
                                                                 <div className="heading6">Corte comercial de ventas</div>
                                                                  <p className="text-secondary text-xs mt-1">
-                                                                     Vista activa: {salesRankingView === 'daily' ? 'hoy' : salesRankingView === 'month' ? `mes (${selectedRankingMonthLabel})` : 'histórico total'} con pedidos completados o entregados.
+                                                                     Vista activa: {activeSalesReportViewLabel} con pedidos completados o entregados.
                                                                  </p>
                                                                  <p className="text-secondary text-xs mt-1">
                                                                      Periodo: {reportSalesPeriodLabel}
                                                                  </p>
                                                             </div>
                                                             <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                                                            {salesRankingView !== 'daily' && (
+                                                            {salesRankingView === 'month' && (
                                                                 <label className="flex flex-col gap-1 text-[10px] uppercase font-bold text-secondary">
                                                                     Mes a consultar
                                                                     <input
@@ -6594,6 +6584,13 @@ const MyAccount = () => {
                                                                     </button>
                                                                     <button
                                                                         type="button"
+                                                                        onClick={() => setSalesRankingView('week')}
+                                                                        className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'week' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
+                                                                    >
+                                                                        Semana
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
                                                                         onClick={() => setSalesRankingView('month')}
                                                                         className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'month' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
                                                                     >
@@ -6604,7 +6601,7 @@ const MyAccount = () => {
                                                                         onClick={() => setSalesRankingView('historical')}
                                                                         className={`px-4 py-1.5 rounded-md text-xs font-bold transition-all ${salesRankingView === 'historical' ? 'bg-black text-white shadow-md' : 'text-secondary hover:text-black'}`}
                                                                     >
-                                                                        Histórico
+                                                                        Todo
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -6613,7 +6610,7 @@ const MyAccount = () => {
                                                         <div className="grid grid-cols-2 xl:grid-cols-10 gap-3">
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Pedidos vendidos</div>
-                                                                <div className="text-lg font-bold">{Number((effectiveReportData?.sales as any)?.orders_count ?? salesRankingFinancial?.orders_count ?? 0).toLocaleString('es-EC')}</div>
+                                                                <div className="text-lg font-bold">{Number((activePeriodReport?.sales as any)?.orders_count ?? salesRankingFinancial?.orders_count ?? 0).toLocaleString('es-EC')}</div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Unidades vendidas</div>
@@ -6621,41 +6618,41 @@ const MyAccount = () => {
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Ventas brutas</div>
-                                                                <div className="text-lg font-bold">{formatMoney(Number((effectiveReportData?.sales as any)?.gross ?? salesRankingFinancial?.gross ?? 0))}</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number((activePeriodReport?.sales as any)?.gross ?? salesRankingFinancial?.gross ?? 0))}</div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Ventas netas</div>
-                                                                <div className="text-lg font-bold">{formatMoney(Number((effectiveReportData?.sales as any)?.net ?? salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0))}</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number((activePeriodReport?.sales as any)?.net ?? salesRankingFinancial?.net ?? salesRankingTotals?.net_revenue ?? 0))}</div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">IVA cobrado</div>
-                                                                <div className="text-lg font-bold">{formatMoney(Number((effectiveReportData?.sales as any)?.vat ?? salesRankingFinancial?.vat ?? 0))}</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number((activePeriodReport?.sales as any)?.vat ?? salesRankingFinancial?.vat ?? 0))}</div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Envío cobrado</div>
-                                                                <div className="text-lg font-bold">{formatMoney(Number((effectiveReportData?.sales as any)?.shipping ?? salesRankingFinancial?.shipping ?? 0))}</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number((activePeriodReport?.sales as any)?.shipping ?? salesRankingFinancial?.shipping ?? 0))}</div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Costo de venta</div>
-                                                                <div className="text-lg font-bold">{formatMoney(Number((effectiveReportData?.sales as any)?.cost ?? salesRankingFinancial?.cost ?? 0))}</div>
+                                                                <div className="text-lg font-bold">{formatMoney(Number((activePeriodReport?.sales as any)?.cost ?? salesRankingFinancial?.cost ?? 0))}</div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Ganancia bruta</div>
-                                                                <div className={`text-lg font-bold ${(Number((effectiveReportData?.sales as any)?.profit ?? salesRankingFinancial?.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
-                                                                    {formatMoney(Number((effectiveReportData?.sales as any)?.profit ?? salesRankingFinancial?.profit ?? 0))}
+                                                                <div className={`text-lg font-bold ${(Number((activePeriodReport?.sales as any)?.profit ?? salesRankingFinancial?.profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
+                                                                    {formatMoney(Number((activePeriodReport?.sales as any)?.profit ?? salesRankingFinancial?.profit ?? 0))}
                                                                 </div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Ganancia neta</div>
-                                                                <div className={`text-lg font-bold ${(Number((effectiveReportData?.profit as any)?.net_period_profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
-                                                                    {formatMoney(Number((effectiveReportData?.profit as any)?.net_period_profit ?? 0))}
+                                                                <div className={`text-lg font-bold ${(Number((activePeriodReport?.profit as any)?.net_period_profit ?? 0) >= 0) ? 'text-success' : 'text-red'}`}>
+                                                                    {formatMoney(Number((activePeriodReport?.profit as any)?.net_period_profit ?? 0))}
                                                                 </div>
                                                             </div>
                                                             <div className="p-3 rounded-lg border border-line bg-surface">
                                                                 <div className="text-[10px] uppercase font-bold text-secondary">Margen bruto</div>
                                                                 <div className="text-lg font-bold">{(() => {
-                                                                    const effNet = Number((effectiveReportData?.sales as any)?.net ?? 0)
-                                                                    const effProfit = Number((effectiveReportData?.sales as any)?.profit ?? 0)
+                                                                    const effNet = Number((activePeriodReport?.sales as any)?.net ?? 0)
+                                                                    const effProfit = Number((activePeriodReport?.sales as any)?.profit ?? 0)
                                                                     const effMargin = effNet > 0 ? (effProfit / effNet) * 100 : 0
                                                                     const margin = Number(salesRankingFinancial?.margin ?? 0)
                                                                     if (margin !== 0 && effMargin === 0) return margin.toLocaleString('es-EC', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
@@ -6670,7 +6667,7 @@ const MyAccount = () => {
                                                             <div>
                                                                 <div className="heading6">Pedidos vendidos del período</div>
                                                                  <p className="text-secondary text-xs mt-1">
-                                                                     Listado de soporte con fecha, cliente, forma de entrega/pago y desglose comercial de cada venta realizada en {salesRankingView === 'daily' ? 'el día' : salesRankingView === 'historical' ? 'todo el historial' : 'el mes'} {salesRankingView === 'month' ? `de ${selectedRankingMonthLabel}` : ''} ({reportSalesPeriodLabel}).
+                                                                     Listado de soporte con fecha, cliente, forma de entrega/pago y desglose comercial de cada venta realizada en {salesRankingView === 'daily' ? 'el día' : salesRankingView === 'week' ? 'la semana' : salesRankingView === 'historical' ? 'todo el historial' : 'el mes'} {salesRankingView === 'month' ? `de ${selectedRankingMonthLabel}` : ''} ({reportSalesPeriodLabel}).
                                                                  </p>
                                                             </div>
                                                             <div className="text-xs font-bold text-secondary bg-surface border border-line rounded-lg px-3 py-2">
@@ -7530,10 +7527,15 @@ const MyAccount = () => {
                                                     salesRows={reportSalesRankingRows}
                                                     salesOrders={reportSalesOrders}
                                                     salesPeriodLabel={reportSalesPeriodLabel}
+                                                    salesRankingMonth={salesRankingMonth}
+                                                    salesRankingView={salesRankingView}
+                                                    selectedRankingMonthLabel={selectedRankingMonthLabel}
                                                     selectedProductId={selectedProductPurchaseReportId}
                                                     selectedDetail={selectedProductPurchaseReportDetail}
                                                     detailLoading={productPurchaseReportDetailLoading}
                                                     detailError={productPurchaseReportDetailError}
+                                                    selectReportMonth={selectReportMonth}
+                                                    setSalesRankingView={setSalesRankingView}
                                                     onSelectProduct={handleSelectProductPurchaseReport}
                                                     onRetryLoadSelectedProduct={handleRetryProductPurchaseReportDetail}
                                                     onOpenPurchaseInvoice={handleOpenPurchaseInvoice}
@@ -7546,12 +7548,12 @@ const MyAccount = () => {
                                     {activeTab === 'sales-ranking' && (
                                         <SalesRankingPanel
                                             currentDateLabel={currentDateLabel}
-                                            effectiveReportData={effectiveReportData}
+                                            effectiveReportData={activePeriodReport}
                                             formatMoney={formatMoney}
                                             openSalesProductDetail={openSalesProductDetail}
                                             productRankingActionItems={productRankingActionItems}
                                             productRankingDecisionRows={productRankingDecisionRows}
-                                            productSalesRanking={productSalesRanking}
+                                            periodLabel={reportSalesPeriodLabel}
                                             salesRankingFinancial={salesRankingFinancial}
                                             salesRankingMonth={salesRankingMonth}
                                             salesRankingTotals={salesRankingTotals}
@@ -7857,6 +7859,7 @@ const MyAccount = () => {
                                             publicationPendingIds={productPublicationPendingIds}
                                             isProductEligibleForPublication={isProductEligibleForPublication}
                                             getProductExpirationMeta={getProductExpirationMeta}
+                                            formatMoney={formatMoney}
                                             formatIsoDate={formatIsoDate}
                                         />
                                     )}
@@ -8373,6 +8376,7 @@ const MyAccount = () => {
                                     {activeTab === 'balances' && (
                                         <BalancesPanel
                                             netSales={Number(balanceSalesSummary?.net ?? 0)}
+                                            periodLabel={reportFinancialScopeLabel}
                                             salesSummary={balanceSalesSummary}
                                             profitStats={balanceProfitStats}
                                             recentOrders={balanceRecentOrders}

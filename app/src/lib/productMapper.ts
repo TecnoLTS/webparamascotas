@@ -81,6 +81,11 @@ type ProductWithRelations = {
       remainingUnits?: number | string | null
       lastPurchaseAt?: string | null
     } | null
+    salesHistory?: {
+      ordersCount?: number | string | null
+      soldUnits?: number | string | null
+      lastSaleAt?: string | null
+    } | null
     procurement?: {
       openLotsCount?: number | string | null
       remainingUnitsTotal?: number | string | null
@@ -478,6 +483,11 @@ export const mapProductToDto = (product: ProductWithRelations): ProductType => {
         purchasedUnits: Number(product.inventory.purchaseHistory.purchasedUnits ?? 0),
         remainingUnits: Number(product.inventory.purchaseHistory.remainingUnits ?? 0),
         lastPurchaseAt: product.inventory.purchaseHistory.lastPurchaseAt ?? null,
+      } : undefined,
+      salesHistory: product.inventory.salesHistory ? {
+        ordersCount: Number(product.inventory.salesHistory.ordersCount ?? 0),
+        soldUnits: Number(product.inventory.salesHistory.soldUnits ?? product.inventory.soldHistorical ?? product.sold ?? 0),
+        lastSaleAt: product.inventory.salesHistory.lastSaleAt ?? null,
       } : undefined,
       procurement: product.inventory.procurement ? {
         openLotsCount: Number(product.inventory.procurement.openLotsCount ?? 0),

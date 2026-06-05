@@ -66,6 +66,7 @@ type TraceabilityProductLike = {
 
 type BalancesPanelProps = {
     netSales: number
+    periodLabel?: string
     salesSummary?: SalesSummaryLike | null
     profitStats?: ProfitStatsLike | null
     recentOrders: RecentOrderLike[]
@@ -102,6 +103,7 @@ function BalanceMetricCard({
 
 function BalancesPanel({
     netSales,
+    periodLabel = 'Período financiero activo',
     salesSummary,
     profitStats,
     recentOrders,
@@ -138,6 +140,9 @@ function BalancesPanel({
     return (
         <div className="tab text-content w-full">
             <div className="text-gray-400 text-sm">Balance General (Informacion critica para decisiones)</div>
+            <div className="mt-2 inline-flex rounded-md border border-line bg-surface px-2.5 py-1 text-[11px] font-bold text-secondary">
+                Alcance: <span className="ml-1 text-black">{periodLabel}</span>
+            </div>
             <div className="heading2 mt-2">{formatMoney(netSales)}</div>
             <div className="text-secondary text-sm mt-1">Ventas netas (sin IVA ni envio)</div>
 

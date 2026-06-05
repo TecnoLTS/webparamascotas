@@ -670,6 +670,7 @@ export interface AdminUserSummary {
 export type DeepDiveView = 'sales' | 'profit' | 'aov' | 'inventory' | 'product-breakdown'
 export type ProductDetailMetric = 'gross' | 'net' | 'vat' | 'shipping' | 'profit' | 'inventory'
 export type AdminReportSection = 'general' | 'sales' | 'balance' | 'inventory' | 'traceability' | 'products-purchases'
+export type SalesReportView = 'daily' | 'week' | 'month' | 'historical'
 export type AdminMenuGroupKey = 'monitoring' | 'reporting' | 'catalog' | 'operations' | 'finance'
 
 export type BillingRidePdf = {
@@ -1064,6 +1065,7 @@ export type ProductRankingDecisionAction =
     | 'review_no_sales'
 
 export type ProductRankingDecisionRow = SalesRankingRow & {
+    sku: string;
     contribution_pct: number;
     stock_current: number | null;
     coverage_days: number | null;
@@ -1085,6 +1087,7 @@ export type ProductRankingActionItem = {
     id: string;
     product_id: string;
     product_name: string;
+    sku?: string;
     category: string;
     action: ProductRankingDecisionAction;
     action_label: string;
