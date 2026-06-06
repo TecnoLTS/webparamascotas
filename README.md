@@ -83,7 +83,7 @@ Antes de mover este frontend a otro servidor, confirma que el cambio incluya tod
 
 ### Volumen de uploads
 
-El contenedor de produccion corre como UID/GID `10001:10001`. El directorio persistente de imagenes debe permitir escritura a ese usuario:
+El contenedor de produccion corre como UID/GID `10001:10001`. El deploy prepara `app/public/uploads` para que ese usuario pueda guardar imagenes; si alguna vez se corrige manualmente un servidor, usa:
 
 ```bash
 cd /home/admincenter/contenedores/paramascotasec

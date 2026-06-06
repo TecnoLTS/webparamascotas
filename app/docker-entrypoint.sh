@@ -53,7 +53,10 @@ if [ "$(id -u)" = "0" ]; then
     /app/node_modules \
     /app/public/images/collection/home-top/generated \
     /app/public/images/slider/generated \
-    /app/public/uploads/products
+    /app/public/uploads \
+    /app/public/uploads/products \
+    /app/public/uploads/brands \
+    /app/public/uploads/categories
   touch /app/next-env.d.ts /app/tsconfig.tsbuildinfo 2>/dev/null || true
   chown -R \
     appuser:app \
@@ -62,7 +65,7 @@ if [ "$(id -u)" = "0" ]; then
     /app/node_modules \
     /app/public/images/collection/home-top/generated \
     /app/public/images/slider/generated \
-    /app/public/uploads/products \
+    /app/public/uploads \
     2>/dev/null || true
   chown appuser:app /app/next-env.d.ts /app/tsconfig.tsbuildinfo 2>/dev/null || true
   exec su-exec appuser:app "$@"

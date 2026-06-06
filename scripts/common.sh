@@ -164,6 +164,25 @@ prepare_frontend_secrets() {
   chmod 600 "${secret_file}"
 }
 
+prepare_frontend_uploads() {
+  local upload_root="${APP_DIR}/app/public/uploads"
+  local upload_owner="10001:10001"
+
+  mkdir -p \
+    "${upload_root}" \
+    "${upload_root}/products" \
+    "${upload_root}/brands" \
+    "${upload_root}/categories"
+
+  if ! chown -R "${upload_owner}" "${upload_root}" 2>/dev/null; then
+    echo "No se pudo asignar ${upload_root} a ${upload_owner}." >&2
+    echo "Ejecuta: sudo chown -R ${upload_owner} ${upload_root}" >&2
+    exit 1
+  fi
+
+  chmod -R u+rwX,g+rX,o+rX "${upload_root}"
+}
+
 ensure_docker_ready() {
   if ! command -v docker >/dev/null 2>&1; then
     echo "docker no esta instalado"
@@ -288,6 +307,7 @@ deploy_frontend() {
   ensure_docker_ready
   env_file="$(resolve_env_file "${mode}")"
   prepare_frontend_secrets "${env_file}"
+  prepare_frontend_uploads
   if [[ "${mode}" == "development" ]]; then
     unexpected_container="$(frontend_container_name production)"
   else
