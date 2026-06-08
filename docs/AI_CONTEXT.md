@@ -202,13 +202,14 @@ Objetivo: hacer visible y corregible el gasto recurrente de arriendo desde `/my-
 Cambios:
 - Backend agrega `DELETE /api/admin/expenses/recurrences/{id}` para eliminar una plantilla recurrente preservando los gastos historicos generados (`ON DELETE SET NULL` en `BusinessExpense.recurrence_id`).
 - Frontend de Gastos del negocio agrega acciones `Editar`, `Pausar/Activar` y `Eliminar` en tarjetas de recurrencias; `Editar` reutiliza el formulario principal con estado de edicion y cancelacion.
+- UX de gastos aclarada: `Editar plantilla` hace scroll al formulario superior y muestra aviso de plantilla en edicion; `Anular gasto` abre un modal con `Que hara` / `Que no hara`, confirmacion explicita y detalle de que conserva historial pero excluye del balance; gastos de meses cerrados usan `Crear reverso` con modal equivalente que explica el ajuste financiero negativo en el mes abierto y que no modifica el cierre original.
 - Se registro en development el arriendo de junio como gasto recurrente pagado: USD 184.00, fecha de gasto `2026-06-01`, metodo `Transferencia`, id `exp_arriendo_20260601`.
 - La recurrencia `Arriendo local` quedo activa con proximo vencimiento `2026-07-01` para evitar que se genere otro arriendo el `2026-06-30`.
 
 Operacion y verificacion:
-- Se redeplego solo Backend y Frontend development con `./scripts/deploy-development.sh backend` y `./scripts/deploy-development.sh frontend`; no se desplego production.
+- Se redeplego solo Backend y Frontend development con `./scripts/deploy-development.sh backend` y `./scripts/deploy-development.sh frontend`; luego se redeplego solo Frontend development por ajuste UX. No se desplego production.
 - La DB development confirma `june_period_expenses=184.00` y `june_paid_expenses=184.00`.
-- Pasaron `php -l` de archivos backend tocados, `npm run typecheck`, `npm run lint`, `git diff --check`, `./scripts/check-container-connectivity.sh development` y `./scripts/check-paramascotas.sh`.
+- Pasaron `php -l` de archivos backend tocados, `npm run typecheck`, `npm run lint`, `git diff --check`, `./scripts/check-container-connectivity.sh development` y `./scripts/check-paramascotas.sh`; tras los ajustes UX volvio a pasar `npm run typecheck`, `npm run lint`, `git diff --check` y `./scripts/check-container-connectivity.sh development`.
 - No se emitieron comprobantes, no se llamo al SRI y no se aplicaron migraciones.
 
 ### 2026-06-08 - Panel Principal Local del Facturador

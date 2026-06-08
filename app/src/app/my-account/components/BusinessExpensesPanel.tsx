@@ -68,6 +68,11 @@ type ExpenseAdjustmentDraft = {
     confirmed: boolean
 }
 
+type ExpenseCancellationDraft = {
+    expense: BusinessExpense
+    confirmed: boolean
+}
+
 type BusinessExpensesPanelProps = {
     expenses: BusinessExpense[]
     recurrences: BusinessExpenseRecurrence[]
@@ -317,12 +322,18 @@ export default function BusinessExpensesPanel({
     const [periodPreviewNotes, setPeriodPreviewNotes] = React.useState('')
     const [periodPreviewLoading, setPeriodPreviewLoading] = React.useState(false)
     const [expenseAdjustmentDraft, setExpenseAdjustmentDraft] = React.useState<ExpenseAdjustmentDraft | null>(null)
+    const [expenseCancellationDraft, setExpenseCancellationDraft] = React.useState<ExpenseCancellationDraft | null>(null)
     const [historicalSaleError, setHistoricalSaleError] = React.useState('')
     const [editingRecurrenceId, setEditingRecurrenceId] = React.useState<string | null>(null)
+    const expenseFormRef = React.useRef<HTMLFormElement | null>(null)
     const categoryOptions = React.useMemo(() => {
         const values = [...categories, 'Otros'].map((category) => String(category || '').trim()).filter(Boolean)
         return Array.from(new Set(values))
     }, [categories])
+    const editingRecurrence = React.useMemo(
+        () => recurrences.find((item) => item.id === editingRecurrenceId) ?? null,
+        [editingRecurrenceId, recurrences]
+    )
 
     const paid = Number(summary?.paid ?? 0)
     const pending = Number(summary?.pending ?? 0)
@@ -436,6 +447,9 @@ export default function BusinessExpensesPanel({
             notes: item.notes || '',
         })
         setEditingRecurrenceId(item.id)
+        window.setTimeout(() => {
+            expenseFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }, 0)
     }, [categoryOptions])
 
     const deleteRecurrence = React.useCallback(async (item: BusinessExpenseRecurrence) => {
@@ -446,6 +460,16 @@ export default function BusinessExpensesPanel({
             resetExpenseForm()
         }
     }, [editingRecurrenceId, onDeleteRecurrence, resetExpenseForm])
+
+    const cancelExpense = React.useCallback((expense: BusinessExpense) => {
+        setExpenseCancellationDraft({ expense, confirmed: false })
+    }, [])
+
+    const confirmExpenseCancellation = async () => {
+        if (!expenseCancellationDraft?.confirmed) return
+        await onUpdateStatus(expenseCancellationDraft.expense.id, 'cancelled')
+        setExpenseCancellationDraft(null)
+    }
 
     const submitExpense = async (event: React.FormEvent) => {
         event.preventDefault()
@@ -713,14 +737,81 @@ export default function BusinessExpensesPanel({
                 </div>
             )}
 
+            {expenseCancellationDraft && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl border border-line shadow-2xl w-full max-w-2xl">
+                        <div className="p-4 border-b border-line flex items-start justify-between gap-3">
+                            <div>
+                                <div className="text-lg font-bold">Anular gasto del mes abierto</div>
+                                <div className="text-sm text-secondary">
+                                    Esta acción marca el gasto como anulado. No borra el registro ni elimina su historial.
+                                </div>
+                            </div>
+                            <button type="button" className="text-secondary hover:text-black" onClick={() => setExpenseCancellationDraft(null)} disabled={saving}>Cerrar</button>
+                        </div>
+                        <div className="p-4 space-y-3">
+                            <div className="rounded-lg border border-line bg-surface p-3">
+                                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-sm">
+                                    <div className="sm:col-span-2">
+                                        <div className="text-[10px] uppercase font-bold text-secondary">Gasto</div>
+                                        <div className="font-bold">{expenseCancellationDraft.expense.description || expenseCancellationDraft.expense.category}</div>
+                                        <div className="text-xs text-secondary">{expenseCancellationDraft.expense.category} · período {expenseCancellationDraft.expense.financial_period_key || String(expenseCancellationDraft.expense.expense_date || '').slice(0, 7)}</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-[10px] uppercase font-bold text-secondary">Fecha</div>
+                                        <div className="font-semibold">{expenseCancellationDraft.expense.expense_date ? formatDate(expenseCancellationDraft.expense.expense_date) : '-'}</div>
+                                    </div>
+                                    <div className="text-left sm:text-right">
+                                        <div className="text-[10px] uppercase font-bold text-secondary">Importe excluido</div>
+                                        <div className="font-bold text-red">{formatMoney(expenseCancellationDraft.expense.total)}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="rounded-lg border border-line px-3 py-2 text-xs text-secondary space-y-1">
+                                <div className="font-bold text-black">Qué hará al confirmar</div>
+                                <div>El estado cambiará a <span className="font-semibold text-black">Anulado</span>.</div>
+                                <div>El importe dejará de contar en gastos del período, gastos pagados, utilidad neta y balance.</div>
+                                <div>El registro seguirá visible en el historial cuando el filtro incluya gastos anulados.</div>
+                            </div>
+                            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 space-y-1">
+                                <div className="font-bold">Qué no hará</div>
+                                <div>No elimina pagos, notas, referencias ni auditoría.</div>
+                                <div>No cambia una recurrencia futura. Si el gasto viene de una plantilla recurrente, edita la plantilla aparte.</div>
+                                <div>No se usa para meses cerrados; en esos casos se crea un reverso contable separado.</div>
+                            </div>
+                            <label className="flex items-start gap-2 rounded-lg border border-line px-3 py-2 text-xs text-secondary">
+                                <input
+                                    type="checkbox"
+                                    className="mt-0.5"
+                                    checked={expenseCancellationDraft.confirmed}
+                                    onChange={(event) => setExpenseCancellationDraft({ ...expenseCancellationDraft, confirmed: event.target.checked })}
+                                />
+                                <span>Entiendo que este gasto quedará anulado y dejará de afectar el balance del período.</span>
+                            </label>
+                        </div>
+                        <div className="p-4 border-t border-line flex flex-col sm:flex-row justify-end gap-2">
+                            <button type="button" className="px-4 py-2 rounded-lg border border-line font-semibold" onClick={() => setExpenseCancellationDraft(null)} disabled={saving}>Cancelar</button>
+                            <button
+                                type="button"
+                                className="button-main px-4 py-2 rounded-lg font-bold disabled:opacity-60"
+                                disabled={saving || !expenseCancellationDraft.confirmed}
+                                onClick={confirmExpenseCancellation}
+                            >
+                                {saving ? 'Anulando...' : 'Confirmar anulación'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {expenseAdjustmentDraft && (
                 <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
                     <div className="bg-white rounded-xl border border-line shadow-2xl w-full max-w-2xl">
                         <div className="p-4 border-b border-line flex items-start justify-between gap-3">
                             <div>
-                                <div className="text-lg font-bold">Corregir gasto de mes cerrado</div>
+                                <div className="text-lg font-bold">Crear reverso de gasto cerrado</div>
                                 <div className="text-sm text-secondary">
-                                    El gasto original no se modifica. Se registrará un reverso auditable en el mes abierto actual.
+                                    Esta acción compensa un gasto de un mes cerrado sin modificar ese cierre.
                                 </div>
                             </div>
                             <button type="button" className="text-secondary hover:text-black" onClick={() => setExpenseAdjustmentDraft(null)} disabled={saving}>Cerrar</button>
@@ -743,8 +834,17 @@ export default function BusinessExpensesPanel({
                                     </div>
                                 </div>
                             </div>
-                            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900">
-                                Esta acción afecta el resultado del mes abierto actual como corrección posterior. Úsala solo cuando un gasto de un mes cerrado no debe contar o necesita ser compensado.
+                            <div className="rounded-lg border border-line px-3 py-2 text-xs text-secondary space-y-1">
+                                <div className="font-bold text-black">Qué hará al confirmar</div>
+                                <div>Creará un ajuste financiero separado en el período abierto <span className="font-semibold text-black">{currentPeriodLabel}</span>.</div>
+                                <div>El ajuste será negativo por <span className="font-semibold text-black">{formatMoney(-Math.abs(Number(expenseAdjustmentDraft.expense.total || 0)))}</span> y compensará el gasto original en el balance.</div>
+                                <div>El reverso quedará auditado con el motivo obligatorio que escribas abajo.</div>
+                            </div>
+                            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900 space-y-1">
+                                <div className="font-bold">Qué no hará</div>
+                                <div>No cambia el gasto original, su estado, su pago ni su fecha.</div>
+                                <div>No reabre ni modifica el cierre del mes original.</div>
+                                <div>No elimina la plantilla recurrente. Si la recurrencia futura está mal, edítala aparte.</div>
                             </div>
                             <label className="block">
                                 <span className="text-[10px] uppercase font-bold text-secondary">Motivo obligatorio</span>
@@ -762,7 +862,7 @@ export default function BusinessExpensesPanel({
                                     checked={expenseAdjustmentDraft.confirmed}
                                     onChange={(event) => setExpenseAdjustmentDraft({ ...expenseAdjustmentDraft, confirmed: event.target.checked })}
                                 />
-                                <span>Entiendo que el mes cerrado no cambiará y que se creará un ajuste financiero separado por {formatMoney(-Math.abs(Number(expenseAdjustmentDraft.expense.total || 0)))}.</span>
+                                <span>Entiendo que el mes cerrado no cambiará y que se creará un ajuste financiero separado por {formatMoney(-Math.abs(Number(expenseAdjustmentDraft.expense.total || 0)))} en el mes abierto.</span>
                             </label>
                         </div>
                         <div className="p-4 border-t border-line flex flex-col sm:flex-row justify-end gap-2">
@@ -773,14 +873,18 @@ export default function BusinessExpensesPanel({
                                 disabled={saving || !expenseAdjustmentDraft.confirmed || expenseAdjustmentDraft.reason.trim().length < 6}
                                 onClick={confirmExpenseAdjustment}
                             >
-                                {saving ? 'Registrando...' : 'Registrar reverso'}
+                                {saving ? 'Registrando...' : 'Crear reverso'}
                             </button>
                         </div>
                     </div>
                 </div>
             )}
 
-            <form className="rounded-lg border border-line bg-white p-3 space-y-3" onSubmit={submitExpense}>
+            <form
+                ref={expenseFormRef}
+                className={`rounded-lg border bg-white p-3 space-y-3 ${editingRecurrenceId ? 'border-black shadow-sm' : 'border-line'}`}
+                onSubmit={submitExpense}
+            >
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                         <div className="text-sm font-semibold">{editingRecurrenceId ? 'Editar recurrencia' : 'Registrar gasto'}</div>
@@ -794,6 +898,12 @@ export default function BusinessExpensesPanel({
                         </button>
                     )}
                 </div>
+
+                {editingRecurrenceId && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                        Editando plantilla recurrente: <span className="font-bold">{editingRecurrence?.description || expenseForm.description || 'Gasto recurrente'}</span>. Esto no cambia gastos ya registrados; solo cambia los próximos vencimientos.
+                    </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
                     <label className="space-y-1">
@@ -1086,17 +1196,18 @@ export default function BusinessExpensesPanel({
                                                 </button>
                                             )}
                                             {expense.status !== 'cancelled' && !expense.is_period_closed && (
-                                                <button type="button" className="px-2 py-1 rounded-md border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => onUpdateStatus(expense.id, 'cancelled')}>
-                                                    Anular
+                                                <button type="button" className="px-2 py-1 rounded-md border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => cancelExpense(expense)}>
+                                                    Anular gasto
                                                 </button>
                                             )}
                                             {expense.is_period_closed && (
                                                 <button type="button" className="px-2 py-1 rounded-md border border-black text-xs font-semibold hover:bg-black hover:text-white disabled:opacity-50" disabled={saving} onClick={() => createAdjustmentForExpense(expense)}>
-                                                    Corregir mes cerrado
+                                                    Crear reverso
                                                 </button>
                                             )}
                                         </div>
-                                        {expense.is_period_closed && <div className="mt-1 text-[10px] text-secondary">No anula el original; registra un reverso en el mes abierto.</div>}
+                                        {expense.status !== 'cancelled' && !expense.is_period_closed && <div className="mt-1 text-[10px] text-secondary">Anular lo conserva en historial y lo excluye del balance.</div>}
+                                        {expense.is_period_closed && <div className="mt-1 text-[10px] text-secondary">Mes cerrado: crea un ajuste negativo en el mes abierto.</div>}
                                     </td>
                                 </tr>
                             ))}
@@ -1131,14 +1242,14 @@ export default function BusinessExpensesPanel({
                                         {!item.active ? ' · pausada' : ''}
                                     </div>
                                 </div>
-                                <div className="flex shrink-0 flex-wrap justify-end gap-1">
-                                    <button type="button" className="text-xs font-semibold text-primary hover:underline disabled:opacity-50" disabled={saving} onClick={() => startEditingRecurrence(item)}>
-                                        Editar
+                                <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                                    <button type="button" className="rounded-md border border-line px-2 py-1 text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => startEditingRecurrence(item)}>
+                                        Editar plantilla
                                     </button>
-                                    <button type="button" className="text-xs font-semibold text-primary hover:underline disabled:opacity-50" disabled={saving} onClick={() => onToggleRecurrence(item.id, !item.active)}>
+                                    <button type="button" className="rounded-md border border-line px-2 py-1 text-xs font-semibold hover:bg-surface disabled:opacity-50" disabled={saving} onClick={() => onToggleRecurrence(item.id, !item.active)}>
                                         {item.active ? 'Pausar' : 'Activar'}
                                     </button>
-                                    <button type="button" className="text-xs font-semibold text-red hover:underline disabled:opacity-50" disabled={saving} onClick={() => deleteRecurrence(item)}>
+                                    <button type="button" className="rounded-md border border-red-200 px-2 py-1 text-xs font-semibold text-red hover:bg-red-50 disabled:opacity-50" disabled={saving} onClick={() => deleteRecurrence(item)}>
                                         Eliminar
                                     </button>
                                 </div>
