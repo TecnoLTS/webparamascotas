@@ -1526,6 +1526,44 @@ const MyAccount = () => {
         }
     }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
 
+    const updateBusinessExpenseRecurrence = React.useCallback(async (recurrenceId: string, payload: Record<string, unknown>) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi(`/api/admin/expenses/recurrences/${encodeURIComponent(recurrenceId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            })
+            showNotification('Gasto recurrente actualizado correctamente.')
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo actualizar el gasto recurrente.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
+    const deleteBusinessExpenseRecurrence = React.useCallback(async (recurrenceId: string) => {
+        setBusinessExpenseSaving(true)
+        try {
+            await requestApi(`/api/admin/expenses/recurrences/${encodeURIComponent(recurrenceId)}`, {
+                method: 'DELETE',
+            })
+            showNotification('Recurrencia eliminada. Los gastos ya registrados se conservaron.')
+            await reloadBusinessExpensesPanel(true)
+            invalidateAdminPanelData()
+        } catch (error) {
+            console.error(error)
+            showNotification(String((error as any)?.message || 'No se pudo eliminar la recurrencia.'), 'error')
+            throw error
+        } finally {
+            setBusinessExpenseSaving(false)
+        }
+    }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
+
     const updateBusinessExpenseStatus = React.useCallback(async (expenseId: string, status: BusinessExpenseStatus) => {
         setBusinessExpenseSaving(true)
         try {
@@ -8323,6 +8361,8 @@ const MyAccount = () => {
                                             onRefresh={() => reloadBusinessExpensesPanel(false)}
                                             onCreateExpense={createBusinessExpense}
                                             onCreateRecurrence={createBusinessExpenseRecurrence}
+                                            onUpdateRecurrence={updateBusinessExpenseRecurrence}
+                                            onDeleteRecurrence={deleteBusinessExpenseRecurrence}
                                             onUpdateStatus={updateBusinessExpenseStatus}
                                             onToggleRecurrence={toggleBusinessExpenseRecurrence}
                                             onPreviewFinancialPeriod={previewFinancialPeriod}

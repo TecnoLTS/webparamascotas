@@ -195,6 +195,22 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-08 - Gestion de Recurrencias y Arriendo Junio
+
+Objetivo: hacer visible y corregible el gasto recurrente de arriendo desde `/my-account`, y reflejar el arriendo de junio ya pagado en el balance general development.
+
+Cambios:
+- Backend agrega `DELETE /api/admin/expenses/recurrences/{id}` para eliminar una plantilla recurrente preservando los gastos historicos generados (`ON DELETE SET NULL` en `BusinessExpense.recurrence_id`).
+- Frontend de Gastos del negocio agrega acciones `Editar`, `Pausar/Activar` y `Eliminar` en tarjetas de recurrencias; `Editar` reutiliza el formulario principal con estado de edicion y cancelacion.
+- Se registro en development el arriendo de junio como gasto recurrente pagado: USD 184.00, fecha de gasto `2026-06-01`, metodo `Transferencia`, id `exp_arriendo_20260601`.
+- La recurrencia `Arriendo local` quedo activa con proximo vencimiento `2026-07-01` para evitar que se genere otro arriendo el `2026-06-30`.
+
+Operacion y verificacion:
+- Se redeplego solo Backend y Frontend development con `./scripts/deploy-development.sh backend` y `./scripts/deploy-development.sh frontend`; no se desplego production.
+- La DB development confirma `june_period_expenses=184.00` y `june_paid_expenses=184.00`.
+- Pasaron `php -l` de archivos backend tocados, `npm run typecheck`, `npm run lint`, `git diff --check`, `./scripts/check-container-connectivity.sh development` y `./scripts/check-paramascotas.sh`.
+- No se emitieron comprobantes, no se llamo al SRI y no se aplicaron migraciones.
+
 ### 2026-06-08 - Panel Principal Local del Facturador
 
 Objetivo: permitir entrar a un panel principal del Facturador en development desde `http://127.0.0.1:8084/`.

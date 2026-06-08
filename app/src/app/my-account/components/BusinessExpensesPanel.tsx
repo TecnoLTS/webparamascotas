@@ -84,6 +84,8 @@ type BusinessExpensesPanelProps = {
     onRefresh: () => void
     onCreateExpense: (payload: Record<string, unknown>) => Promise<void>
     onCreateRecurrence: (payload: Record<string, unknown>) => Promise<void>
+    onUpdateRecurrence: (recurrenceId: string, payload: Record<string, unknown>) => Promise<void>
+    onDeleteRecurrence: (recurrenceId: string) => Promise<void>
     onUpdateStatus: (expenseId: string, status: BusinessExpenseStatus) => Promise<void>
     onToggleRecurrence: (recurrenceId: string, active: boolean) => Promise<void>
     onPreviewFinancialPeriod: (periodKey: string) => Promise<FinancialPeriodPreview>
@@ -296,6 +298,8 @@ export default function BusinessExpensesPanel({
     onRefresh,
     onCreateExpense,
     onCreateRecurrence,
+    onUpdateRecurrence,
+    onDeleteRecurrence,
     onUpdateStatus,
     onToggleRecurrence,
     onPreviewFinancialPeriod,
@@ -314,6 +318,7 @@ export default function BusinessExpensesPanel({
     const [periodPreviewLoading, setPeriodPreviewLoading] = React.useState(false)
     const [expenseAdjustmentDraft, setExpenseAdjustmentDraft] = React.useState<ExpenseAdjustmentDraft | null>(null)
     const [historicalSaleError, setHistoricalSaleError] = React.useState('')
+    const [editingRecurrenceId, setEditingRecurrenceId] = React.useState<string | null>(null)
     const categoryOptions = React.useMemo(() => {
         const values = [...categories, 'Otros'].map((category) => String(category || '').trim()).filter(Boolean)
         return Array.from(new Set(values))
@@ -403,6 +408,45 @@ export default function BusinessExpensesPanel({
         })
     }, [])
 
+    const resetExpenseForm = React.useCallback(() => {
+        setExpenseForm(createExpenseForm())
+        setEditingRecurrenceId(null)
+    }, [])
+
+    const startEditingRecurrence = React.useCallback((item: BusinessExpenseRecurrence) => {
+        const knownCategory = categoryOptions.includes(item.category)
+        setExpenseForm({
+            mode: 'recurring',
+            category: knownCategory ? item.category : CUSTOM_CATEGORY_VALUE,
+            customCategory: knownCategory ? '' : item.category,
+            description: item.description || '',
+            subtotal: formatInputAmount(Number(item.amount || 0)),
+            total: formatInputAmount(Number(item.total || 0)),
+            taxAmount: formatInputAmount(Number(item.tax_amount || 0)),
+            lastMoneyInput: 'total',
+            expenseDate: today(),
+            dueDate: today(),
+            status: 'pending',
+            frequency: item.frequency,
+            intervalCount: String(Math.max(1, Number(item.interval_count || 1))),
+            startDate: item.start_date || today(),
+            nextDueDate: item.next_due_date || today(),
+            paymentMethod: item.payment_method || '',
+            reference: item.reference || '',
+            notes: item.notes || '',
+        })
+        setEditingRecurrenceId(item.id)
+    }, [categoryOptions])
+
+    const deleteRecurrence = React.useCallback(async (item: BusinessExpenseRecurrence) => {
+        const confirmed = window.confirm(`¿Eliminar la recurrencia "${item.description || item.category}"? Los gastos ya registrados se conservan en el historial.`)
+        if (!confirmed) return
+        await onDeleteRecurrence(item.id)
+        if (editingRecurrenceId === item.id) {
+            resetExpenseForm()
+        }
+    }, [editingRecurrenceId, onDeleteRecurrence, resetExpenseForm])
+
     const submitExpense = async (event: React.FormEvent) => {
         event.preventDefault()
         const category = selectedCategory || 'Otros'
@@ -419,13 +463,18 @@ export default function BusinessExpensesPanel({
         }
 
         if (expenseForm.mode === 'recurring') {
-            await onCreateRecurrence({
+            const recurrencePayload = {
                 ...payload,
                 frequency: expenseForm.frequency,
                 interval_count: Math.max(1, Math.round(parseAmount(expenseForm.intervalCount))),
                 start_date: expenseForm.startDate,
                 next_due_date: expenseForm.nextDueDate,
-            })
+            }
+            if (editingRecurrenceId) {
+                await onUpdateRecurrence(editingRecurrenceId, recurrencePayload)
+            } else {
+                await onCreateRecurrence(recurrencePayload)
+            }
         } else {
             await onCreateExpense({
                 ...payload,
@@ -435,7 +484,7 @@ export default function BusinessExpensesPanel({
             })
         }
 
-        setExpenseForm(createExpenseForm())
+        resetExpenseForm()
     }
 
     const updateHistoricalLine = (lineId: string, patch: Partial<HistoricalSaleLine>) => {
@@ -733,14 +782,31 @@ export default function BusinessExpensesPanel({
 
             <form className="rounded-lg border border-line bg-white p-3 space-y-3" onSubmit={submitExpense}>
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="text-sm font-semibold">Registrar gasto</div>
-                    <div className="text-xs text-secondary">Selecciona si se guarda una vez o como recurrencia automática.</div>
+                    <div>
+                        <div className="text-sm font-semibold">{editingRecurrenceId ? 'Editar recurrencia' : 'Registrar gasto'}</div>
+                        <div className="text-xs text-secondary">
+                            {editingRecurrenceId ? 'Ajusta la plantilla que genera gastos futuros.' : 'Selecciona si se guarda una vez o como recurrencia automática.'}
+                        </div>
+                    </div>
+                    {editingRecurrenceId && (
+                        <button type="button" className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold hover:bg-surface disabled:opacity-50" onClick={resetExpenseForm} disabled={saving}>
+                            Cancelar edición
+                        </button>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-2">
                     <label className="space-y-1">
                         <span className="text-[10px] uppercase font-bold text-secondary">Tipo</span>
-                        <select className="border border-line rounded-lg px-3 py-2 w-full text-sm bg-white" value={expenseForm.mode} onChange={(event) => setExpenseForm({ ...expenseForm, mode: event.target.value as 'one_time' | 'recurring' })}>
+                        <select
+                            className="border border-line rounded-lg px-3 py-2 w-full text-sm bg-white"
+                            value={expenseForm.mode}
+                            onChange={(event) => {
+                                const mode = event.target.value as 'one_time' | 'recurring'
+                                setExpenseForm({ ...expenseForm, mode })
+                                if (mode === 'one_time') setEditingRecurrenceId(null)
+                            }}
+                        >
                             <option value="one_time">Puntual</option>
                             <option value="recurring">Recurrente</option>
                         </select>
@@ -843,7 +909,7 @@ export default function BusinessExpensesPanel({
                 <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_180px] gap-2">
                     <textarea className="border border-line rounded-lg px-3 py-2 w-full text-sm min-h-[58px]" placeholder="Notas" value={expenseForm.notes} onChange={(event) => setExpenseForm({ ...expenseForm, notes: event.target.value })} />
                     <button type="submit" className="button-main w-full py-2 rounded-lg text-sm font-bold disabled:opacity-60" disabled={saving}>
-                        {saving ? 'Guardando...' : expenseForm.mode === 'recurring' ? 'Crear recurrencia' : 'Registrar gasto'}
+                        {saving ? 'Guardando...' : editingRecurrenceId ? 'Guardar recurrencia' : expenseForm.mode === 'recurring' ? 'Crear recurrencia' : 'Registrar gasto'}
                     </button>
                 </div>
             </form>
@@ -1051,20 +1117,31 @@ export default function BusinessExpensesPanel({
 
             <section className="rounded-lg border border-line bg-white p-3">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="text-sm font-semibold">Recurrencias activas</div>
+                    <div className="text-sm font-semibold">Recurrencias</div>
                     <div className="text-xs text-secondary">{recurrences.length} configuradas</div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                     {recurrences.slice(0, 9).map((item) => (
-                        <div key={item.id} className="rounded-md border border-line px-2.5 py-2">
+                        <div key={item.id} className={`rounded-md border px-2.5 py-2 ${editingRecurrenceId === item.id ? 'border-black bg-surface' : 'border-line'}`}>
                             <div className="flex items-start justify-between gap-2">
                                 <div className="min-w-0">
                                     <div className="font-semibold text-sm truncate">{item.description}</div>
-                                    <div className="text-[11px] text-secondary">{item.category} · {item.frequency === 'monthly' ? 'Mensual' : 'Semanal'} · vence {formatDate(item.next_due_date)}</div>
+                                    <div className="text-[11px] text-secondary">
+                                        {item.category} · {item.frequency === 'monthly' ? 'Mensual' : 'Semanal'} · vence {formatDate(item.next_due_date)}
+                                        {!item.active ? ' · pausada' : ''}
+                                    </div>
                                 </div>
-                                <button type="button" className="text-xs font-semibold text-primary hover:underline disabled:opacity-50" disabled={saving} onClick={() => onToggleRecurrence(item.id, !item.active)}>
-                                    {item.active ? 'Pausar' : 'Activar'}
-                                </button>
+                                <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                                    <button type="button" className="text-xs font-semibold text-primary hover:underline disabled:opacity-50" disabled={saving} onClick={() => startEditingRecurrence(item)}>
+                                        Editar
+                                    </button>
+                                    <button type="button" className="text-xs font-semibold text-primary hover:underline disabled:opacity-50" disabled={saving} onClick={() => onToggleRecurrence(item.id, !item.active)}>
+                                        {item.active ? 'Pausar' : 'Activar'}
+                                    </button>
+                                    <button type="button" className="text-xs font-semibold text-red hover:underline disabled:opacity-50" disabled={saving} onClick={() => deleteRecurrence(item)}>
+                                        Eliminar
+                                    </button>
+                                </div>
                             </div>
                             <div className="text-sm font-bold mt-1">{formatMoney(item.total)}</div>
                         </div>
