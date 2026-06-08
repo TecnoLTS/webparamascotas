@@ -195,6 +195,19 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-08 - Panel Principal Local del Facturador
+
+Objetivo: permitir entrar a un panel principal del Facturador en development desde `http://127.0.0.1:8084/`.
+
+Cambios:
+- `Facturador/public/index.php` atiende `GET /` y `GET /index.php` con un panel inicial local con estado del servicio, conteo de clientes/sucursales y accesos a administracion de clientes, registro, healthcheck y rutas RIDE de pruebas.
+- `Facturador/docker/nginx.conf` mantiene `index.php` como indice principal, conservando el front controller existente para endpoints PHP/API.
+
+Operacion y verificacion:
+- Se redeplego solo Facturador development con `./scripts/deploy-development.sh facturador`; no se desplego production.
+- `GET http://127.0.0.1:8084/` devuelve el panel HTML, `GET /health` responde `healthy`, `docker exec billing-nginx nginx -t` pasa y `GET /api/manage_clients.php` responde desde la DB local.
+- No se emitieron comprobantes, no se llamo al SRI y no se aplicaron migraciones.
+
 ### 2026-06-05 - Correccion Filtros Reporte de Ventas
 
 Objetivo: corregir en `/my-account`, dentro del reporte general/de ventas, los filtros `Dia`, `Semana`, `Mes` y `Todo`, dejando `Semana` como ventana movil de los ultimos 7 dias y evitando que el reporte general muestre unidades de otro rango.
