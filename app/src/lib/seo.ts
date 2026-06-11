@@ -11,6 +11,7 @@ import { versionLocalImagePath } from '@/lib/staticAsset'
 import type { SiteConfig } from '@/config/siteConfig'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
 import { getProductSeoPath } from '@/lib/seoUrls'
+import { buildProductSeoProfile } from '@/lib/productSeoProfile'
 import type { ProductReview, ProductReviewSummary } from '@/lib/api/productReviews'
 
 const toAbsoluteUrl = (baseUrl: string, path?: string | null) => {
@@ -126,6 +127,7 @@ const buildVariantProductJsonLd = ({
     productGroupId: string
     productGroupIdentifier: string
 }) => {
+    const seoProfile = buildProductSeoProfile(product)
     const sku = getProductSku(product) || product.internalId || product.id
     const variantUrl = getProductVariantUrl(productUrl, product)
     const size = getVariantSizeValue(product)
@@ -138,7 +140,7 @@ const buildVariantProductJsonLd = ({
         sku,
         mpn: sku,
         image: getProductImages(product, siteUrl),
-        description: product.description,
+        description: product.description || seoProfile.description,
         url: variantUrl,
         size: size || undefined,
         color: color || undefined,
@@ -182,6 +184,7 @@ export function generateProductJsonLd(
     const brandName = options?.brandName ?? 'ParaMascotasEC'
     const productPath = getProductSeoPath(product)
     const productUrl = `${siteUrl}${productPath}`
+    const seoProfile = buildProductSeoProfile(product)
     const visibleReviews = options?.reviews ?? product.reviews ?? []
     const fallbackReviewAverage = visibleReviews.length > 0
         ? visibleReviews.reduce((sum, review) => sum + Number(review.rating || 0), 0) / visibleReviews.length
@@ -242,7 +245,7 @@ export function generateProductJsonLd(
         mpn: sku,
         category: product.category,
         image: imageList,
-        description: product.description,
+        description: product.description || seoProfile.description,
         url: productUrl,
         brand: {
             '@type': 'Brand',
@@ -275,7 +278,7 @@ export function generateProductJsonLd(
                     mpn: sku,
                     category: product.category,
                     image: imageList,
-                    description: product.description,
+                    description: product.description || seoProfile.description,
                     url: productUrl,
                     brand: {
                         '@type': 'Brand',
@@ -337,11 +340,6 @@ export function generateWebSiteJsonLd(site: SiteConfig) {
         publisher: {
             '@id': `${siteUrl}/#organization`,
         },
-        potentialAction: {
-            '@type': 'SearchAction',
-            target: `${siteUrl}/search-result?query={search_term_string}`,
-            'query-input': 'required name=search_term_string',
-        },
     }
 }
 
@@ -369,9 +367,9 @@ export function generatePetStoreJsonLd(site: SiteConfig) {
         contactPoint: {
             '@type': 'ContactPoint',
             telephone: site.contact.whatsappLabel,
-            contactType: 'customer service',
+            contactType: 'Atención al cliente',
             areaServed: 'EC',
-            availableLanguage: ['Spanish', 'es-EC'],
+            availableLanguage: ['es-EC', 'Español'],
         },
         sameAs,
         knowsAbout: [

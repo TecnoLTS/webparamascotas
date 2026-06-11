@@ -92,7 +92,7 @@ const renderFallbackUrl = (baseUrl: string) => renderUrl(
   [
     renderImage(
       `${baseUrl}${FALLBACK_IMAGE_PATH}`,
-      'Catalogo de productos para mascotas en ParaMascotasEC',
+      'Catálogo de productos para mascotas en ParaMascotasEC',
       'Alimento, accesorios, salud y cuidado para perros y gatos en Ecuador',
     ),
   ],

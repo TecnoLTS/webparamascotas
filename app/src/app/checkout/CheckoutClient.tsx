@@ -1454,7 +1454,7 @@ const Checkout = () => {
             <div className="bg-[#f7f8fb] py-10">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="mb-8">
-                        <h1 className="text-3xl font-bold text-[#111827]">Checkout</h1>
+                        <h1 className="text-3xl font-bold text-[#111827]">Finalizar compra</h1>
                         <p className="mt-2 text-sm text-[#6b7280]">Complete su pedido en pocos pasos</p>
                         <div className="mt-6 grid grid-cols-3 gap-4">
                             {[

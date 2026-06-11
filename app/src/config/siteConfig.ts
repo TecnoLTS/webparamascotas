@@ -132,10 +132,10 @@ export const siteConfig: SiteConfig = {
       },
     ],
     serviceLinks: [
-      { label: 'Envios y devoluciones', href: '/pages/faqs' },
+      { label: 'Envíos y devoluciones', href: '/pages/preguntas-frecuentes' },
       { label: 'Centro de ayuda', href: '/pages/contact' },
     ],
-    companyLinks: [{ label: 'Quienes somos', href: '/pages/about' }],
+    companyLinks: [{ label: 'Quiénes somos', href: '/pages/about' }],
     banner: {
       title: ' ',
       subtitle: ' ',

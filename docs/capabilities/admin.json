@@ -1,0 +1,69 @@
+{
+  "domain": "admin",
+  "capabilities": [
+    {
+      "id": "admin.reporting",
+      "summary": "Dashboard, reportes, inteligencia de inventario y reportes recientes.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-reporting-window", "assertions": ["dashboard-loads", "report-loads"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-reporting-window", "assertDb": true, "cleanup": true }
+    },
+    {
+      "id": "admin.settings",
+      "summary": "Configuracion de IVA, envio, estado de tienda, pagina de producto, precios y referencias.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-settings-snapshot", "assertions": ["settings-read", "settings-restore"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-settings-snapshot", "assertDb": true, "cleanup": true, "scenario": "admin-settings-roundtrip" }
+    },
+    {
+      "id": "admin.discounts",
+      "summary": "Codigos de descuento y auditoria de uso.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-discount-code", "assertions": ["discount-created", "discount-disabled"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-discount-code", "assertDb": true, "cleanup": true }
+    },
+    {
+      "id": "admin.finance",
+      "summary": "Gastos, recurrencias, periodos financieros y ajustes.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-finance-entry", "assertions": ["expense-created", "recurrence-cleaned"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-finance-entry", "assertDb": true, "cleanup": true, "scenario": "admin-finance-flow" }
+    },
+    {
+      "id": "admin.procurement",
+      "summary": "Consulta de facturas de compra y detalle de abastecimiento.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "existing-procurement-data", "assertions": ["purchase-invoices-readable"] },
+      "e2e": { "mode": "generic", "fixture": "existing-procurement-data", "assertDb": true, "cleanup": false }
+    },
+    {
+      "id": "admin.pos",
+      "summary": "Turnos POS, movimientos de caja y busqueda de clientes por documento.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-pos-shift", "assertions": ["shift-opened", "movement-created", "shift-closed"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-pos-shift", "assertDb": true, "cleanup": true, "scenario": "admin-pos-flow" }
+    },
+    {
+      "id": "admin.quotes",
+      "summary": "Cotizaciones administrativas y conversion a orden.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-admin-quote", "assertions": ["quote-created", "quote-converted"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-admin-quote", "assertDb": true, "cleanup": true, "scenario": "admin-quote-flow" }
+    },
+    {
+      "id": "admin.operations",
+      "summary": "Operaciones administrativas complementarias como envios.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "existing-operational-data", "assertions": ["shipments-readable"] },
+      "e2e": { "mode": "generic", "fixture": "existing-operational-data", "assertDb": false, "cleanup": false }
+    }
+  ]
+}

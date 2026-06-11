@@ -1,11 +1,10 @@
 import { getCategoryLabel } from '@/data/petCategoryCards'
 import {
-  getProductCurrentPrice,
   getProductDetailRouteId,
-  getProductSku,
   getProductVariants,
   resolveSelectedVariant,
 } from '@/lib/catalog'
+import { buildProductSeoProfile } from '@/lib/productSeoProfile'
 import type { ProductType } from '@/type/ProductType'
 
 export type SeoCatalogPage = {
@@ -41,7 +40,7 @@ const uniq = <T,>(values: T[]) => Array.from(new Set(values.filter(Boolean)))
 
 const SEO_PRODUCT_LINE_BRANDS = ['Cat Chow', 'Felix'] as const
 
-const SEO_CATALOG_ALIASES: Record<string, string> = {
+const INTERNAL_CATALOG_CATEGORY_ALIASES: Record<string, string> = {
   descuento: 'ofertas',
   descuentos: 'ofertas',
   promocion: 'ofertas',
@@ -70,12 +69,6 @@ const SEO_CATALOG_ALIASES: Record<string, string> = {
   'ropa-para-mascotas': 'ropa',
   'accesorios-para-mascotas': 'accesorios',
   'salud-para-mascotas': 'salud',
-}
-
-const getGenderWord = (gender?: string | null) => {
-  if (gender === 'dog') return 'perros'
-  if (gender === 'cat') return 'gatos'
-  return 'mascotas'
 }
 
 export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
@@ -468,13 +461,7 @@ export const SEO_CATALOG_PAGES: SeoCatalogPage[] = [
 export const SEO_CATALOG_PAGE_BY_SLUG = new Map(SEO_CATALOG_PAGES.map((page) => [page.slug, page]))
 
 export const getCanonicalCatalogSlug = (slug?: string | null) => {
-  const normalized = slugifySeo(slug)
-  return SEO_CATALOG_ALIASES[normalized] ?? normalized
-}
-
-export const isCatalogAliasSlug = (slug?: string | null) => {
-  const normalized = slugifySeo(slug)
-  return Boolean(normalized && getCanonicalCatalogSlug(normalized) !== normalized)
+  return slugifySeo(slug)
 }
 
 export const getDirectCatalogPageBySlug = (slug?: string | null) => {
@@ -484,7 +471,7 @@ export const getDirectCatalogPageBySlug = (slug?: string | null) => {
 
 export const getCatalogPageBySlug = (slug?: string | null) => {
   if (!slug) return null
-  return SEO_CATALOG_PAGE_BY_SLUG.get(getCanonicalCatalogSlug(slug)) ?? null
+  return getDirectCatalogPageBySlug(slug)
 }
 
 export const getAllCatalogPage = (): SeoCatalogPage => ({
@@ -520,8 +507,8 @@ export const getCatalogPagePath = (categoryId?: string | null, options?: { gende
   }
 
   if (normalizedCategory === 'descuentos' || normalizedCategory === 'ofertas') return '/tienda/ofertas'
-  if (SEO_CATALOG_ALIASES[normalizedCategory]) {
-    return getCatalogPagePath(SEO_CATALOG_ALIASES[normalizedCategory], options)
+  if (INTERNAL_CATALOG_CATEGORY_ALIASES[normalizedCategory]) {
+    return getCatalogPagePath(INTERNAL_CATALOG_CATEGORY_ALIASES[normalizedCategory], options)
   }
   if (normalizedCategory === 'alimento' && gender === 'dog') return '/tienda/alimento-perros'
   if (normalizedCategory === 'alimento' && gender === 'cat') return '/tienda/alimento-gatos'
@@ -736,22 +723,6 @@ export const getDynamicCatalogPages = (products: ProductType[], referenceCategor
     .filter((page): page is SeoCatalogPage => Boolean(page))
 }
 
-export const resolveLegacyShopPath = (params: {
-  category?: string | null
-  gender?: string | null
-  query?: string | null
-}) => {
-  const category = params.category?.trim() || null
-  const gender = params.gender?.trim() || null
-  const query = params.query?.trim() || null
-  const target = getCatalogPagePath(category || 'todos', { gender })
-
-  if (!query) return target
-
-  const nextParams = new URLSearchParams({ query })
-  return `${target}?${nextParams.toString()}`
-}
-
 export const getProductSeoSlug = (product: ProductType, requestedId?: string | null) => {
   const selectedVariant = resolveSelectedVariant(product, requestedId)
   const routeId = getProductDetailRouteId(product)
@@ -838,25 +809,16 @@ export const getSeoBrandNames = (products: ProductType[]) => {
 }
 
 export const getProductSeoTitle = (product: ProductType) => {
-  const customTitle = typeof product.attributes?.seoTitle === 'string' ? product.attributes.seoTitle.trim() : ''
-  if (customTitle) return customTitle
-  const genderWord = getGenderWord(product.gender)
-  const brand = product.brand && !productNameIncludesBrand(product) ? `${product.brand} ` : ''
-  const price = getProductCurrentPrice(product)
-  const priceSuffix = price > 0 ? ` desde USD ${price.toFixed(2)}` : ''
-  return `${brand}${product.name} para ${genderWord}${priceSuffix}`
+  return buildProductSeoProfile(product).title
 }
 
 export const getProductSeoDescription = (product: ProductType) => {
-  const customDescription = typeof product.attributes?.seoDescription === 'string' ? product.attributes.seoDescription.trim() : ''
-  if (customDescription) return customDescription
-  const brand = product.brand && !productNameIncludesBrand(product) ? ` ${product.brand}` : ''
-  const sku = getProductSku(product)
-  const category = getCategoryLabel(product.category) || product.category || 'mascotas'
-  const stockText = Number(product.quantity ?? 0) > 0 ? 'con stock disponible' : 'según disponibilidad'
-  const skuText = sku ? ` SKU ${sku}.` : ''
-  return `Compra ${product.name}${brand} en ParaMascotasEC. Producto de ${category.toLowerCase()} para ${getGenderWord(product.gender)} en Ecuador, ${stockText}.${skuText}`
+  return buildProductSeoProfile(product).description
 }
+
+export const getProductSeoImageAlt = (product: ProductType) => buildProductSeoProfile(product).imageAlt
+
+export const getProductSeoSearchTerms = (product: ProductType) => buildProductSeoProfile(product).searchTerms
 
 export const getBrandLandingCopy = (brand: string) => ({
   h1: `${brand} para mascotas en Ecuador`,
@@ -864,9 +826,3 @@ export const getBrandLandingCopy = (brand: string) => ({
   description: `Compra productos ${brand} para perros y gatos en ParaMascotasEC Ecuador, con precios en USD, stock publicado y compra online.`,
   intro: `Catálogo de productos ${brand} disponibles en ParaMascotasEC para perros y gatos, con fichas de producto, precio y disponibilidad actualizada.`,
 })
-
-const productNameIncludesBrand = (product: ProductType) => {
-  const brand = slugifySeo(product.brand)
-  const name = slugifySeo(product.name)
-  return Boolean(brand && (name === brand || name.startsWith(`${brand}-`)))
-}

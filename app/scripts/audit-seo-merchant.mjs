@@ -1,10 +1,120 @@
 #!/usr/bin/env node
 
+import dns from 'node:dns'
+import net from 'node:net'
+
 const BASE_URL = (process.env.SEO_AUDIT_BASE_URL || 'https://paramascotasec.com').replace(/\/$/, '')
 const URL_LIMIT = Number(process.env.SEO_AUDIT_URL_LIMIT || 250)
 const REDIRECT_LIMIT = Number(process.env.SEO_AUDIT_REDIRECT_LIMIT || 200)
+const RESOLVE_IP = (process.env.SEO_AUDIT_RESOLVE_IP || '').trim()
+const trimSlashes = (value = '') => String(value).replace(/^\/+|\/+$/g, '')
+const normalizePathOrUrl = (value) => {
+  const trimmed = String(value || '').trim()
+  if (!trimmed) return ''
+  if (/^https?:\/\//i.test(trimmed)) return trimmed.replace(/\/+$/, '')
+  return `/${trimSlashes(trimmed)}`
+}
+const PUBLIC_API_BASE_PATH = normalizePathOrUrl(
+  process.env.SEO_AUDIT_API_BASE_PATH
+    || process.env.NEXT_PUBLIC_API_BASE_PATH
+    || `/${trimSlashes(process.env.NEXT_PUBLIC_TENANT_SLUG || 'paramascotasec')}/${trimSlashes(process.env.NEXT_PUBLIC_API_SERVICE_SEGMENT || 'api')}`,
+)
+const PRODUCTS_ENDPOINT = normalizePathOrUrl(
+  process.env.SEO_AUDIT_PRODUCTS_ENDPOINT || `${PUBLIC_API_BASE_PATH}/products`,
+)
 const LEGACY_URL_PATTERN = /\/(?:product\/default|shop\/breadcrumb1)(?:[?#'"]|$)/i
 const OLD_CSS_PATTERN = /\/_next\/static\/css\/app\/page\.css\?v=1777158824991/i
+const REMOVED_ROUTE_PREFIXES = ['/product', '/shop', '/blog', '/homepages']
+const TRANSACTIONAL_NOINDEX_PATHS = [
+  '/cart',
+  '/checkout',
+  '/login',
+  '/register',
+  '/forgot-password',
+  '/reset-password',
+  '/my-account',
+  '/search-result',
+]
+const REMOVED_ROUTE_PATHS = new Set([
+  '/contact',
+  '/checkout2',
+  '/order-tracking',
+  '/compare',
+  '/wishlist',
+  '/pages/faqs',
+  '/pages/store-list',
+  '/pages/customer-feedbacks',
+  '/pages/coming-soon',
+  '/pages/page-not-found',
+])
+const PUBLIC_TEMPLATE_TEXT_PATTERNS = [
+  { id: 'checkout_english', pattern: />\s*Checkout\s*</i },
+  { id: 'google_products_title', pattern: /ParaMascotasEC\s+Google\s+Products/i },
+  { id: 'ecommerce_alt', pattern: /\bEcommerce\b/i },
+  { id: 'customer_service_jsonld', pattern: /customer service/i },
+  { id: 'spanish_language_jsonld', pattern: /["']Spanish["']/i },
+  { id: 'store_list_template', pattern: /store list|lista de tiendas/i },
+  { id: 'customer_feedback_template', pattern: /customer feedback/i },
+  { id: 'coming_soon_template', pattern: /coming soon/i },
+  { id: 'wishlist_template', pattern: /\bwishlist\b/i },
+  { id: 'compare_template', pattern: /\bcompare\b/i },
+]
+const LLMS_TEXT_PATTERNS = [
+  { id: 'pais_without_accent', pattern: /\bPais principal\b/ },
+  { id: 'espanol_without_accent', pattern: /\bespanol\b/ },
+  { id: 'paginas_without_accent', pattern: /\bPaginas canonicas\b/ },
+  { id: 'catalogo_without_accent', pattern: /\bCatalogo\b/ },
+  { id: 'politica_without_accent', pattern: /\bPolitica\b/ },
+  { id: 'terminos_without_accent', pattern: /\bTerminos\b/ },
+  { id: 'guias_without_accent', pattern: /\bGuias\b/ },
+  { id: 'envios_without_accent', pattern: /\bEnvios\b/ },
+  { id: 'atencion_without_accent', pattern: /\bAtencion\b/ },
+  { id: 'double_period', pattern: /\.\./ },
+]
+
+const getBaseHostname = () => {
+  try {
+    return new URL(BASE_URL).hostname
+  } catch {
+    return ''
+  }
+}
+
+const setupForcedResolution = () => {
+  if (!RESOLVE_IP) return
+
+  const family = net.isIP(RESOLVE_IP)
+  const baseHostname = getBaseHostname()
+  if (!family || !baseHostname) {
+    throw new Error(`SEO_AUDIT_RESOLVE_IP invalido para ${BASE_URL}: ${RESOLVE_IP}`)
+  }
+
+  const originalLookup = dns.lookup
+  dns.lookup = (hostname, options, callback) => {
+    if (hostname === baseHostname) {
+      const lookupOptions = typeof options === 'function' ? {} : options || {}
+      const lookupCallback = typeof options === 'function' ? options : callback
+      if (lookupOptions.all) {
+        lookupCallback(null, [{ address: RESOLVE_IP, family }])
+      } else {
+        lookupCallback(null, RESOLVE_IP, family)
+      }
+      return
+    }
+
+    if (typeof options === 'function') {
+      originalLookup.call(dns, hostname, options)
+      return
+    }
+    originalLookup.call(dns, hostname, options, callback)
+  }
+
+  if (BASE_URL.startsWith('https:') && !process.env.NODE_TLS_REJECT_UNAUTHORIZED) {
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'
+  }
+}
+
+setupForcedResolution()
 
 const absoluteUrl = (value) => {
   if (!value) return ''
@@ -26,6 +136,28 @@ const requestUrl = (value) => {
 }
 
 const stripQueryAndHash = (value) => value.replace(/[?#].*$/, '')
+
+const getInternalPathname = (href) => {
+  if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
+    return ''
+  }
+
+  try {
+    const parsed = new URL(href, BASE_URL)
+    const base = new URL(BASE_URL)
+    if (parsed.hostname !== base.hostname) return ''
+    return parsed.pathname.replace(/\/+$/, '') || '/'
+  } catch {
+    return ''
+  }
+}
+
+const isRemovedPublicHref = (href) => {
+  const pathname = getInternalPathname(href)
+  if (!pathname) return false
+  if (REMOVED_ROUTE_PATHS.has(pathname)) return true
+  return REMOVED_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+}
 
 const decodeXml = (value = '') =>
   value
@@ -58,7 +190,7 @@ const fetchJson = async (url) => {
 }
 
 const readProducts = async () => {
-  const payload = await fetchJson('/api/products')
+  const payload = await fetchJson(PRODUCTS_ENDPOINT)
   if (Array.isArray(payload)) return payload
   if (Array.isArray(payload?.data)) return payload.data
   if (Array.isArray(payload?.data?.products)) return payload.data.products
@@ -72,7 +204,7 @@ const readFeed = async () => {
     throw new Error(`/feeds/google-products.xml respondió ${response.status}`)
   }
 
-  return Array.from(text.matchAll(/<item>([\s\S]*?)<\/item>/gi)).map((match) => {
+  const items = Array.from(text.matchAll(/<item>([\s\S]*?)<\/item>/gi)).map((match) => {
     const item = match[1]
     return {
       id: tagValue(item, 'g:id'),
@@ -85,6 +217,12 @@ const readFeed = async () => {
       itemGroupId: tagValue(item, 'g:item_group_id'),
     }
   })
+
+  return {
+    text,
+    title: tagValue(text, 'title'),
+    items,
+  }
 }
 
 const readSitemap = async () => {
@@ -133,6 +271,33 @@ const readImageSitemap = async () => {
     errors,
   }
 }
+
+const readLlmsTxt = async () => {
+  const { response, text } = await fetchText('/llms.txt')
+  if (!response.ok) {
+    throw new Error(`/llms.txt respondió ${response.status}`)
+  }
+  return text
+}
+
+const findPublicTemplateText = (text = '') =>
+  PUBLIC_TEMPLATE_TEXT_PATTERNS
+    .filter((entry) => entry.pattern.test(text))
+    .map((entry) => entry.id)
+
+const findLlmsTextIssues = (text = '') =>
+  LLMS_TEXT_PATTERNS
+    .filter((entry) => entry.pattern.test(text))
+    .map((entry) => entry.id)
+
+const visibleWordCount = (html = '') => html
+  .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+  .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+  .replace(/<[^>]+>/g, ' ')
+  .replace(/&[a-z0-9#]+;/gi, ' ')
+  .split(/\s+/)
+  .filter((word) => word.length > 2)
+  .length
 
 const mapLimit = async (items, limit, worker) => {
   const results = []
@@ -302,10 +467,12 @@ const checkIndexablePage = async (url) => {
       status: response.status,
       noindex,
       h1Count,
+      wordCount: visibleWordCount(text),
       canonical,
-      legacyLinks: Array.from(text.matchAll(/href=["']([^"']+)["']/gi))
+      templateTextMatches: findPublicTemplateText(text),
+      removedPublicLinks: Array.from(text.matchAll(/href=["']([^"']+)["']/gi))
         .map((match) => match[1])
-        .filter((href) => LEGACY_URL_PATTERN.test(href)),
+        .filter((href) => LEGACY_URL_PATTERN.test(href) || isRemovedPublicHref(href)),
       referencesOldCss: OLD_CSS_PATTERN.test(text),
       structuredProduct: url.includes('/productos/') ? inspectProductStructuredData(text, url) : null,
       redirected: response.status >= 300 && response.status < 400,
@@ -317,8 +484,10 @@ const checkIndexablePage = async (url) => {
       status: 0,
       noindex: false,
       h1Count: 0,
+      wordCount: 0,
       canonical: '',
-      legacyLinks: [],
+      templateTextMatches: [],
+      removedPublicLinks: [],
       referencesOldCss: false,
       structuredProduct: null,
       redirected: false,
@@ -331,14 +500,21 @@ const checkIndexablePage = async (url) => {
 const getProductId = (product) => product.id || product.internalId || product.slug || product.name
 const hasProductImage = (product) => Boolean(product.thumbImage?.[0] || product.images?.[0])
 const getSku = (product) => product.attributes?.sku || product.attributes?.SKU || product.attributes?.code || product.attributes?.codigo
+const textLength = (value) => String(value || '').replace(/\s+/g, ' ').trim().length
+const hasSeoImageAlt = (product) => {
+  if (textLength(product.attributes?.seoImageAlt) >= 20) return true
+  return Array.isArray(product.imageMeta) && product.imageMeta.some((image) => textLength(image?.altText) >= 20)
+}
 
 const main = async () => {
-  const [products, feedItems, sitemapUrls, imageSitemap] = await Promise.all([
+  const [products, feed, sitemapUrls, imageSitemap, llmsTxt] = await Promise.all([
     readProducts(),
     readFeed(),
     readSitemap(),
     readImageSitemap(),
+    readLlmsTxt(),
   ])
+  const feedItems = feed.items
 
   const publicProducts = products.filter((product) => product.published !== false)
   const sitemapSet = new Set(sitemapUrls.map(stripQueryAndHash))
@@ -356,6 +532,11 @@ const main = async () => {
     8,
     checkIndexablePage,
   )
+  const transactionalChecks = await mapLimit(
+    TRANSACTIONAL_NOINDEX_PATHS,
+    4,
+    checkIndexablePage,
+  )
 
   const missingProductFields = publicProducts
     .map((product) => ({
@@ -367,13 +548,32 @@ const main = async () => {
         Number(product.quantity ?? 0) <= 0 ? 'stock' : '',
         !getSku(product) ? 'sku' : '',
         !product.brand ? 'brand' : '',
+        textLength(product.description) < 50 ? 'description' : '',
+        textLength(product.attributes?.seoTitle) < 20 || textLength(product.attributes?.seoTitle) > 70 ? 'seoTitle' : '',
+        textLength(product.attributes?.seoDescription) < 70 || textLength(product.attributes?.seoDescription) > 160 ? 'seoDescription' : '',
+        !hasSeoImageAlt(product) ? 'image_alt' : '',
       ].filter(Boolean),
     }))
     .filter((entry) => entry.missing.length > 0)
   const productStructuredChecks = sitemapChecks.filter((check) => check.structuredProduct)
+  const feedItemsMissingRequiredFields = feedItems
+    .map((item) => ({
+      id: item.id,
+      missing: [
+        !item.id ? 'g:id' : '',
+        !item.title ? 'g:title' : '',
+        !item.link ? 'g:link' : '',
+        !item.image ? 'g:image_link' : '',
+        !item.price ? 'g:price' : '',
+        !item.availability ? 'g:availability' : '',
+        !item.brand ? 'g:brand' : '',
+      ].filter(Boolean),
+    }))
+    .filter((item) => item.missing.length > 0)
 
   const report = {
     baseUrl: BASE_URL,
+    productsEndpoint: PRODUCTS_ENDPOINT,
     counts: {
       productsApi: products.length,
       publicProducts: publicProducts.length,
@@ -385,7 +585,10 @@ const main = async () => {
       feedItemsWithItemGroupId: feedItems.filter((item) => item.itemGroupId).length,
     },
     feed: {
+      title: feed.title,
+      templateTextMatches: findPublicTemplateText(feed.text),
       uniqueLinks: new Set(feedLinks).size,
+      itemsMissingRequiredFields: feedItemsMissingRequiredFields,
       canonicalLinksMissingFromSitemap: feedCanonicalLinks.filter((link) => !sitemapSet.has(link)),
       linksRedirecting: feedRedirectChecks.filter((check) => check.redirected),
       linkErrors: feedRedirectChecks.filter((check) => check.error || check.status >= 400 || check.status === 0),
@@ -401,12 +604,30 @@ const main = async () => {
       canonicalMismatches: sitemapChecks
         .filter((check) => check.status === 200 && check.canonical && stripQueryAndHash(check.canonical) !== stripQueryAndHash(check.url))
         .map((check) => ({ url: check.url, canonical: check.canonical })),
-      pagesWithLegacyLinks: sitemapChecks
-        .filter((check) => check.legacyLinks?.length > 0)
-        .map((check) => ({ url: check.url, legacyLinks: check.legacyLinks })),
+      pagesWithRemovedPublicLinks: sitemapChecks
+        .filter((check) => check.removedPublicLinks?.length > 0)
+        .map((check) => ({ url: check.url, removedPublicLinks: check.removedPublicLinks })),
       pagesReferencingOldCss: sitemapChecks
         .filter((check) => check.referencesOldCss)
         .map((check) => check.url),
+      pagesWithTemplateText: sitemapChecks
+        .filter((check) => check.templateTextMatches?.length > 0)
+        .map((check) => ({ url: check.url, matches: check.templateTextMatches })),
+      thinIndexablePages: sitemapChecks
+        .filter((check) => check.status === 200 && !check.noindex && check.wordCount > 0 && check.wordCount < 60)
+        .map((check) => ({ url: check.url, wordCount: check.wordCount })),
+    },
+    transactionalNoindex: {
+      checkedUrls: transactionalChecks.length,
+      notFoundOrError: transactionalChecks.filter((check) => check.status >= 400 || check.status === 0),
+      missingNoindex: transactionalChecks.filter((check) => check.status === 200 && !check.noindex).map((check) => check.url),
+      pagesWithTemplateText: transactionalChecks
+        .filter((check) => check.templateTextMatches?.length > 0)
+        .map((check) => ({ url: check.url, matches: check.templateTextMatches })),
+    },
+    llms: {
+      issues: findLlmsTextIssues(llmsTxt),
+      templateTextMatches: findPublicTemplateText(llmsTxt),
     },
     imageSitemap,
     structuredData: {
@@ -444,8 +665,38 @@ const main = async () => {
     },
   }
 
+  const failures = [
+    imageSitemap.errors.length > 0 ? 'image_sitemap_errors' : '',
+    report.feed.templateTextMatches.length > 0 ? 'feed_template_text' : '',
+    report.feed.itemsMissingRequiredFields.length > 0 ? 'feed_items_missing_required_fields' : '',
+    report.feed.canonicalLinksMissingFromSitemap.length > 0 ? 'feed_canonical_links_missing_from_sitemap' : '',
+    report.feed.linksRedirecting.length > 0 ? 'feed_links_redirecting' : '',
+    report.feed.linkErrors.length > 0 ? 'feed_link_errors' : '',
+    report.sitemap.notFoundOrError.length > 0 ? 'sitemap_not_found_or_errors' : '',
+    report.sitemap.redirects.length > 0 ? 'sitemap_redirects' : '',
+    report.sitemap.noindex.length > 0 ? 'sitemap_noindex' : '',
+    report.sitemap.missingCanonical.length > 0 ? 'sitemap_missing_canonical' : '',
+    report.sitemap.canonicalMismatches.length > 0 ? 'sitemap_canonical_mismatches' : '',
+    report.sitemap.pagesWithRemovedPublicLinks.length > 0 ? 'sitemap_links_removed_public_routes' : '',
+    report.sitemap.pagesWithTemplateText.length > 0 ? 'sitemap_template_text' : '',
+    report.sitemap.thinIndexablePages.length > 0 ? 'sitemap_thin_indexable_pages' : '',
+    report.transactionalNoindex.notFoundOrError.length > 0 ? 'transactional_pages_not_found_or_errors' : '',
+    report.transactionalNoindex.missingNoindex.length > 0 ? 'transactional_pages_missing_noindex' : '',
+    report.transactionalNoindex.pagesWithTemplateText.length > 0 ? 'transactional_template_text' : '',
+    report.llms.issues.length > 0 ? 'llms_text_quality' : '',
+    report.llms.templateTextMatches.length > 0 ? 'llms_template_text' : '',
+    report.structuredData.productPagesWithoutProduct.length > 0 ? 'product_jsonld_missing' : '',
+    report.structuredData.productJsonLdParseErrors.length > 0 ? 'product_jsonld_parse_errors' : '',
+    report.structuredData.productPagesMissingFields.length > 0 ? 'product_jsonld_missing_fields' : '',
+    report.structuredData.productOfferPolicyIssues.length > 0 ? 'product_offer_policy_issues' : '',
+    report.products.missingFieldCount > 0 ? 'public_products_missing_required_seo_fields' : '',
+  ].filter(Boolean)
+
+  report.failures = failures
+
   console.log(JSON.stringify(report, null, 2))
-  if (imageSitemap.errors.length > 0) {
+  if (failures.length > 0) {
+    console.error(`SEO audit failed: ${failures.join(', ')}`)
     process.exitCode = 1
   }
 }

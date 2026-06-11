@@ -1,0 +1,53 @@
+{
+  "domain": "catalog",
+  "capabilities": [
+    {
+      "id": "catalog.public",
+      "summary": "Catalogo publico, productos publicados, categorias, marcas, sugerencias y datos base de tienda.",
+      "auth": "public",
+      "gateway": { "exposure": "web-and-tenant-api" },
+      "frontend": {
+        "pages": [
+          { "path": "/", "samplePath": "/", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/tienda", "samplePath": "/tienda", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/tienda/[slug]", "seo": { "policy": "conditional-indexable", "canonical": "self", "sitemap": "dynamic" } },
+          { "path": "/tienda/marcas/[marca]", "seo": { "policy": "conditional-indexable", "canonical": "self", "sitemap": "dynamic" } },
+          { "path": "/productos/[slug]", "seo": { "policy": "indexable", "canonical": "self", "sitemap": "dynamic" } },
+          { "path": "/search-result", "samplePath": "/search-result", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }
+        ],
+        "handlers": [
+          { "path": "/suggestions-data", "method": "GET", "public": true },
+          { "path": "/feeds/google-products.xml", "method": "GET", "public": true },
+          { "path": "/sitemap-images.xml", "method": "GET", "public": true }
+        ]
+      },
+      "data": { "fixture": "existing-public-catalog", "assertions": ["published-products-not-empty", "canonical-product-slugs"] },
+      "e2e": { "mode": "generic", "fixture": "existing-public-catalog", "assertDb": true, "cleanup": false }
+    },
+    {
+      "id": "catalog.admin",
+      "summary": "Gestion administrativa de productos, stock operativo, imagenes y SEO de producto.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "frontend": { "pages": [{ "path": "/my-account", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }] },
+      "data": { "fixture": "e2e-product", "assertions": ["product-created", "seo-fields-generated", "product-cleaned"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-product", "assertDb": true, "cleanup": true, "scenario": "catalog-admin-product-lifecycle" }
+    },
+    {
+      "id": "catalog.reviews",
+      "summary": "Resenas publicas de productos y envio de opiniones de clientes.",
+      "auth": "mixed",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-product-review", "assertions": ["review-created-pending"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-product-review", "assertDb": true, "cleanup": true }
+    },
+    {
+      "id": "catalog.reviews.admin",
+      "summary": "Moderacion administrativa de resenas de productos.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-product-review", "assertions": ["review-status-updated"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-product-review", "assertDb": true, "cleanup": true }
+    }
+  ]
+}

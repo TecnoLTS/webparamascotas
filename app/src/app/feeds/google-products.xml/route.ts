@@ -8,6 +8,7 @@ import {
   groupCatalogProducts,
 } from '@/lib/catalog'
 import { getVariantColorValue, getVariantSizeValue } from '@/lib/catalogAttributes'
+import { buildProductSeoProfile } from '@/lib/productSeoProfile'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
 import { getProductSeoPath } from '@/lib/seoUrls'
 import type { ProductType } from '@/type/ProductType'
@@ -53,9 +54,6 @@ const getProductType = (product: ProductType) => {
   const category = product.category || product.productType || 'Productos'
   return `Mascotas > ${pet} > ${category}`
 }
-
-const textStartsWith = (value: string, prefix: string) =>
-  cleanText(value).toLowerCase().startsWith(`${cleanText(prefix).toLowerCase()} `)
 
 const getProductIdentifier = (product: ProductType) =>
   product.id || product.internalId || product.slug
@@ -106,11 +104,10 @@ const renderItem = (baseUrl: string, product: ProductType, family?: ProductType)
   const itemGroupId = getItemGroupId(family)
   const size = getVariantSizeValue(product)
   const color = getVariantColorValue(product)
+  const seoProfile = buildProductSeoProfile(product)
   const brand = cleanText(product.brand) || 'ParaMascotasEC'
-  const title = cleanText(product.brand && !textStartsWith(product.name, product.brand)
-    ? `${product.brand} ${product.name}`
-    : product.name)
-  const description = cleanText(product.description) || title
+  const title = seoProfile.merchantTitle
+  const description = seoProfile.merchantDescription
   const link = getFeedProductLink(baseUrl, product, family)
   const canonicalLink = `${baseUrl}${getProductSeoPath(family ?? product)}`
 
@@ -174,7 +171,7 @@ export async function GET() {
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">',
     '<channel>',
-    '<title>ParaMascotasEC Google Products</title>',
+    '<title>ParaMascotasEC - productos para Google Merchant</title>',
     `<link>${xmlEscape(baseUrl)}</link>`,
     '<description>Productos publicados de ParaMascotasEC para Google Merchant Center.</description>',
     items,

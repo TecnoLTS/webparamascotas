@@ -147,13 +147,20 @@ cd Gateway && ./scripts/renew-letsencrypt.sh
 ## Verificacion
 
 ```bash
-scripts/check-paramascotas.sh    # frontend lint + typecheck + backend PHP syntax + backend health
+scripts/check-paramascotas.sh    # capability registry + frontend lint/typecheck + backend PHP syntax + backend health
 scripts/check-env-secrets.sh all # preflight .env/secrets sin imprimir valores
 scripts/check-container-connectivity.sh development
 scripts/check-container-connectivity.sh production
+scripts/e2e-development.sh       # suite development: contracts, checks, SEO, Facturador y probes Gateway
+
+cd paramascotasec/app
+npm run capabilities:check       # valida registro maestro de capacidades
+npm run capabilities:generate    # regenera docs/system-capabilities.generated.json y helper TS
 ```
 
 `check-container-connectivity.sh` tambien valida que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelva productos publicos y que las rutas legacy `/api/*`, `/facturador/*` y `/uploads-api/*` respondan 404. Un deploy dev/prod debe fallar si el catalogo publico queda vacio; en development solo se permite sembrar datasets demo con `SEED_DEVELOPMENT_CATALOG=1`, no por defecto. `check-container-connectivity.sh production` valida el runtime de produccion; no correrlo esperando exito mientras el workspace esta desplegado en development. Para cambios acotados, correr tambien checks del componente afectado cuando aplique.
+
+El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.json`; el manifiesto generado queda en `paramascotasec/docs/system-capabilities.generated.json` y el helper frontend en `paramascotasec/app/src/generated/systemCapabilities.ts`. Toda ruta backend nueva debe registrarse en `paramascotasec-backend/config/routes.php` con `capability`; toda ruta Facturador auditable debe registrarse en `Facturador/config/routes.capabilities.php`. Si una pagina, route handler o uso API queda fuera del registro, `npm run capabilities:check` debe fallar.
 
 ## Reglas de negocio criticas
 
@@ -200,6 +207,95 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `paramascotasec/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-11 - Portabilidad E2E sin ripgrep en PATH
+
+Objetivo: corregir que `./scripts/e2e-development.sh` fallara en shells donde `rg` no esta instalado o no esta en `PATH`, aunque el ambiente estuviera correcto.
+
+Cambios:
+- `scripts/check-env-secrets.sh` agrega helper `search_files`: usa `rg` si existe y cae a `grep -E -n` si no existe.
+- Las verificaciones de puertos publicados, hardcoding APISIX y dominios backend ya no dependen exclusivamente de `ripgrep`.
+
+Verificacion:
+- `PATH=/usr/bin:/bin ./scripts/check-env-secrets.sh development` paso con 0 fallos.
+- `PATH=/usr/bin:/bin ./scripts/e2e-development.sh` paso completo: capability registry, lint/typecheck, backend health, preflight, conectividad, SEO audit, PHPUnit Facturador y probes de capacidades.
+- Persisten solo las 6 advertencias preexistentes de data/certificados Facturador development.
+
+### 2026-06-11 - Registro Maestro de Capacidades y E2E Development
+
+Objetivo: crear una base trazable para que nuevas funcionalidades declaren pantallas, endpoints, permisos, SEO, datos, SRI/correos y pruebas antes de entrar al flujo development.
+
+Cambios:
+- Se agrego `paramascotasec/docs/capabilities/*.json` como registro declarativo por dominio y `paramascotasec/scripts/generate-system-capabilities.mjs` como generador/validador.
+- El generador produce `paramascotasec/docs/system-capabilities.generated.json` y `paramascotasec/app/src/generated/systemCapabilities.ts`; `src/lib/api/endpoints.ts` construye sus rutas desde ese helper.
+- Backend mueve su lista de rutas a `paramascotasec-backend/config/routes.php`, cada entrada con `capability`; `public/index.php` registra desde ese archivo.
+- Facturador agrega `Facturador/config/routes.capabilities.php` para auditar rutas de health, SRI test/production, RIDE/XML/PDF y mail-test.
+- Se agrego `scripts/e2e-development.sh`, que valida capability registry, checks del workspace, preflight de secretos, conectividad, SEO audit, PHPUnit del Facturador y probes Gateway/API/SEO desde el manifiesto.
+- `npm run test` y `scripts/check-paramascotas.sh` ahora ejecutan `capabilities:check`, de modo que rutas/paginas/API nuevas sin registrar bloquean development.
+
+Operacion y verificacion:
+- Se redeplego solo Backend y Frontend development con `./scripts/deploy-development.sh backend` y `./scripts/deploy-development.sh frontend`; no se desplego production.
+- Pasaron `npm run test`, sintaxis PHP completa de Backend/Facturador, `Facturador/scripts/test-phpunit.sh --bootstrap vendor/autoload.php tests` (18 tests / 44 assertions) y `./scripts/e2e-development.sh`.
+- El E2E development valido 27 capacidades, 100 rutas backend, 17 rutas Facturador, 53 probes Gateway/API/paginas, SEO audit sin fallos y conectividad completa. Reporte: `reports/e2e/development/capability-e2e-report.json`.
+- Persisten advertencias preexistentes del preflight: sucursales Facturador development con API test sin `.p12` y data/keys de tenants no principales; no se modificaron por ser limpieza de datos separada.
+- No se tocaron production, certificados, secretos, SRI production, facturas ni datos financieros.
+
+### 2026-06-11 - Correccion Generador SEO en Admin de Productos
+
+Objetivo: corregir que el boton `Generar SEO` en `/my-account` dejara el checklist con `Pendiente - Titulo SEO` cuando el titulo generado superaba 70 caracteres.
+
+Cambios:
+- `ProductEditorController` usa `buildProductSeoProfile`, la misma regla SEO del sitio publico/backend, para generar titulo, descripcion, alt base y terminos de busqueda.
+- El guardado frontend reemplaza `seoTitle` y `seoDescription` existentes si estan fuera del rango valido, evitando reenviar valores invalidos desde el admin.
+
+Operacion y verificacion:
+- Se redeplego solo Frontend development con `./scripts/deploy-development.sh frontend`.
+- Pasaron `npm run typecheck`, `npm run lint`, `SEO_AUDIT_RESOLVE_IP=192.168.100.229 npm run seo:audit` y `./scripts/check-container-connectivity.sh development`.
+- No se tocaron production, backend, datos, SRI, Facturador, certificados ni secretos.
+
+### 2026-06-11 - Limpieza SEO sin Redirecciones de Contenido
+
+Objetivo: dejar el frontend publico con solo paginas reales y utiles para Google, Search Console y agentes IA, eliminando rutas de template o no usadas sin crear redirecciones de contenido.
+
+Cambios:
+- Frontend elimina rutas publicas no reales/no usadas: `/pages/faqs`, `/pages/store-list`, `/pages/customer-feedbacks`, `/pages/coming-soon`, `/pages/page-not-found`, `/checkout2`, `/order-tracking`, `/compare`, `/wishlist`, `/product/*`, `/shop/*`, `/blog/*` y `/homepages/*`.
+- Se agrega `src/app/not-found.tsx` como 404 interno no enlazado; las rutas eliminadas devuelven 404 normal sin `Location`. Se conservan solo redirecciones tecnicas de dominio canonico.
+- Enlaces internos, sitemap y `llms.txt` quedan apuntando a URLs reales; `/contact` ya no se publica y la FAQ canonica es `/pages/preguntas-frecuentes`.
+- Las paginas transaccionales existentes (`/cart`, `/checkout`, `/login`, `/register`, `/forgot-password`, `/reset-password`, `/my-account`, `/search-result`) quedan con `noindex, follow`; `robots.txt` ya no las bloquea.
+- `scripts/audit-seo-merchant.mjs` soporta `SEO_AUDIT_RESOLVE_IP`, usa la API publica tenantizada y falla si sitemap/feed/canonicals/JSON-LD/enlaces internos incumplen las reglas SEO acordadas.
+
+Operacion y verificacion:
+- Se redeplego solo Frontend development con `./scripts/deploy-development.sh frontend`. No se desplego production.
+- No se tocaron datos, certificados, secretos, backend, facturador ni SRI.
+- Pasaron `npm run typecheck`, `npm run lint`, `git diff --check`, `SEO_AUDIT_RESOLVE_IP=192.168.100.229 npm run seo:audit` y `./scripts/check-container-connectivity.sh development`.
+- Auditoria SEO development: 167 URLs en sitemap, 123 productos en feed/API, 0 redirects/404/noindex en sitemap, 0 enlaces a rutas eliminadas, 0 canonicals faltantes y 103 paginas de producto con JSON-LD valido.
+- `curl -k --resolve paramascotasec.com:443:192.168.100.229 -I https://paramascotasec.com/pages/store-list` devuelve `HTTP/2 404`; las demas rutas eliminadas probadas tambien devuelven 404 sin redireccion.
+
+### 2026-06-11 - SEO Integral Dinamico, Merchant y Auditoria APISIX
+
+Objetivo: reforzar la limpieza SEO con reglas dinamicas para productos futuros, superficies publicas en espanol oficial, feed Merchant consistente, contexto `llms.txt` util para IA y verificaciones APISIX/Google-ready.
+
+Cambios:
+- Frontend centraliza SEO de producto en `productSeoProfile`: titulo, descripcion, alt base, terminos de busqueda, titulo Merchant y descripcion Merchant salen de una misma regla; campos custom solo se usan si cumplen rangos SEO.
+- JSON-LD de producto usa descripciones SEO como fallback; `WebSite` ya no publica `SearchAction`; `PetStore` usa valores en espanol para contacto e idioma.
+- Feed `/feeds/google-products.xml`, `llms.txt`, sitemap de imagenes, servicios SEO, checkout y textos globales quedan en espanol oficial y sin contenido visible de template en ingles.
+- Backend agrega `ProductSeoMetadata` y el `ProductController` autogenera/persiste `seoTitle`, `seoDescription`, `seoImageAlt` y `seoSearchTerms`; publicar exige marca, SKU, especie, categoria, precio, stock, descripcion util, imagenes y SEO valido (`PRODUCT_SEO_PUBLICATION_REQUIRED` incluye `seoTitle`, `seoDescription`, `image_alt`).
+- Scripts de importacion de productos aplican la misma regla SEO; `import_provider_products.php` tambien persiste `alt_text` cuando genera imagenes.
+- Nuevo script idempotente `scripts/backfill_product_seo_attributes.php` para completar/corregir SEO en `Product.attributes` sin tocar precios, stock ni publicacion.
+- `seo:audit` valida sitemap sin 404/redirect/noindex, canonical propia, JSON-LD Product completo, feed Merchant consistente, productos publicos con SEO minimo, noindex transaccional, rutas eliminadas y textos template en superficies publicas.
+- Nuevo `scripts/check-seo-gateway.sh development` verifica APISIX gestionado, rutas esperadas, `www`/HTTP como redirecciones tecnicas, legacy bloqueado, rutas eliminadas 404, sitemap/robots/feed/llms servidos por web y API tenantizada.
+
+Operacion y verificacion:
+- Se redeplego solo development por scripts: backend y frontend. No se desplego production.
+- Backfill development aplicado: primera pasada completo 109 productos con SEO faltante; segunda pasada corrigio 47 productos con SEO fuera de rango; dry-run final quedo en 0 pendientes.
+- Pasaron `npm run typecheck`, `npm run lint`, sintaxis PHP de archivos tocados, `SEO_AUDIT_RESOLVE_IP=192.168.100.229 npm run seo:audit`, `./scripts/check-seo-gateway.sh development` y `./scripts/check-container-connectivity.sh development`.
+- Auditoria final: 123 productos publicos, 123 items Merchant, 167 URLs sitemap, 103 fichas de producto en sitemap, 0 fallos; sitemap sin 404/redirect/noindex y Merchant sin canonicals fuera del sitemap.
+- Se valido en contenedor PHP 8.5 que un producto nuevo sin SEO explicito genera `seoTitle`, `seoDescription`, `seoImageAlt`, alt de imagen y queda sin gaps SEO.
+- No se tocaron production, certificados, secretos, SRI, Facturador, facturas ni datos financieros.
+
+Decisiones:
+- "No redirecciones" aplica a contenido publico eliminado; se conservan solo redirecciones tecnicas HTTP->HTTPS y `www -> paramascotasec.com`.
+- Los 404 de rutas eliminadas son intencionales y correctos para Search Console hasta que Google las retire.
 
 ### 2026-06-09 - Perimetro APISIX Dinamico por .env
 

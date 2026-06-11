@@ -1,0 +1,44 @@
+{
+  "domain": "content-seo",
+  "capabilities": [
+    {
+      "id": "content.public",
+      "summary": "Paginas institucionales, guias, servicios, preguntas frecuentes, politicas y terminos.",
+      "auth": "public",
+      "gateway": { "exposure": "web" },
+      "frontend": {
+        "pages": [
+          { "path": "/pages/about", "samplePath": "/pages/about", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/pages/preguntas-frecuentes", "samplePath": "/pages/preguntas-frecuentes", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/pages/politica-de-privacidad", "samplePath": "/pages/politica-de-privacidad", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/pages/terminos-y-condiciones", "samplePath": "/pages/terminos-y-condiciones", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/guias", "samplePath": "/guias", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/guias/[slug]", "seo": { "policy": "indexable", "canonical": "self", "sitemap": "static-data" } },
+          { "path": "/servicios", "samplePath": "/servicios", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } },
+          { "path": "/servicios/[slug]", "seo": { "policy": "indexable", "canonical": "self", "sitemap": "static-data" } }
+        ],
+        "handlers": [
+          { "path": "/robots.txt", "method": "GET", "public": true },
+          { "path": "/sitemap.xml", "method": "GET", "public": true },
+          { "path": "/llms.txt", "method": "GET", "public": true }
+        ]
+      },
+      "data": { "fixture": "static-content", "assertions": ["spanish-public-copy", "canonical-present"] },
+      "e2e": { "mode": "generic", "fixture": "static-content", "assertDb": false, "cleanup": false }
+    },
+    {
+      "id": "content.contact",
+      "summary": "Formulario de contacto publico y almacenamiento/envio de mensajes.",
+      "auth": "public",
+      "gateway": { "exposure": "web-and-tenant-api" },
+      "frontend": {
+        "pages": [
+          { "path": "/pages/contact", "samplePath": "/pages/contact", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } }
+        ]
+      },
+      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "data": { "fixture": "e2e-contact-message", "assertions": ["contact-message-stored", "mail-sent-to-allowlist"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-contact-message", "assertDb": true, "cleanup": true, "scenario": "contact-mail-flow" }
+    }
+  ]
+}

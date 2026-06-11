@@ -1,13 +1,11 @@
 import type { Metadata } from 'next'
-import { notFound, permanentRedirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import CatalogSeoPage from '../CatalogSeoPage'
 import { fetchProducts } from '@/lib/products'
 import {
   buildDynamicCatalogPageFromProducts,
   getDirectCatalogPageBySlug,
   getCatalogPageBySlug,
-  isCatalogAliasSlug,
-  slugifySeo,
   type SeoCatalogPage,
 } from '@/lib/seoUrls'
 import { toCanonicalUrl } from '@/lib/publicUrl'
@@ -52,7 +50,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!page) {
     return {
-      title: 'Categoria no disponible',
+      title: 'Categoría no disponible',
       robots: { index: false, follow: true },
     }
   }
@@ -86,10 +84,6 @@ export default async function CatalogSlugPage({ params, searchParams }: Props) {
 
   if (!page) {
     notFound()
-  }
-
-  if (isCatalogAliasSlug(slug) && page.slug !== slugifySeo(slug)) {
-    permanentRedirect(page.path)
   }
 
   return <CatalogSeoPage page={page} searchQueryOverride={query} />

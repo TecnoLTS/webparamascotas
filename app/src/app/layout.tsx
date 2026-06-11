@@ -56,7 +56,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: ogImage,
           width: 1200,
           height: 630,
-          alt: `${site.name} - Ecommerce`,
+          alt: `${site.name} - tienda online para mascotas en Ecuador`,
         },
       ],
     },

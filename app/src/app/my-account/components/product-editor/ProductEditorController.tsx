@@ -5,6 +5,7 @@ import Image from '@/components/Common/AppImage'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
 import { requestApi } from '@/lib/apiClient'
+import { buildProductSeoProfile } from '@/lib/productSeoProfile'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
 import { updateProductReferenceData, type PricingCalc, type PricingMargins } from '@/lib/api/settings'
 import { normalizeMeasurementLabel } from '@/lib/measurementLabel'
@@ -204,60 +205,40 @@ const cleanSeoPart = (value: unknown) => String(value || '').trim()
 const getSeoVariantValue = (attrs: Record<string, any>) =>
     cleanSeoPart(attrs.variantLabel || attrs.range || attrs.presentation || attrs.dosage || attrs.size || attrs.weight || attrs.color || attrs.material)
 
+const isSeoTextLengthValid = (value: string, min: number, max: number) => value.length >= min && value.length <= max
+
+const buildSeoProductFromForm = (form: ProductFormState) => ({
+    id: form.id || 'product-form',
+    internalId: form.id || 'product-form',
+    slug: '',
+    name: cleanSeoPart(form.name),
+    brand: cleanSeoPart(form.brand),
+    category: cleanSeoPart(form.category),
+    productType: cleanSeoPart(form.productType),
+    gender: '',
+    price: Number(form.price || 0),
+    originPrice: Number(form.marketPrice || form.price || 0),
+    quantity: Number(form.quantity || 0),
+    description: cleanSeoPart(form.description),
+    attributes: form.attributes || {},
+    thumbImage: (form.thumbImages || []).map((image) => image.url).filter(Boolean),
+    images: (form.galleryImages || []).map((image) => image.url).filter(Boolean),
+} as any)
+
 const buildSuggestedSeoTitle = (form: ProductFormState) => {
-    const attrs = form.attributes || {}
-    const parts = [
-        cleanSeoPart(form.name),
-        getSeoVariantValue(attrs),
-        cleanSeoPart(form.brand),
-        cleanSeoPart(form.category),
-    ].filter(Boolean)
-    const title = Array.from(new Set(parts)).join(' | ')
-    return title ? `${title} en Ecuador` : ''
+    return buildProductSeoProfile(buildSeoProductFromForm(form)).title
 }
 
 const buildSuggestedSeoDescription = (form: ProductFormState) => {
-    const attrs = form.attributes || {}
-    const species = cleanSeoPart(attrs.species)
-    const variant = getSeoVariantValue(attrs)
-    const base = cleanSeoPart(form.description)
-    const intro = [
-        cleanSeoPart(form.name),
-        variant,
-        cleanSeoPart(form.brand),
-        cleanSeoPart(form.category),
-        species ? `para ${species}` : '',
-    ].filter(Boolean).join(' ')
-    const availability = Number(form.quantity || 0) > 0 ? 'Disponible para compra online en Ecuador.' : ''
-    const description = [intro, base, availability].filter(Boolean).join(' ')
-    return description.slice(0, 155)
+    return buildProductSeoProfile(buildSeoProductFromForm(form)).description
 }
 
 const buildSuggestedSeoAlt = (form: ProductFormState) => {
-    const attrs = form.attributes || {}
-    const parts = [
-        cleanSeoPart(form.brand),
-        cleanSeoPart(form.name),
-        getSeoVariantValue(attrs),
-        cleanSeoPart(form.category),
-        cleanSeoPart(attrs.species),
-    ].filter(Boolean)
-    const base = Array.from(new Set(parts)).join(' ')
-    return base ? `${base} en ParaMascotasEC` : ''
+    return buildProductSeoProfile(buildSeoProductFromForm(form)).imageAlt
 }
 
 const buildSuggestedSearchTerms = (form: ProductFormState) => {
-    const attrs = form.attributes || {}
-    return Array.from(new Set([
-        cleanSeoPart(form.name),
-        cleanSeoPart(form.brand),
-        cleanSeoPart(form.category),
-        cleanSeoPart(form.productType),
-        cleanSeoPart(attrs.species),
-        getSeoVariantValue(attrs),
-        cleanSeoPart(attrs.sku),
-        'tienda de mascotas Ecuador',
-    ].filter(Boolean))).join(', ')
+    return buildProductSeoProfile(buildSeoProductFromForm(form)).searchTerms
 }
 
 const sanitizeDecimalInput = (value: string, maxFractionDigits = 2) => {
@@ -2107,8 +2088,8 @@ export default function ProductEditorModal({
         { label: 'Miniatura', complete: summaryThumbCount > 0 },
         { label: 'Imagen de ficha', complete: summaryGalleryCount > 0 },
         { label: 'Precio válido', complete: Number(form.price || 0) > 0 },
-        { label: 'Título SEO', complete: seoTitleValue.length >= 20 && seoTitleValue.length <= 70 },
-        { label: 'Meta descripción', complete: seoDescriptionValue.length >= 70 && seoDescriptionValue.length <= 160 },
+        { label: 'Título SEO', complete: isSeoTextLengthValid(seoTitleValue, 20, 70) },
+        { label: 'Meta descripción', complete: isSeoTextLengthValid(seoDescriptionValue, 70, 160) },
         { label: 'Alt base', complete: seoAltValue.length >= 20 },
     ]
     const seoScore = Math.round((seoChecks.filter((item) => item.complete).length / seoChecks.length) * 100)
@@ -2920,8 +2901,10 @@ export default function ProductEditorModal({
             } else {
                 delete normalizedAttributes.purchaseTaxRate
             }
-            normalizedAttributes.seoTitle = cleanSeoPart(normalizedAttributes.seoTitle) || suggestedSeoTitle
-            normalizedAttributes.seoDescription = cleanSeoPart(normalizedAttributes.seoDescription) || suggestedSeoDescription
+            const cleanedSeoTitle = cleanSeoPart(normalizedAttributes.seoTitle)
+            const cleanedSeoDescription = cleanSeoPart(normalizedAttributes.seoDescription)
+            normalizedAttributes.seoTitle = isSeoTextLengthValid(cleanedSeoTitle, 20, 70) ? cleanedSeoTitle : suggestedSeoTitle
+            normalizedAttributes.seoDescription = isSeoTextLengthValid(cleanedSeoDescription, 70, 160) ? cleanedSeoDescription : suggestedSeoDescription
             normalizedAttributes.seoImageAlt = cleanSeoPart(normalizedAttributes.seoImageAlt) || suggestedSeoAlt
             normalizedAttributes.seoSearchTerms = cleanSeoPart(normalizedAttributes.seoSearchTerms) || suggestedSearchTerms
 

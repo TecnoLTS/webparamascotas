@@ -1,0 +1,87 @@
+{
+  "domain": "billing-mail-system",
+  "capabilities": [
+    {
+      "id": "billing.documents",
+      "summary": "Consulta de documentos emitidos, XML, RIDE/PDF y relacion con ordenes.",
+      "auth": "admin-or-api-key",
+      "gateway": { "exposure": "tenant-api-and-billing-api" },
+      "data": { "fixture": "e2e-authorized-invoice", "assertions": ["ride-listed", "pdf-readable", "xml-readable"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-authorized-invoice", "assertDb": true, "cleanup": true, "scenario": "billing-document-flow" }
+    },
+    {
+      "id": "billing.sri.pruebas",
+      "summary": "Emision, consulta, anulacion/reemision y recuperacion contra SRI pruebas.",
+      "auth": "api-key",
+      "gateway": { "exposure": "billing-api" },
+      "externalEffects": { "sri": { "environment": "pruebas", "enabledInDevelopment": true, "forbidProduction": true } },
+      "data": { "fixture": "e2e-sri-test-invoice", "assertions": ["source-reference-idempotent", "sri-test-response-stored"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-sri-test-invoice", "assertDb": true, "cleanup": true, "scenario": "sri-pruebas-invoice-flow" }
+    },
+    {
+      "id": "billing.sri.production",
+      "summary": "Contrato de rutas SRI produccion; bloqueado en E2E development.",
+      "auth": "api-key",
+      "gateway": { "exposure": "billing-api" },
+      "externalEffects": { "sri": { "environment": "produccion", "enabledInDevelopment": false, "forbidProduction": true } },
+      "data": { "fixture": "none", "assertions": ["not-called-in-development"] },
+      "e2e": { "mode": "guard", "fixture": "none", "assertDb": false, "cleanup": false }
+    },
+    {
+      "id": "mail.billing",
+      "summary": "Envio de correos de documentos autorizados y pruebas de correo del Facturador.",
+      "auth": "api-key",
+      "gateway": { "exposure": "billing-api" },
+      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "data": { "fixture": "e2e-billing-mail", "assertions": ["mail-sent-to-allowlist"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-billing-mail", "assertDb": true, "cleanup": true, "scenario": "billing-mail-flow" }
+    },
+    {
+      "id": "system.health",
+      "summary": "Healthchecks de frontend, backend, gateway y Facturador.",
+      "auth": "public",
+      "gateway": { "exposure": "web-and-tenant-api-and-billing-api" },
+      "frontend": {
+        "handlers": [
+          { "path": "/healthz", "method": "GET", "public": true }
+        ]
+      },
+      "data": { "fixture": "none", "assertions": ["services-healthy"] },
+      "e2e": { "mode": "generic", "fixture": "none", "assertDb": false, "cleanup": false }
+    },
+    {
+      "id": "system.frontend-proxy",
+      "summary": "Route handlers internos del frontend para proxy API, logout, sugerencias y gestion de uploads.",
+      "auth": "mixed",
+      "gateway": { "exposure": "web-internal-handlers" },
+      "frontend": {
+        "handlers": [
+          { "path": "/api/[...path]", "method": "ANY", "public": false },
+          { "path": "/api/auth/logout", "method": "POST", "public": false },
+          { "path": "/api/suggestions", "method": "GET", "public": false },
+          { "path": "/api/uploads/images", "method": "POST", "public": false },
+          { "path": "/uploads-api/images", "method": "POST", "public": false },
+          { "path": "/uploads/[...path]", "method": "GET", "public": true }
+        ]
+      },
+      "data": { "fixture": "e2e-upload", "assertions": ["upload-route-guarded", "proxy-route-guarded"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-upload", "assertDb": false, "cleanup": true, "stateless": true }
+    },
+    {
+      "id": "security.telemetry",
+      "summary": "Recepcion de reportes CSP y validaciones de seguridad basica.",
+      "auth": "public",
+      "gateway": { "exposure": "web-and-tenant-api" },
+      "data": { "fixture": "e2e-csp-report", "assertions": ["csp-report-accepted"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-csp-report", "assertDb": false, "cleanup": true, "stateless": true }
+    },
+    {
+      "id": "gateway.perimeter",
+      "summary": "Contrato APISIX: dominio canonico, alias tecnico, rutas tenantizadas y bloqueo legacy.",
+      "auth": "public",
+      "gateway": { "exposure": "edge" },
+      "data": { "fixture": "gateway-env", "assertions": ["canonical-domain", "legacy-routes-blocked", "tenant-api-routed"] },
+      "e2e": { "mode": "generic", "fixture": "gateway-env", "assertDb": false, "cleanup": false }
+    }
+  ]
+}

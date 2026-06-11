@@ -123,7 +123,7 @@ const FaqPage = () => {
                                         <a href="https://wa.me/593999999999" target="_blank" className="flex items-center justify-center gap-3 w-full bg-[#F5F5F5] hover:bg-[#1f3b3b] hover:text-white text-black p-4 rounded-xl transition-colors font-bold group">
                                             <WhatsappLogo size={24} weight="fill" className="text-[#1f3b3b] group-hover:text-white"/> <span>WhatsApp</span>
                                         </a>
-                                        <Link href="/contact" className="flex items-center justify-center gap-3 w-full bg-white border-2 border-black hover:bg-black hover:text-white text-black p-4 rounded-xl transition-colors font-bold">
+                                        <Link href="/pages/contact" className="flex items-center justify-center gap-3 w-full bg-white border-2 border-black hover:bg-black hover:text-white text-black p-4 rounded-xl transition-colors font-bold">
                                             <EnvelopeSimple size={24} /> <span>Contacto</span>
                                         </Link>
                                     </div>

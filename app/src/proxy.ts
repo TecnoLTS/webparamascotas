@@ -130,24 +130,6 @@ const shouldApplyPanelAllowlist = (req: NextRequest) => {
   return ADMIN_PANEL_TABS.has(requestedTab)
 }
 
-const SEO_ROUTE_REDIRECTS: Record<string, string> = {
-  '/tienda/alimento-para-perros': '/tienda/alimento-perros',
-  '/tienda/alimento-para-gatos': '/tienda/alimento-gatos',
-  '/tienda/comida-humeda-para-perros': '/tienda/comida-humeda-perros',
-  '/tienda/comida-humeda-para-gatos': '/tienda/comida-humeda-gatos',
-  '/tienda/snacks-para-perros': '/tienda/snacks-perros',
-  '/tienda/juguetes-para-gatos': '/tienda/juguetes-gatos',
-  '/tienda/accesorios-para-perros': '/tienda/accesorios-perros',
-  '/tienda/ropa-para-perros': '/tienda/ropa-perros',
-}
-
-const buildRedirectResponse = (req: NextRequest, pathname: string, searchParams?: URLSearchParams, status = 308) => {
-  const target = req.nextUrl.clone()
-  target.pathname = pathname
-  target.search = searchParams?.toString() ? `?${searchParams.toString()}` : ''
-  return NextResponse.redirect(target, status)
-}
-
 const getForwardedHost = (req: NextRequest) =>
   (req.headers.get('x-forwarded-host') || req.headers.get('host') || '').split(',')[0]?.trim().toLowerCase()
 
@@ -184,17 +166,6 @@ const buildCanonicalHostRedirect = (req: NextRequest) => {
   if (isPrimaryHost && proto === 'https') return null
 
   return NextResponse.redirect(`${CANONICAL_ORIGIN}${req.nextUrl.pathname}${req.nextUrl.search}`, 301)
-}
-
-const redirectLegacySeoRoutes = (req: NextRequest) => {
-  const pathname = req.nextUrl.pathname
-
-  const seoRouteRedirect = SEO_ROUTE_REDIRECTS[pathname]
-  if (seoRouteRedirect) {
-    return buildRedirectResponse(req, seoRouteRedirect, req.nextUrl.searchParams, 301)
-  }
-
-  return null
 }
 
 const buildScriptSrc = (nonce: string) => ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"].join(' ')
@@ -240,12 +211,6 @@ export function proxy(req: NextRequest) {
   if (canonicalHostRedirect) {
     applySecurityHeaders(canonicalHostRedirect.headers, req, csp, cspReportOnly, nonce)
     return canonicalHostRedirect
-  }
-
-  const legacyRedirect = redirectLegacySeoRoutes(req)
-  if (legacyRedirect) {
-    applySecurityHeaders(legacyRedirect.headers, req, csp, cspReportOnly, nonce)
-    return legacyRedirect
   }
 
   const requestHeaders = new Headers(req.headers)

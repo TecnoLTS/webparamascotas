@@ -1,0 +1,72 @@
+{
+  "domain": "users-orders",
+  "capabilities": [
+    {
+      "id": "users.auth",
+      "summary": "Registro, login, logout, sesion, OTP y recuperacion de contrasena.",
+      "auth": "mixed",
+      "gateway": { "exposure": "web-and-tenant-api" },
+      "frontend": {
+        "pages": [
+          { "path": "/login", "samplePath": "/login", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } },
+          { "path": "/register", "samplePath": "/register", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } },
+          { "path": "/forgot-password", "samplePath": "/forgot-password", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } },
+          { "path": "/reset-password", "samplePath": "/reset-password", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }
+        ]
+      },
+      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "data": { "fixture": "e2e-user", "assertions": ["user-session-created", "otp-mail-allowlisted"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-user", "assertDb": true, "cleanup": true, "scenario": "auth-account-flow" }
+    },
+    {
+      "id": "users.profile",
+      "summary": "Cuenta del cliente, direcciones, perfil y cambio de contrasena.",
+      "auth": "user",
+      "gateway": { "exposure": "web-and-tenant-api" },
+      "frontend": {
+        "pages": [
+          { "path": "/my-account", "samplePath": "/my-account", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }
+        ]
+      },
+      "data": { "fixture": "e2e-user-profile", "assertions": ["profile-updated", "address-updated"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-user-profile", "assertDb": true, "cleanup": true, "scenario": "user-profile-flow" }
+    },
+    {
+      "id": "users.admin",
+      "summary": "Gestion administrativa de usuarios y desbloqueo de cuentas.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-managed-user", "assertions": ["admin-user-created", "admin-user-updated"] },
+      "e2e": { "mode": "generic", "fixture": "e2e-managed-user", "assertDb": true, "cleanup": true }
+    },
+    {
+      "id": "orders.checkout",
+      "summary": "Carrito, cotizacion server-side, checkout, orden del cliente y factura asociada.",
+      "auth": "mixed",
+      "gateway": { "exposure": "web-and-tenant-api" },
+      "frontend": {
+        "pages": [
+          { "path": "/cart", "samplePath": "/cart", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } },
+          { "path": "/checkout", "samplePath": "/checkout", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }
+        ],
+        "handlers": [
+          { "path": "/quote", "method": "POST", "public": true }
+        ]
+      },
+      "externalEffects": {
+        "mail": { "enabledInDevelopment": true, "requiresAllowlist": true },
+        "sri": { "environment": "pruebas", "enabledInDevelopment": true, "forbidProduction": true }
+      },
+      "data": { "fixture": "e2e-order", "assertions": ["server-side-totals", "inventory-updated", "invoice-linked"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-order", "assertDb": true, "cleanup": true, "scenario": "checkout-order-invoice-flow" }
+    },
+    {
+      "id": "orders.admin",
+      "summary": "Gestion administrativa de ordenes, estados, ventas historicas y ventas locales.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-admin-order", "assertions": ["order-status-updated", "historical-sale-created"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-admin-order", "assertDb": true, "cleanup": true, "scenario": "admin-order-lifecycle" }
+    }
+  ]
+}

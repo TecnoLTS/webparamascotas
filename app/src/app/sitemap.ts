@@ -60,12 +60,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     '/guias',
     '/pages/about',
     '/pages/contact',
-    '/pages/faqs',
     '/pages/preguntas-frecuentes',
     '/pages/politica-de-privacidad',
     '/pages/terminos-y-condiciones',
-    '/pages/customer-feedbacks',
-    '/pages/store-list',
   ].map((path) => ({
     url: toCanonicalUrl(path),
     lastModified: generatedAt,

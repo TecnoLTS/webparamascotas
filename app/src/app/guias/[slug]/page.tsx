@@ -32,7 +32,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (!guide) {
     return {
-      title: 'Guia no disponible',
+      title: 'Guía no disponible',
       robots: { index: false, follow: true },
     }
   }
@@ -80,7 +80,7 @@ export default async function SeoGuidePage({ params }: Props) {
   const footerCategoryIds = availableCategoryIds
   const breadcrumbJsonLd = generateBreadcrumbJsonLd([
     { name: 'Inicio', url: baseUrl },
-    { name: 'Guias', url: `${baseUrl}/guias/${guide.slug}` },
+    { name: 'Guías', url: `${baseUrl}/guias` },
     { name: guide.h1, url: `${baseUrl}/guias/${guide.slug}` },
   ])
   const articleJsonLd = {

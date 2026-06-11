@@ -1,0 +1,3234 @@
+{
+  "schemaVersion": 1,
+  "generatedBy": "paramascotasec/scripts/generate-system-capabilities.mjs",
+  "capabilities": [
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.discounts",
+      "summary": "Codigos de descuento y auditoria de uso.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-discount-code",
+        "assertions": [
+          "discount-created",
+          "discount-disabled"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-discount-code",
+        "assertDb": true,
+        "cleanup": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/discounts",
+          "method": "GET",
+          "path": "/api/admin/discounts",
+          "handler": "DiscountController@index",
+          "capabilityId": "admin.discounts",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/discounts",
+          "method": "POST",
+          "path": "/api/admin/discounts",
+          "handler": "DiscountController@store",
+          "capabilityId": "admin.discounts",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/discounts/audit",
+          "method": "GET",
+          "path": "/api/admin/discounts/audit",
+          "handler": "DiscountController@audit",
+          "capabilityId": "admin.discounts",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/discounts/{id}",
+          "method": "GET",
+          "path": "/api/admin/discounts/{id}",
+          "handler": "DiscountController@show",
+          "capabilityId": "admin.discounts",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/discounts/{id}",
+          "method": "PUT",
+          "path": "/api/admin/discounts/{id}",
+          "handler": "DiscountController@update",
+          "capabilityId": "admin.discounts",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/admin/discounts/{id}/status",
+          "method": "PATCH",
+          "path": "/api/admin/discounts/{id}/status",
+          "handler": "DiscountController@updateStatus",
+          "capabilityId": "admin.discounts",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.finance",
+      "summary": "Gastos, recurrencias, periodos financieros y ajustes.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-finance-entry",
+        "assertions": [
+          "expense-created",
+          "recurrence-cleaned"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-finance-entry",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "admin-finance-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/expenses",
+          "method": "GET",
+          "path": "/api/admin/expenses",
+          "handler": "BusinessExpenseController@index",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/expenses",
+          "method": "POST",
+          "path": "/api/admin/expenses",
+          "handler": "BusinessExpenseController@store",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/financial-periods",
+          "method": "GET",
+          "path": "/api/admin/financial-periods",
+          "handler": "FinancialPeriodController@index",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/financial-periods/{period}/preview",
+          "method": "GET",
+          "path": "/api/admin/financial-periods/{period}/preview",
+          "handler": "FinancialPeriodController@preview",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/financial-periods/{period}/close",
+          "method": "POST",
+          "path": "/api/admin/financial-periods/{period}/close",
+          "handler": "FinancialPeriodController@close",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/financial-adjustments",
+          "method": "POST",
+          "path": "/api/admin/financial-adjustments",
+          "handler": "FinancialPeriodController@storeAdjustment",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/expenses/recurrences",
+          "method": "GET",
+          "path": "/api/admin/expenses/recurrences",
+          "handler": "BusinessExpenseController@recurrences",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/expenses/recurrences",
+          "method": "POST",
+          "path": "/api/admin/expenses/recurrences",
+          "handler": "BusinessExpenseController@storeRecurrence",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/expenses/recurrences/{id}",
+          "method": "PUT",
+          "path": "/api/admin/expenses/recurrences/{id}",
+          "handler": "BusinessExpenseController@updateRecurrence",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:DELETE:/api/admin/expenses/recurrences/{id}",
+          "method": "DELETE",
+          "path": "/api/admin/expenses/recurrences/{id}",
+          "handler": "BusinessExpenseController@deleteRecurrence",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/expenses/{id}",
+          "method": "PUT",
+          "path": "/api/admin/expenses/{id}",
+          "handler": "BusinessExpenseController@update",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/admin/expenses/{id}/status",
+          "method": "PATCH",
+          "path": "/api/admin/expenses/{id}/status",
+          "handler": "BusinessExpenseController@updateStatus",
+          "capabilityId": "admin.finance",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.operations",
+      "summary": "Operaciones administrativas complementarias como envios.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "existing-operational-data",
+        "assertions": [
+          "shipments-readable"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "existing-operational-data",
+        "assertDb": false,
+        "cleanup": false
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/shipments",
+          "method": "GET",
+          "path": "/api/shipments",
+          "handler": "ShippingController@index",
+          "capabilityId": "admin.operations",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.pos",
+      "summary": "Turnos POS, movimientos de caja y busqueda de clientes por documento.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-pos-shift",
+        "assertions": [
+          "shift-opened",
+          "movement-created",
+          "shift-closed"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-pos-shift",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "admin-pos-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/pos/shift/active",
+          "method": "GET",
+          "path": "/api/admin/pos/shift/active",
+          "handler": "PosController@activeShift",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/pos/shifts",
+          "method": "GET",
+          "path": "/api/admin/pos/shifts",
+          "handler": "PosController@shifts",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/pos/movements",
+          "method": "GET",
+          "path": "/api/admin/pos/movements",
+          "handler": "PosController@movements",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/pos/customer-by-document",
+          "method": "GET",
+          "path": "/api/admin/pos/customer-by-document",
+          "handler": "PosController@customerByDocument",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/pos/shift/open",
+          "method": "POST",
+          "path": "/api/admin/pos/shift/open",
+          "handler": "PosController@openShift",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/pos/shift/close",
+          "method": "POST",
+          "path": "/api/admin/pos/shift/close",
+          "handler": "PosController@closeShift",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/pos/movements",
+          "method": "POST",
+          "path": "/api/admin/pos/movements",
+          "handler": "PosController@addMovement",
+          "capabilityId": "admin.pos",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.procurement",
+      "summary": "Consulta de facturas de compra y detalle de abastecimiento.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "existing-procurement-data",
+        "assertions": [
+          "purchase-invoices-readable"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "existing-procurement-data",
+        "assertDb": true,
+        "cleanup": false
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/purchase-invoices",
+          "method": "GET",
+          "path": "/api/admin/purchase-invoices",
+          "handler": "PurchaseInvoiceController@index",
+          "capabilityId": "admin.procurement",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/purchase-invoices/{id}",
+          "method": "GET",
+          "path": "/api/admin/purchase-invoices/{id}",
+          "handler": "PurchaseInvoiceController@show",
+          "capabilityId": "admin.procurement",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.quotes",
+      "summary": "Cotizaciones administrativas y conversion a orden.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-admin-quote",
+        "assertions": [
+          "quote-created",
+          "quote-converted"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-admin-quote",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "admin-quote-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/quotes",
+          "method": "GET",
+          "path": "/api/admin/quotes",
+          "handler": "QuotationController@index",
+          "capabilityId": "admin.quotes",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/quotes",
+          "method": "POST",
+          "path": "/api/admin/quotes",
+          "handler": "QuotationController@store",
+          "capabilityId": "admin.quotes",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/quotes/{id}/convert",
+          "method": "POST",
+          "path": "/api/admin/quotes/{id}/convert",
+          "handler": "QuotationController@convert",
+          "capabilityId": "admin.quotes",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.reporting",
+      "summary": "Dashboard, reportes, inteligencia de inventario y reportes recientes.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-reporting-window",
+        "assertions": [
+          "dashboard-loads",
+          "report-loads"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-reporting-window",
+        "assertDb": true,
+        "cleanup": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/dashboard/stats",
+          "method": "GET",
+          "path": "/api/admin/dashboard/stats",
+          "handler": "DashboardController@stats",
+          "capabilityId": "admin.reporting",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/report",
+          "method": "GET",
+          "path": "/api/admin/report",
+          "handler": "DashboardController@report",
+          "capabilityId": "admin.reporting",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/inventory/intelligence",
+          "method": "GET",
+          "path": "/api/admin/inventory/intelligence",
+          "handler": "InventoryController@intelligence",
+          "capabilityId": "admin.reporting",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/reports/recent-orders",
+          "method": "GET",
+          "path": "/api/reports/recent-orders",
+          "handler": "ReportController@recentOrders",
+          "capabilityId": "admin.reporting",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "paramascotasec/docs/capabilities/admin.json",
+      "id": "admin.settings",
+      "summary": "Configuracion de IVA, envio, estado de tienda, pagina de producto, precios y referencias.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-settings-snapshot",
+        "assertions": [
+          "settings-read",
+          "settings-restore"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-settings-snapshot",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "admin-settings-roundtrip"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/settings/tax",
+          "method": "GET",
+          "path": "/api/admin/settings/tax",
+          "handler": "SettingsController@getVat",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/tax",
+          "method": "PUT",
+          "path": "/api/admin/settings/tax",
+          "handler": "SettingsController@updateVat",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/session",
+          "method": "GET",
+          "path": "/api/admin/settings/session",
+          "handler": "SettingsController@getSessionSettings",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/session",
+          "method": "PUT",
+          "path": "/api/admin/settings/session",
+          "handler": "SettingsController@updateSessionSettings",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/shipping",
+          "method": "GET",
+          "path": "/api/admin/settings/shipping",
+          "handler": "SettingsController@getShipping",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/shipping",
+          "method": "PUT",
+          "path": "/api/admin/settings/shipping",
+          "handler": "SettingsController@updateShipping",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/store-status",
+          "method": "GET",
+          "path": "/api/admin/settings/store-status",
+          "handler": "SettingsController@getStoreStatus",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/store-status",
+          "method": "PUT",
+          "path": "/api/admin/settings/store-status",
+          "handler": "SettingsController@updateStoreStatus",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/product-page",
+          "method": "GET",
+          "path": "/api/admin/settings/product-page",
+          "handler": "SettingsController@getProductPage",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/product-page",
+          "method": "PUT",
+          "path": "/api/admin/settings/product-page",
+          "handler": "SettingsController@updateProductPage",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/pricing-margins",
+          "method": "GET",
+          "path": "/api/admin/settings/pricing-margins",
+          "handler": "SettingsController@getPricingMargins",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/pricing-margins",
+          "method": "PUT",
+          "path": "/api/admin/settings/pricing-margins",
+          "handler": "SettingsController@updatePricingMargins",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/pricing-calc",
+          "method": "GET",
+          "path": "/api/admin/settings/pricing-calc",
+          "handler": "SettingsController@getPricingCalc",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/pricing-calc",
+          "method": "PUT",
+          "path": "/api/admin/settings/pricing-calc",
+          "handler": "SettingsController@updatePricingCalc",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/pricing-rules",
+          "method": "GET",
+          "path": "/api/admin/settings/pricing-rules",
+          "handler": "SettingsController@getPricingRules",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/pricing-rules",
+          "method": "PUT",
+          "path": "/api/admin/settings/pricing-rules",
+          "handler": "SettingsController@updatePricingRules",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/settings/product-reference-data",
+          "method": "GET",
+          "path": "/api/admin/settings/product-reference-data",
+          "handler": "SettingsController@getProductReferenceData",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/settings/product-reference-data",
+          "method": "PUT",
+          "path": "/api/admin/settings/product-reference-data",
+          "handler": "SettingsController@updateProductReferenceData",
+          "capabilityId": "admin.settings",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "billing.documents",
+      "summary": "Consulta de documentos emitidos, XML, RIDE/PDF y relacion con ordenes.",
+      "auth": "admin-or-api-key",
+      "gateway": {
+        "exposure": "tenant-api-and-billing-api"
+      },
+      "data": {
+        "fixture": "e2e-authorized-invoice",
+        "assertions": [
+          "ride-listed",
+          "pdf-readable",
+          "xml-readable"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-authorized-invoice",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "billing-document-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/billing/rides",
+          "method": "GET",
+          "path": "/api/admin/billing/rides",
+          "handler": "BillingDocumentController@rides",
+          "capabilityId": "billing.documents",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/billing/rides/{accessKey}/pdf",
+          "method": "GET",
+          "path": "/api/admin/billing/rides/{accessKey}/pdf",
+          "handler": "BillingDocumentController@ridePdf",
+          "capabilityId": "billing.documents",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
+          "method": "POST",
+          "path": "/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
+          "handler": "BillingDocumentController@cancelAndReissue",
+          "capabilityId": "billing.documents",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": [
+        {
+          "id": "facturador:GET:/api/test/v1/invoices/rides",
+          "method": "GET",
+          "path": "/api/test/v1/invoices/rides",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/test/v1/invoices/source/{sourceReference}",
+          "method": "GET",
+          "path": "/api/test/v1/invoices/source/{sourceReference}",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/status",
+          "method": "GET",
+          "path": "/api/test/v1/invoices/{accessKey}/status",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/xml",
+          "method": "GET",
+          "path": "/api/test/v1/invoices/{accessKey}/xml",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/ride.pdf",
+          "method": "GET",
+          "path": "/api/test/v1/invoices/{accessKey}/ride.pdf",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/production/v1/invoices/rides",
+          "method": "GET",
+          "path": "/api/production/v1/invoices/rides",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/production/v1/invoices/source/{sourceReference}",
+          "method": "GET",
+          "path": "/api/production/v1/invoices/source/{sourceReference}",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/status",
+          "method": "GET",
+          "path": "/api/production/v1/invoices/{accessKey}/status",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/xml",
+          "method": "GET",
+          "path": "/api/production/v1/invoices/{accessKey}/xml",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/ride.pdf",
+          "method": "GET",
+          "path": "/api/production/v1/invoices/{accessKey}/ride.pdf",
+          "auth": "api-key",
+          "capabilityId": "billing.documents",
+          "source": "Facturador/config/routes.capabilities.php"
+        }
+      ]
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "billing.sri.production",
+      "summary": "Contrato de rutas SRI produccion; bloqueado en E2E development.",
+      "auth": "api-key",
+      "gateway": {
+        "exposure": "billing-api"
+      },
+      "externalEffects": {
+        "sri": {
+          "environment": "produccion",
+          "enabledInDevelopment": false,
+          "forbidProduction": true
+        }
+      },
+      "data": {
+        "fixture": "none",
+        "assertions": [
+          "not-called-in-development"
+        ]
+      },
+      "e2e": {
+        "mode": "guard",
+        "fixture": "none",
+        "assertDb": false,
+        "cleanup": false
+      },
+      "backendRoutes": [],
+      "facturadorRoutes": [
+        {
+          "id": "facturador:POST:/api/production/v1/invoices",
+          "method": "POST",
+          "path": "/api/production/v1/invoices",
+          "auth": "api-key",
+          "capabilityId": "billing.sri.production",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:POST:/api/production/v1/invoices/{accessKey}/cancel-and-reissue",
+          "method": "POST",
+          "path": "/api/production/v1/invoices/{accessKey}/cancel-and-reissue",
+          "auth": "api-key",
+          "capabilityId": "billing.sri.production",
+          "source": "Facturador/config/routes.capabilities.php"
+        }
+      ]
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "billing.sri.pruebas",
+      "summary": "Emision, consulta, anulacion/reemision y recuperacion contra SRI pruebas.",
+      "auth": "api-key",
+      "gateway": {
+        "exposure": "billing-api"
+      },
+      "externalEffects": {
+        "sri": {
+          "environment": "pruebas",
+          "enabledInDevelopment": true,
+          "forbidProduction": true
+        }
+      },
+      "data": {
+        "fixture": "e2e-sri-test-invoice",
+        "assertions": [
+          "source-reference-idempotent",
+          "sri-test-response-stored"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-sri-test-invoice",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "sri-pruebas-invoice-flow"
+      },
+      "backendRoutes": [],
+      "facturadorRoutes": [
+        {
+          "id": "facturador:POST:/api/test/v1/invoices",
+          "method": "POST",
+          "path": "/api/test/v1/invoices",
+          "auth": "api-key",
+          "capabilityId": "billing.sri.pruebas",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:POST:/api/test/v1/invoices/{accessKey}/cancel-and-reissue",
+          "method": "POST",
+          "path": "/api/test/v1/invoices/{accessKey}/cancel-and-reissue",
+          "auth": "api-key",
+          "capabilityId": "billing.sri.pruebas",
+          "source": "Facturador/config/routes.capabilities.php"
+        }
+      ]
+    },
+    {
+      "domain": "catalog",
+      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "id": "catalog.admin",
+      "summary": "Gestion administrativa de productos, stock operativo, imagenes y SEO de producto.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/my-account",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          }
+        ]
+      },
+      "data": {
+        "fixture": "e2e-product",
+        "assertions": [
+          "product-created",
+          "seo-fields-generated",
+          "product-cleaned"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-product",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "catalog-admin-product-lifecycle"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:POST:/api/products",
+          "method": "POST",
+          "path": "/api/products",
+          "handler": "ProductController@store",
+          "capabilityId": "catalog.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/products/{id}",
+          "method": "PUT",
+          "path": "/api/products/{id}",
+          "handler": "ProductController@update",
+          "capabilityId": "catalog.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:DELETE:/api/products/{id}",
+          "method": "DELETE",
+          "path": "/api/products/{id}",
+          "handler": "ProductController@destroy",
+          "capabilityId": "catalog.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "catalog",
+      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "id": "catalog.public",
+      "summary": "Catalogo publico, productos publicados, categorias, marcas, sugerencias y datos base de tienda.",
+      "auth": "public",
+      "gateway": {
+        "exposure": "web-and-tenant-api"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/",
+            "samplePath": "/",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/tienda",
+            "samplePath": "/tienda",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/tienda/[slug]",
+            "seo": {
+              "policy": "conditional-indexable",
+              "canonical": "self",
+              "sitemap": "dynamic"
+            }
+          },
+          {
+            "path": "/tienda/marcas/[marca]",
+            "seo": {
+              "policy": "conditional-indexable",
+              "canonical": "self",
+              "sitemap": "dynamic"
+            }
+          },
+          {
+            "path": "/productos/[slug]",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": "dynamic"
+            }
+          },
+          {
+            "path": "/search-result",
+            "samplePath": "/search-result",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          }
+        ],
+        "handlers": [
+          {
+            "path": "/suggestions-data",
+            "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/feeds/google-products.xml",
+            "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/sitemap-images.xml",
+            "method": "GET",
+            "public": true
+          }
+        ]
+      },
+      "data": {
+        "fixture": "existing-public-catalog",
+        "assertions": [
+          "published-products-not-empty",
+          "canonical-product-slugs"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "existing-public-catalog",
+        "assertDb": true,
+        "cleanup": false
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/products",
+          "method": "GET",
+          "path": "/api/products",
+          "handler": "ProductController@index",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/products/{id}/movement",
+          "method": "GET",
+          "path": "/api/products/{id}/movement",
+          "handler": "ProductController@movement",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/products/{id}",
+          "method": "GET",
+          "path": "/api/products/{id}",
+          "handler": "ProductController@show",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/settings/shipping",
+          "method": "GET",
+          "path": "/api/settings/shipping",
+          "handler": "SettingsController@getShipping",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/settings/store-status",
+          "method": "GET",
+          "path": "/api/settings/store-status",
+          "handler": "SettingsController@getStoreStatus",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/settings/brand-logos",
+          "method": "GET",
+          "path": "/api/settings/brand-logos",
+          "handler": "SettingsController@getPublicBrandLogos",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/settings/product-categories",
+          "method": "GET",
+          "path": "/api/settings/product-categories",
+          "handler": "SettingsController@getPublicProductCategories",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/settings/product-category-references",
+          "method": "GET",
+          "path": "/api/settings/product-category-references",
+          "handler": "SettingsController@getPublicProductCategoryReferences",
+          "capabilityId": "catalog.public",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "catalog",
+      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "id": "catalog.reviews",
+      "summary": "Resenas publicas de productos y envio de opiniones de clientes.",
+      "auth": "mixed",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-product-review",
+        "assertions": [
+          "review-created-pending"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-product-review",
+        "assertDb": true,
+        "cleanup": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/products/{id}/reviews",
+          "method": "GET",
+          "path": "/api/products/{id}/reviews",
+          "handler": "ProductReviewController@indexForProduct",
+          "capabilityId": "catalog.reviews",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/products/{id}/reviews",
+          "method": "POST",
+          "path": "/api/products/{id}/reviews",
+          "handler": "ProductReviewController@storeForProduct",
+          "capabilityId": "catalog.reviews",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "catalog",
+      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "id": "catalog.reviews.admin",
+      "summary": "Moderacion administrativa de resenas de productos.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-product-review",
+        "assertions": [
+          "review-status-updated"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-product-review",
+        "assertDb": true,
+        "cleanup": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/reviews",
+          "method": "GET",
+          "path": "/api/admin/reviews",
+          "handler": "ProductReviewController@adminIndex",
+          "capabilityId": "catalog.reviews.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/admin/reviews/{id}",
+          "method": "PATCH",
+          "path": "/api/admin/reviews/{id}",
+          "handler": "ProductReviewController@adminUpdate",
+          "capabilityId": "catalog.reviews.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "content-seo",
+      "source": "paramascotasec/docs/capabilities/content-seo.json",
+      "id": "content.contact",
+      "summary": "Formulario de contacto publico y almacenamiento/envio de mensajes.",
+      "auth": "public",
+      "gateway": {
+        "exposure": "web-and-tenant-api"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/pages/contact",
+            "samplePath": "/pages/contact",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          }
+        ]
+      },
+      "externalEffects": {
+        "mail": {
+          "enabledInDevelopment": true,
+          "requiresAllowlist": true
+        }
+      },
+      "data": {
+        "fixture": "e2e-contact-message",
+        "assertions": [
+          "contact-message-stored",
+          "mail-sent-to-allowlist"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-contact-message",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "contact-mail-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:POST:/api/contact",
+          "method": "POST",
+          "path": "/api/contact",
+          "handler": "ContactController@store",
+          "capabilityId": "content.contact",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "content-seo",
+      "source": "paramascotasec/docs/capabilities/content-seo.json",
+      "id": "content.public",
+      "summary": "Paginas institucionales, guias, servicios, preguntas frecuentes, politicas y terminos.",
+      "auth": "public",
+      "gateway": {
+        "exposure": "web"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/pages/about",
+            "samplePath": "/pages/about",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/pages/preguntas-frecuentes",
+            "samplePath": "/pages/preguntas-frecuentes",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/pages/politica-de-privacidad",
+            "samplePath": "/pages/politica-de-privacidad",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/pages/terminos-y-condiciones",
+            "samplePath": "/pages/terminos-y-condiciones",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/guias",
+            "samplePath": "/guias",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/guias/[slug]",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": "static-data"
+            }
+          },
+          {
+            "path": "/servicios",
+            "samplePath": "/servicios",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": true
+            }
+          },
+          {
+            "path": "/servicios/[slug]",
+            "seo": {
+              "policy": "indexable",
+              "canonical": "self",
+              "sitemap": "static-data"
+            }
+          }
+        ],
+        "handlers": [
+          {
+            "path": "/robots.txt",
+            "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/sitemap.xml",
+            "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/llms.txt",
+            "method": "GET",
+            "public": true
+          }
+        ]
+      },
+      "data": {
+        "fixture": "static-content",
+        "assertions": [
+          "spanish-public-copy",
+          "canonical-present"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "static-content",
+        "assertDb": false,
+        "cleanup": false
+      },
+      "backendRoutes": [],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "gateway.perimeter",
+      "summary": "Contrato APISIX: dominio canonico, alias tecnico, rutas tenantizadas y bloqueo legacy.",
+      "auth": "public",
+      "gateway": {
+        "exposure": "edge"
+      },
+      "data": {
+        "fixture": "gateway-env",
+        "assertions": [
+          "canonical-domain",
+          "legacy-routes-blocked",
+          "tenant-api-routed"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "gateway-env",
+        "assertDb": false,
+        "cleanup": false
+      },
+      "backendRoutes": [],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "mail.billing",
+      "summary": "Envio de correos de documentos autorizados y pruebas de correo del Facturador.",
+      "auth": "api-key",
+      "gateway": {
+        "exposure": "billing-api"
+      },
+      "externalEffects": {
+        "mail": {
+          "enabledInDevelopment": true,
+          "requiresAllowlist": true
+        }
+      },
+      "data": {
+        "fixture": "e2e-billing-mail",
+        "assertions": [
+          "mail-sent-to-allowlist"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-billing-mail",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "billing-mail-flow"
+      },
+      "backendRoutes": [],
+      "facturadorRoutes": [
+        {
+          "id": "facturador:POST:/api/test/v1/invoices/{accessKey}/mail-test",
+          "method": "POST",
+          "path": "/api/test/v1/invoices/{accessKey}/mail-test",
+          "auth": "api-key",
+          "capabilityId": "mail.billing",
+          "source": "Facturador/config/routes.capabilities.php"
+        },
+        {
+          "id": "facturador:POST:/api/production/v1/invoices/{accessKey}/mail-test",
+          "method": "POST",
+          "path": "/api/production/v1/invoices/{accessKey}/mail-test",
+          "auth": "api-key",
+          "capabilityId": "mail.billing",
+          "source": "Facturador/config/routes.capabilities.php"
+        }
+      ]
+    },
+    {
+      "domain": "users-orders",
+      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "id": "orders.admin",
+      "summary": "Gestion administrativa de ordenes, estados, ventas historicas y ventas locales.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-admin-order",
+        "assertions": [
+          "order-status-updated",
+          "historical-sale-created"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-admin-order",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "admin-order-lifecycle"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/orders",
+          "method": "GET",
+          "path": "/api/orders",
+          "handler": "OrderController@index",
+          "capabilityId": "orders.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/orders/{id}/status",
+          "method": "PATCH",
+          "path": "/api/orders/{id}/status",
+          "handler": "OrderController@updateStatus",
+          "capabilityId": "orders.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/historical-sales",
+          "method": "POST",
+          "path": "/api/admin/historical-sales",
+          "handler": "OrderController@storeHistoricalSale",
+          "capabilityId": "orders.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "users-orders",
+      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "id": "orders.checkout",
+      "summary": "Carrito, cotizacion server-side, checkout, orden del cliente y factura asociada.",
+      "auth": "mixed",
+      "gateway": {
+        "exposure": "web-and-tenant-api"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/cart",
+            "samplePath": "/cart",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          },
+          {
+            "path": "/checkout",
+            "samplePath": "/checkout",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          }
+        ],
+        "handlers": [
+          {
+            "path": "/quote",
+            "method": "POST",
+            "public": true
+          }
+        ]
+      },
+      "externalEffects": {
+        "mail": {
+          "enabledInDevelopment": true,
+          "requiresAllowlist": true
+        },
+        "sri": {
+          "environment": "pruebas",
+          "enabledInDevelopment": true,
+          "forbidProduction": true
+        }
+      },
+      "data": {
+        "fixture": "e2e-order",
+        "assertions": [
+          "server-side-totals",
+          "inventory-updated",
+          "invoice-linked"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-order",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "checkout-order-invoice-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/orders/my-orders",
+          "method": "GET",
+          "path": "/api/orders/my-orders",
+          "handler": "OrderController@myOrders",
+          "capabilityId": "orders.checkout",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/orders/{id}",
+          "method": "GET",
+          "path": "/api/orders/{id}",
+          "handler": "OrderController@show",
+          "capabilityId": "orders.checkout",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/orders/{id}/invoice",
+          "method": "GET",
+          "path": "/api/orders/{id}/invoice",
+          "handler": "OrderController@invoice",
+          "capabilityId": "orders.checkout",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/orders",
+          "method": "POST",
+          "path": "/api/orders",
+          "handler": "OrderController@store",
+          "capabilityId": "orders.checkout",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/orders/quote",
+          "method": "POST",
+          "path": "/api/orders/quote",
+          "handler": "OrderController@quote",
+          "capabilityId": "orders.checkout",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "security.telemetry",
+      "summary": "Recepcion de reportes CSP y validaciones de seguridad basica.",
+      "auth": "public",
+      "gateway": {
+        "exposure": "web-and-tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-csp-report",
+        "assertions": [
+          "csp-report-accepted"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-csp-report",
+        "assertDb": false,
+        "cleanup": true,
+        "stateless": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:POST:/api/security/csp-report",
+          "method": "POST",
+          "path": "/api/security/csp-report",
+          "handler": "SecurityController@cspReport",
+          "capabilityId": "security.telemetry",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "system.frontend-proxy",
+      "summary": "Route handlers internos del frontend para proxy API, logout, sugerencias y gestion de uploads.",
+      "auth": "mixed",
+      "gateway": {
+        "exposure": "web-internal-handlers"
+      },
+      "frontend": {
+        "handlers": [
+          {
+            "path": "/api/[...path]",
+            "method": "ANY",
+            "public": false
+          },
+          {
+            "path": "/api/auth/logout",
+            "method": "POST",
+            "public": false
+          },
+          {
+            "path": "/api/suggestions",
+            "method": "GET",
+            "public": false
+          },
+          {
+            "path": "/api/uploads/images",
+            "method": "POST",
+            "public": false
+          },
+          {
+            "path": "/uploads-api/images",
+            "method": "POST",
+            "public": false
+          },
+          {
+            "path": "/uploads/[...path]",
+            "method": "GET",
+            "public": true
+          }
+        ]
+      },
+      "data": {
+        "fixture": "e2e-upload",
+        "assertions": [
+          "upload-route-guarded",
+          "proxy-route-guarded"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-upload",
+        "assertDb": false,
+        "cleanup": true,
+        "stateless": true
+      },
+      "backendRoutes": [],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "billing-mail-system",
+      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "id": "system.health",
+      "summary": "Healthchecks de frontend, backend, gateway y Facturador.",
+      "auth": "public",
+      "gateway": {
+        "exposure": "web-and-tenant-api-and-billing-api"
+      },
+      "frontend": {
+        "handlers": [
+          {
+            "path": "/healthz",
+            "method": "GET",
+            "public": true
+          }
+        ]
+      },
+      "data": {
+        "fixture": "none",
+        "assertions": [
+          "services-healthy"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "none",
+        "assertDb": false,
+        "cleanup": false
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/health",
+          "method": "GET",
+          "path": "/api/health",
+          "handler": "HealthController@status",
+          "capabilityId": "system.health",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": [
+        {
+          "id": "facturador:GET:/health",
+          "method": "GET",
+          "path": "/health",
+          "auth": "public",
+          "capabilityId": "system.health",
+          "source": "Facturador/config/routes.capabilities.php"
+        }
+      ]
+    },
+    {
+      "domain": "users-orders",
+      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "id": "users.admin",
+      "summary": "Gestion administrativa de usuarios y desbloqueo de cuentas.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "e2e-managed-user",
+        "assertions": [
+          "admin-user-created",
+          "admin-user-updated"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "e2e-managed-user",
+        "assertDb": true,
+        "cleanup": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/users",
+          "method": "GET",
+          "path": "/api/users",
+          "handler": "UserController@index",
+          "capabilityId": "users.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/users",
+          "method": "POST",
+          "path": "/api/users",
+          "handler": "UserController@store",
+          "capabilityId": "users.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/users/{id}",
+          "method": "PUT",
+          "path": "/api/users/{id}",
+          "handler": "UserController@update",
+          "capabilityId": "users.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/users/{id}/unlock",
+          "method": "POST",
+          "path": "/api/users/{id}/unlock",
+          "handler": "UserController@unlock",
+          "capabilityId": "users.admin",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "users-orders",
+      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "id": "users.auth",
+      "summary": "Registro, login, logout, sesion, OTP y recuperacion de contrasena.",
+      "auth": "mixed",
+      "gateway": {
+        "exposure": "web-and-tenant-api"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/login",
+            "samplePath": "/login",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          },
+          {
+            "path": "/register",
+            "samplePath": "/register",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          },
+          {
+            "path": "/forgot-password",
+            "samplePath": "/forgot-password",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          },
+          {
+            "path": "/reset-password",
+            "samplePath": "/reset-password",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          }
+        ]
+      },
+      "externalEffects": {
+        "mail": {
+          "enabledInDevelopment": true,
+          "requiresAllowlist": true
+        }
+      },
+      "data": {
+        "fixture": "e2e-user",
+        "assertions": [
+          "user-session-created",
+          "otp-mail-allowlisted"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-user",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "auth-account-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:POST:/api/auth/login",
+          "method": "POST",
+          "path": "/api/auth/login",
+          "handler": "AuthController@login",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/auth/logout",
+          "method": "POST",
+          "path": "/api/auth/logout",
+          "handler": "AuthController@logout",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/auth/register",
+          "method": "POST",
+          "path": "/api/auth/register",
+          "handler": "AuthController@register",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/auth/request-otp",
+          "method": "POST",
+          "path": "/api/auth/request-otp",
+          "handler": "AuthController@requestOtp",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/auth/verify-otp",
+          "method": "POST",
+          "path": "/api/auth/verify-otp",
+          "handler": "AuthController@verifyOtp",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/auth/password-reset/request",
+          "method": "POST",
+          "path": "/api/auth/password-reset/request",
+          "handler": "AuthController@requestPasswordReset",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/auth/password-reset/confirm",
+          "method": "POST",
+          "path": "/api/auth/password-reset/confirm",
+          "handler": "AuthController@confirmPasswordReset",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/auth/verify",
+          "method": "GET",
+          "path": "/api/auth/verify",
+          "handler": "AuthController@verify",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/auth/session",
+          "method": "GET",
+          "path": "/api/auth/session",
+          "handler": "AuthController@session",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    },
+    {
+      "domain": "users-orders",
+      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "id": "users.profile",
+      "summary": "Cuenta del cliente, direcciones, perfil y cambio de contrasena.",
+      "auth": "user",
+      "gateway": {
+        "exposure": "web-and-tenant-api"
+      },
+      "frontend": {
+        "pages": [
+          {
+            "path": "/my-account",
+            "samplePath": "/my-account",
+            "seo": {
+              "policy": "noindex",
+              "follow": true,
+              "canonical": "self",
+              "sitemap": false
+            }
+          }
+        ]
+      },
+      "data": {
+        "fixture": "e2e-user-profile",
+        "assertions": [
+          "profile-updated",
+          "address-updated"
+        ]
+      },
+      "e2e": {
+        "mode": "scenario",
+        "fixture": "e2e-user-profile",
+        "assertDb": true,
+        "cleanup": true,
+        "scenario": "user-profile-flow"
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/user/addresses",
+          "method": "GET",
+          "path": "/api/user/addresses",
+          "handler": "UserController@getAddresses",
+          "capabilityId": "users.profile",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/user/addresses",
+          "method": "PUT",
+          "path": "/api/user/addresses",
+          "handler": "UserController@updateAddresses",
+          "capabilityId": "users.profile",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/user/profile",
+          "method": "GET",
+          "path": "/api/user/profile",
+          "handler": "UserController@getProfile",
+          "capabilityId": "users.profile",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/user/profile",
+          "method": "PUT",
+          "path": "/api/user/profile",
+          "handler": "UserController@updateProfile",
+          "capabilityId": "users.profile",
+          "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/user/password",
+          "method": "PUT",
+          "path": "/api/user/password",
+          "handler": "UserController@updatePassword",
+          "capabilityId": "users.profile",
+          "source": "paramascotasec-backend/config/routes.php"
+        }
+      ],
+      "facturadorRoutes": []
+    }
+  ],
+  "indexes": {
+    "backendRoutes": [
+      {
+        "id": "backend:GET:/api/products",
+        "method": "GET",
+        "path": "/api/products",
+        "handler": "ProductController@index",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/products/{id}/reviews",
+        "method": "GET",
+        "path": "/api/products/{id}/reviews",
+        "handler": "ProductReviewController@indexForProduct",
+        "capabilityId": "catalog.reviews",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/products/{id}/reviews",
+        "method": "POST",
+        "path": "/api/products/{id}/reviews",
+        "handler": "ProductReviewController@storeForProduct",
+        "capabilityId": "catalog.reviews",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/products/{id}/movement",
+        "method": "GET",
+        "path": "/api/products/{id}/movement",
+        "handler": "ProductController@movement",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/products/{id}",
+        "method": "GET",
+        "path": "/api/products/{id}",
+        "handler": "ProductController@show",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/products",
+        "method": "POST",
+        "path": "/api/products",
+        "handler": "ProductController@store",
+        "capabilityId": "catalog.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/products/{id}",
+        "method": "PUT",
+        "path": "/api/products/{id}",
+        "handler": "ProductController@update",
+        "capabilityId": "catalog.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:DELETE:/api/products/{id}",
+        "method": "DELETE",
+        "path": "/api/products/{id}",
+        "handler": "ProductController@destroy",
+        "capabilityId": "catalog.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/users",
+        "method": "GET",
+        "path": "/api/users",
+        "handler": "UserController@index",
+        "capabilityId": "users.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/users",
+        "method": "POST",
+        "path": "/api/users",
+        "handler": "UserController@store",
+        "capabilityId": "users.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/users/{id}",
+        "method": "PUT",
+        "path": "/api/users/{id}",
+        "handler": "UserController@update",
+        "capabilityId": "users.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/users/{id}/unlock",
+        "method": "POST",
+        "path": "/api/users/{id}/unlock",
+        "handler": "UserController@unlock",
+        "capabilityId": "users.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/user/addresses",
+        "method": "GET",
+        "path": "/api/user/addresses",
+        "handler": "UserController@getAddresses",
+        "capabilityId": "users.profile",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/user/addresses",
+        "method": "PUT",
+        "path": "/api/user/addresses",
+        "handler": "UserController@updateAddresses",
+        "capabilityId": "users.profile",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/user/profile",
+        "method": "GET",
+        "path": "/api/user/profile",
+        "handler": "UserController@getProfile",
+        "capabilityId": "users.profile",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/user/profile",
+        "method": "PUT",
+        "path": "/api/user/profile",
+        "handler": "UserController@updateProfile",
+        "capabilityId": "users.profile",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/user/password",
+        "method": "PUT",
+        "path": "/api/user/password",
+        "handler": "UserController@updatePassword",
+        "capabilityId": "users.profile",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/login",
+        "method": "POST",
+        "path": "/api/auth/login",
+        "handler": "AuthController@login",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/logout",
+        "method": "POST",
+        "path": "/api/auth/logout",
+        "handler": "AuthController@logout",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/register",
+        "method": "POST",
+        "path": "/api/auth/register",
+        "handler": "AuthController@register",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/request-otp",
+        "method": "POST",
+        "path": "/api/auth/request-otp",
+        "handler": "AuthController@requestOtp",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/verify-otp",
+        "method": "POST",
+        "path": "/api/auth/verify-otp",
+        "handler": "AuthController@verifyOtp",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/password-reset/request",
+        "method": "POST",
+        "path": "/api/auth/password-reset/request",
+        "handler": "AuthController@requestPasswordReset",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/auth/password-reset/confirm",
+        "method": "POST",
+        "path": "/api/auth/password-reset/confirm",
+        "handler": "AuthController@confirmPasswordReset",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/auth/verify",
+        "method": "GET",
+        "path": "/api/auth/verify",
+        "handler": "AuthController@verify",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/auth/session",
+        "method": "GET",
+        "path": "/api/auth/session",
+        "handler": "AuthController@session",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/orders",
+        "method": "GET",
+        "path": "/api/orders",
+        "handler": "OrderController@index",
+        "capabilityId": "orders.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/orders/my-orders",
+        "method": "GET",
+        "path": "/api/orders/my-orders",
+        "handler": "OrderController@myOrders",
+        "capabilityId": "orders.checkout",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/orders/{id}",
+        "method": "GET",
+        "path": "/api/orders/{id}",
+        "handler": "OrderController@show",
+        "capabilityId": "orders.checkout",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/orders/{id}/status",
+        "method": "PATCH",
+        "path": "/api/orders/{id}/status",
+        "handler": "OrderController@updateStatus",
+        "capabilityId": "orders.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/orders/{id}/invoice",
+        "method": "GET",
+        "path": "/api/orders/{id}/invoice",
+        "handler": "OrderController@invoice",
+        "capabilityId": "orders.checkout",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/orders",
+        "method": "POST",
+        "path": "/api/orders",
+        "handler": "OrderController@store",
+        "capabilityId": "orders.checkout",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/orders/quote",
+        "method": "POST",
+        "path": "/api/orders/quote",
+        "handler": "OrderController@quote",
+        "capabilityId": "orders.checkout",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/historical-sales",
+        "method": "POST",
+        "path": "/api/admin/historical-sales",
+        "handler": "OrderController@storeHistoricalSale",
+        "capabilityId": "orders.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/dashboard/stats",
+        "method": "GET",
+        "path": "/api/admin/dashboard/stats",
+        "handler": "DashboardController@stats",
+        "capabilityId": "admin.reporting",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/report",
+        "method": "GET",
+        "path": "/api/admin/report",
+        "handler": "DashboardController@report",
+        "capabilityId": "admin.reporting",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/inventory/intelligence",
+        "method": "GET",
+        "path": "/api/admin/inventory/intelligence",
+        "handler": "InventoryController@intelligence",
+        "capabilityId": "admin.reporting",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/reviews",
+        "method": "GET",
+        "path": "/api/admin/reviews",
+        "handler": "ProductReviewController@adminIndex",
+        "capabilityId": "catalog.reviews.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/admin/reviews/{id}",
+        "method": "PATCH",
+        "path": "/api/admin/reviews/{id}",
+        "handler": "ProductReviewController@adminUpdate",
+        "capabilityId": "catalog.reviews.admin",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/tax",
+        "method": "GET",
+        "path": "/api/admin/settings/tax",
+        "handler": "SettingsController@getVat",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/tax",
+        "method": "PUT",
+        "path": "/api/admin/settings/tax",
+        "handler": "SettingsController@updateVat",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/session",
+        "method": "GET",
+        "path": "/api/admin/settings/session",
+        "handler": "SettingsController@getSessionSettings",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/session",
+        "method": "PUT",
+        "path": "/api/admin/settings/session",
+        "handler": "SettingsController@updateSessionSettings",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/settings/shipping",
+        "method": "GET",
+        "path": "/api/settings/shipping",
+        "handler": "SettingsController@getShipping",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/settings/store-status",
+        "method": "GET",
+        "path": "/api/settings/store-status",
+        "handler": "SettingsController@getStoreStatus",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/settings/brand-logos",
+        "method": "GET",
+        "path": "/api/settings/brand-logos",
+        "handler": "SettingsController@getPublicBrandLogos",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/settings/product-categories",
+        "method": "GET",
+        "path": "/api/settings/product-categories",
+        "handler": "SettingsController@getPublicProductCategories",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/settings/product-category-references",
+        "method": "GET",
+        "path": "/api/settings/product-category-references",
+        "handler": "SettingsController@getPublicProductCategoryReferences",
+        "capabilityId": "catalog.public",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/shipping",
+        "method": "GET",
+        "path": "/api/admin/settings/shipping",
+        "handler": "SettingsController@getShipping",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/shipping",
+        "method": "PUT",
+        "path": "/api/admin/settings/shipping",
+        "handler": "SettingsController@updateShipping",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/store-status",
+        "method": "GET",
+        "path": "/api/admin/settings/store-status",
+        "handler": "SettingsController@getStoreStatus",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/store-status",
+        "method": "PUT",
+        "path": "/api/admin/settings/store-status",
+        "handler": "SettingsController@updateStoreStatus",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/product-page",
+        "method": "GET",
+        "path": "/api/admin/settings/product-page",
+        "handler": "SettingsController@getProductPage",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/product-page",
+        "method": "PUT",
+        "path": "/api/admin/settings/product-page",
+        "handler": "SettingsController@updateProductPage",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/pricing-margins",
+        "method": "GET",
+        "path": "/api/admin/settings/pricing-margins",
+        "handler": "SettingsController@getPricingMargins",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/pricing-margins",
+        "method": "PUT",
+        "path": "/api/admin/settings/pricing-margins",
+        "handler": "SettingsController@updatePricingMargins",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/pricing-calc",
+        "method": "GET",
+        "path": "/api/admin/settings/pricing-calc",
+        "handler": "SettingsController@getPricingCalc",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/pricing-calc",
+        "method": "PUT",
+        "path": "/api/admin/settings/pricing-calc",
+        "handler": "SettingsController@updatePricingCalc",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/pricing-rules",
+        "method": "GET",
+        "path": "/api/admin/settings/pricing-rules",
+        "handler": "SettingsController@getPricingRules",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/pricing-rules",
+        "method": "PUT",
+        "path": "/api/admin/settings/pricing-rules",
+        "handler": "SettingsController@updatePricingRules",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/settings/product-reference-data",
+        "method": "GET",
+        "path": "/api/admin/settings/product-reference-data",
+        "handler": "SettingsController@getProductReferenceData",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/settings/product-reference-data",
+        "method": "PUT",
+        "path": "/api/admin/settings/product-reference-data",
+        "handler": "SettingsController@updateProductReferenceData",
+        "capabilityId": "admin.settings",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/discounts",
+        "method": "GET",
+        "path": "/api/admin/discounts",
+        "handler": "DiscountController@index",
+        "capabilityId": "admin.discounts",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/discounts",
+        "method": "POST",
+        "path": "/api/admin/discounts",
+        "handler": "DiscountController@store",
+        "capabilityId": "admin.discounts",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/discounts/audit",
+        "method": "GET",
+        "path": "/api/admin/discounts/audit",
+        "handler": "DiscountController@audit",
+        "capabilityId": "admin.discounts",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/discounts/{id}",
+        "method": "GET",
+        "path": "/api/admin/discounts/{id}",
+        "handler": "DiscountController@show",
+        "capabilityId": "admin.discounts",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/discounts/{id}",
+        "method": "PUT",
+        "path": "/api/admin/discounts/{id}",
+        "handler": "DiscountController@update",
+        "capabilityId": "admin.discounts",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/admin/discounts/{id}/status",
+        "method": "PATCH",
+        "path": "/api/admin/discounts/{id}/status",
+        "handler": "DiscountController@updateStatus",
+        "capabilityId": "admin.discounts",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/expenses",
+        "method": "GET",
+        "path": "/api/admin/expenses",
+        "handler": "BusinessExpenseController@index",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/expenses",
+        "method": "POST",
+        "path": "/api/admin/expenses",
+        "handler": "BusinessExpenseController@store",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/financial-periods",
+        "method": "GET",
+        "path": "/api/admin/financial-periods",
+        "handler": "FinancialPeriodController@index",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/financial-periods/{period}/preview",
+        "method": "GET",
+        "path": "/api/admin/financial-periods/{period}/preview",
+        "handler": "FinancialPeriodController@preview",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/financial-periods/{period}/close",
+        "method": "POST",
+        "path": "/api/admin/financial-periods/{period}/close",
+        "handler": "FinancialPeriodController@close",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/financial-adjustments",
+        "method": "POST",
+        "path": "/api/admin/financial-adjustments",
+        "handler": "FinancialPeriodController@storeAdjustment",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/expenses/recurrences",
+        "method": "GET",
+        "path": "/api/admin/expenses/recurrences",
+        "handler": "BusinessExpenseController@recurrences",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/expenses/recurrences",
+        "method": "POST",
+        "path": "/api/admin/expenses/recurrences",
+        "handler": "BusinessExpenseController@storeRecurrence",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/expenses/recurrences/{id}",
+        "method": "PUT",
+        "path": "/api/admin/expenses/recurrences/{id}",
+        "handler": "BusinessExpenseController@updateRecurrence",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:DELETE:/api/admin/expenses/recurrences/{id}",
+        "method": "DELETE",
+        "path": "/api/admin/expenses/recurrences/{id}",
+        "handler": "BusinessExpenseController@deleteRecurrence",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/expenses/{id}",
+        "method": "PUT",
+        "path": "/api/admin/expenses/{id}",
+        "handler": "BusinessExpenseController@update",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/admin/expenses/{id}/status",
+        "method": "PATCH",
+        "path": "/api/admin/expenses/{id}/status",
+        "handler": "BusinessExpenseController@updateStatus",
+        "capabilityId": "admin.finance",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/purchase-invoices",
+        "method": "GET",
+        "path": "/api/admin/purchase-invoices",
+        "handler": "PurchaseInvoiceController@index",
+        "capabilityId": "admin.procurement",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/purchase-invoices/{id}",
+        "method": "GET",
+        "path": "/api/admin/purchase-invoices/{id}",
+        "handler": "PurchaseInvoiceController@show",
+        "capabilityId": "admin.procurement",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/billing/rides",
+        "method": "GET",
+        "path": "/api/admin/billing/rides",
+        "handler": "BillingDocumentController@rides",
+        "capabilityId": "billing.documents",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/billing/rides/{accessKey}/pdf",
+        "method": "GET",
+        "path": "/api/admin/billing/rides/{accessKey}/pdf",
+        "handler": "BillingDocumentController@ridePdf",
+        "capabilityId": "billing.documents",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
+        "method": "POST",
+        "path": "/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
+        "handler": "BillingDocumentController@cancelAndReissue",
+        "capabilityId": "billing.documents",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/pos/shift/active",
+        "method": "GET",
+        "path": "/api/admin/pos/shift/active",
+        "handler": "PosController@activeShift",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/pos/shifts",
+        "method": "GET",
+        "path": "/api/admin/pos/shifts",
+        "handler": "PosController@shifts",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/pos/movements",
+        "method": "GET",
+        "path": "/api/admin/pos/movements",
+        "handler": "PosController@movements",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/pos/customer-by-document",
+        "method": "GET",
+        "path": "/api/admin/pos/customer-by-document",
+        "handler": "PosController@customerByDocument",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/pos/shift/open",
+        "method": "POST",
+        "path": "/api/admin/pos/shift/open",
+        "handler": "PosController@openShift",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/pos/shift/close",
+        "method": "POST",
+        "path": "/api/admin/pos/shift/close",
+        "handler": "PosController@closeShift",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/pos/movements",
+        "method": "POST",
+        "path": "/api/admin/pos/movements",
+        "handler": "PosController@addMovement",
+        "capabilityId": "admin.pos",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/quotes",
+        "method": "GET",
+        "path": "/api/admin/quotes",
+        "handler": "QuotationController@index",
+        "capabilityId": "admin.quotes",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/quotes",
+        "method": "POST",
+        "path": "/api/admin/quotes",
+        "handler": "QuotationController@store",
+        "capabilityId": "admin.quotes",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/quotes/{id}/convert",
+        "method": "POST",
+        "path": "/api/admin/quotes/{id}/convert",
+        "handler": "QuotationController@convert",
+        "capabilityId": "admin.quotes",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/shipments",
+        "method": "GET",
+        "path": "/api/shipments",
+        "handler": "ShippingController@index",
+        "capabilityId": "admin.operations",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/contact",
+        "method": "POST",
+        "path": "/api/contact",
+        "handler": "ContactController@store",
+        "capabilityId": "content.contact",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/reports/recent-orders",
+        "method": "GET",
+        "path": "/api/reports/recent-orders",
+        "handler": "ReportController@recentOrders",
+        "capabilityId": "admin.reporting",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/health",
+        "method": "GET",
+        "path": "/api/health",
+        "handler": "HealthController@status",
+        "capabilityId": "system.health",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/security/csp-report",
+        "method": "POST",
+        "path": "/api/security/csp-report",
+        "handler": "SecurityController@cspReport",
+        "capabilityId": "security.telemetry",
+        "source": "paramascotasec-backend/config/routes.php"
+      }
+    ],
+    "facturadorRoutes": [
+      {
+        "id": "facturador:GET:/health",
+        "method": "GET",
+        "path": "/health",
+        "auth": "public",
+        "capabilityId": "system.health",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:POST:/api/test/v1/invoices",
+        "method": "POST",
+        "path": "/api/test/v1/invoices",
+        "auth": "api-key",
+        "capabilityId": "billing.sri.pruebas",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/test/v1/invoices/rides",
+        "method": "GET",
+        "path": "/api/test/v1/invoices/rides",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/test/v1/invoices/source/{sourceReference}",
+        "method": "GET",
+        "path": "/api/test/v1/invoices/source/{sourceReference}",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/status",
+        "method": "GET",
+        "path": "/api/test/v1/invoices/{accessKey}/status",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/xml",
+        "method": "GET",
+        "path": "/api/test/v1/invoices/{accessKey}/xml",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/ride.pdf",
+        "method": "GET",
+        "path": "/api/test/v1/invoices/{accessKey}/ride.pdf",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:POST:/api/test/v1/invoices/{accessKey}/mail-test",
+        "method": "POST",
+        "path": "/api/test/v1/invoices/{accessKey}/mail-test",
+        "auth": "api-key",
+        "capabilityId": "mail.billing",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:POST:/api/test/v1/invoices/{accessKey}/cancel-and-reissue",
+        "method": "POST",
+        "path": "/api/test/v1/invoices/{accessKey}/cancel-and-reissue",
+        "auth": "api-key",
+        "capabilityId": "billing.sri.pruebas",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:POST:/api/production/v1/invoices",
+        "method": "POST",
+        "path": "/api/production/v1/invoices",
+        "auth": "api-key",
+        "capabilityId": "billing.sri.production",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/production/v1/invoices/rides",
+        "method": "GET",
+        "path": "/api/production/v1/invoices/rides",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/production/v1/invoices/source/{sourceReference}",
+        "method": "GET",
+        "path": "/api/production/v1/invoices/source/{sourceReference}",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/status",
+        "method": "GET",
+        "path": "/api/production/v1/invoices/{accessKey}/status",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/xml",
+        "method": "GET",
+        "path": "/api/production/v1/invoices/{accessKey}/xml",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/ride.pdf",
+        "method": "GET",
+        "path": "/api/production/v1/invoices/{accessKey}/ride.pdf",
+        "auth": "api-key",
+        "capabilityId": "billing.documents",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:POST:/api/production/v1/invoices/{accessKey}/mail-test",
+        "method": "POST",
+        "path": "/api/production/v1/invoices/{accessKey}/mail-test",
+        "auth": "api-key",
+        "capabilityId": "mail.billing",
+        "source": "Facturador/config/routes.capabilities.php"
+      },
+      {
+        "id": "facturador:POST:/api/production/v1/invoices/{accessKey}/cancel-and-reissue",
+        "method": "POST",
+        "path": "/api/production/v1/invoices/{accessKey}/cancel-and-reissue",
+        "auth": "api-key",
+        "capabilityId": "billing.sri.production",
+        "source": "Facturador/config/routes.capabilities.php"
+      }
+    ],
+    "frontendPages": [
+      {
+        "path": "/",
+        "source": "paramascotasec/app/src/app/page.tsx"
+      },
+      {
+        "path": "/cart",
+        "source": "paramascotasec/app/src/app/cart/page.tsx"
+      },
+      {
+        "path": "/checkout",
+        "source": "paramascotasec/app/src/app/checkout/page.tsx"
+      },
+      {
+        "path": "/forgot-password",
+        "source": "paramascotasec/app/src/app/forgot-password/page.tsx"
+      },
+      {
+        "path": "/guias",
+        "source": "paramascotasec/app/src/app/guias/page.tsx"
+      },
+      {
+        "path": "/guias/[slug]",
+        "source": "paramascotasec/app/src/app/guias/[slug]/page.tsx"
+      },
+      {
+        "path": "/login",
+        "source": "paramascotasec/app/src/app/login/page.tsx"
+      },
+      {
+        "path": "/my-account",
+        "source": "paramascotasec/app/src/app/my-account/page.tsx"
+      },
+      {
+        "path": "/pages/about",
+        "source": "paramascotasec/app/src/app/pages/about/page.tsx"
+      },
+      {
+        "path": "/pages/contact",
+        "source": "paramascotasec/app/src/app/pages/contact/page.tsx"
+      },
+      {
+        "path": "/pages/politica-de-privacidad",
+        "source": "paramascotasec/app/src/app/pages/politica-de-privacidad/page.tsx"
+      },
+      {
+        "path": "/pages/preguntas-frecuentes",
+        "source": "paramascotasec/app/src/app/pages/preguntas-frecuentes/page.tsx"
+      },
+      {
+        "path": "/pages/terminos-y-condiciones",
+        "source": "paramascotasec/app/src/app/pages/terminos-y-condiciones/page.tsx"
+      },
+      {
+        "path": "/productos/[slug]",
+        "source": "paramascotasec/app/src/app/productos/[slug]/page.tsx"
+      },
+      {
+        "path": "/register",
+        "source": "paramascotasec/app/src/app/register/page.tsx"
+      },
+      {
+        "path": "/reset-password",
+        "source": "paramascotasec/app/src/app/reset-password/page.tsx"
+      },
+      {
+        "path": "/search-result",
+        "source": "paramascotasec/app/src/app/search-result/page.tsx"
+      },
+      {
+        "path": "/servicios",
+        "source": "paramascotasec/app/src/app/servicios/page.tsx"
+      },
+      {
+        "path": "/servicios/[slug]",
+        "source": "paramascotasec/app/src/app/servicios/[slug]/page.tsx"
+      },
+      {
+        "path": "/tienda",
+        "source": "paramascotasec/app/src/app/tienda/page.tsx"
+      },
+      {
+        "path": "/tienda/[slug]",
+        "source": "paramascotasec/app/src/app/tienda/[slug]/page.tsx"
+      },
+      {
+        "path": "/tienda/marcas/[marca]",
+        "source": "paramascotasec/app/src/app/tienda/marcas/[marca]/page.tsx"
+      }
+    ],
+    "frontendHandlers": [
+      {
+        "method": "ANY",
+        "path": "/api/[...path]",
+        "source": "paramascotasec/app/src/app/api/[...path]/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/api/auth/logout",
+        "source": "paramascotasec/app/src/app/api/auth/logout/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/api/suggestions",
+        "source": "paramascotasec/app/src/app/api/suggestions/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/api/uploads/images",
+        "source": "paramascotasec/app/src/app/api/uploads/images/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/feeds/google-products.xml",
+        "source": "paramascotasec/app/src/app/feeds/google-products.xml/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/healthz",
+        "source": "paramascotasec/app/src/app/healthz/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/llms.txt",
+        "source": "paramascotasec/app/src/app/llms.txt/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/quote",
+        "source": "paramascotasec/app/src/app/quote/route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/robots.txt",
+        "source": "paramascotasec/app/src/app/robots.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/sitemap-images.xml",
+        "source": "paramascotasec/app/src/app/sitemap-images.xml/route.ts"
+      },
+      {
+        "method": "GET",
+        "path": "/sitemap.xml",
+        "source": "paramascotasec/app/src/app/sitemap.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/suggestions-data",
+        "source": "paramascotasec/app/src/app/suggestions-data/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/uploads-api/images",
+        "source": "paramascotasec/app/src/app/uploads-api/images/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/uploads/[...path]",
+        "source": "paramascotasec/app/src/app/uploads/[...path]/route.ts"
+      }
+    ],
+    "frontendApiUses": [
+      {
+        "path": "/api/admin/billing/rides/{param}/cancel-and-reissue",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1386"
+      },
+      {
+        "path": "/api/admin/billing/rides/{param}/pdf",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1348"
+      },
+      {
+        "path": "/api/admin/expenses/{param}/status",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1571"
+      },
+      {
+        "path": "/api/admin/expenses/recurrences/{param}",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1533"
+      },
+      {
+        "path": "/api/admin/expenses/recurrences/{param}",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1553"
+      },
+      {
+        "path": "/api/admin/expenses/recurrences/{param}",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1591"
+      },
+      {
+        "path": "/api/admin/expenses/recurrences",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1513"
+      },
+      {
+        "path": "/api/admin/expenses",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1493"
+      },
+      {
+        "path": "/api/admin/financial-adjustments",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1635"
+      },
+      {
+        "path": "/api/admin/financial-periods/{param}/close",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1610"
+      },
+      {
+        "path": "/api/admin/historical-sales",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1655"
+      },
+      {
+        "path": "/api/auth/logout",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:3011"
+      },
+      {
+        "path": "/api/auth/logout",
+        "source": "paramascotasec/app/src/components/Header/Menu/MenuPet.tsx:507"
+      },
+      {
+        "path": "/api/auth/session",
+        "source": "paramascotasec/app/src/lib/apiClient.ts:171"
+      },
+      {
+        "path": "/api/orders/{param}/invoice",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1680"
+      },
+      {
+        "path": "/api/orders/{param}/status",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1287"
+      },
+      {
+        "path": "/api/products/{param}",
+        "source": "paramascotasec/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2985"
+      },
+      {
+        "path": "/api/products/{param}",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1232"
+      },
+      {
+        "path": "/api/products/{param}",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1257"
+      },
+      {
+        "path": "/api/products/{param}",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:2080"
+      },
+      {
+        "path": "/api/products",
+        "source": "paramascotasec/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2992"
+      },
+      {
+        "path": "/api/uploads/images",
+        "source": "paramascotasec/app/src/app/my-account/components/BrandReferenceSectionCard.tsx:42"
+      },
+      {
+        "path": "/api/uploads/images",
+        "source": "paramascotasec/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:429"
+      },
+      {
+        "path": "/api/uploads/images",
+        "source": "paramascotasec/app/src/app/my-account/components/ProductReferenceSectionCard.tsx:349"
+      },
+      {
+        "path": "/api/user/addresses",
+        "source": "paramascotasec/app/src/app/checkout/CheckoutClient.tsx:498"
+      },
+      {
+        "path": "/api/user/addresses",
+        "source": "paramascotasec/app/src/app/checkout/CheckoutClient.tsx:865"
+      },
+      {
+        "path": "/api/user/password",
+        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1890"
+      }
+    ]
+  }
+}

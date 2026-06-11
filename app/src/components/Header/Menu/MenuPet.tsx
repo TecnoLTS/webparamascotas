@@ -81,7 +81,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
     const handleSearch = (value: string) => {
         const trimmedValue = sanitizeProductSearchQuery(value)
 
-        if (pathname.startsWith('/shop/') || pathname.startsWith('/tienda')) {
+        if (pathname.startsWith('/tienda')) {
             const nextParams = new URLSearchParams(searchParams.toString())
 
             if (trimmedValue) {
@@ -177,7 +177,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
     }, [pathname])
 
     useEffect(() => {
-        if (pathname.startsWith('/shop/')) {
+        if (pathname.startsWith('/tienda')) {
             setSearchKeyword(searchParams.get('query') ?? '')
         }
         closeMenuMobile()
