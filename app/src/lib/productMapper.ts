@@ -1,5 +1,6 @@
 import { ProductType } from '@/type/ProductType'
 import { normalizeMeasurementLabel, normalizeMeasurementLabels } from '@/lib/measurementLabel'
+import { getCanonicalProductGroupId } from '@/lib/productGroupIdentity'
 import { normalizeProductCategory, normalizeProductType, resolveAudienceGenderFromSpecies } from '@/lib/productTaxonomy'
 
 // Tipamos lo mínimo necesario
@@ -399,6 +400,14 @@ export const mapProductToDto = (product: ProductWithRelations): ProductType => {
   const variations = product.variations?.map(mapVariation) ?? []
   const lastPurchaseInvoice = resolveLastPurchaseInvoice(product)
   const variantLabel = resolveVariantLabelForProduct(product, normalizedAttributes)
+  const variantGroupKey = typeof normalizedAttributes.variantGroupKey === 'string' ? normalizedAttributes.variantGroupKey : ''
+  const productGroupId = getCanonicalProductGroupId({
+    id: product.legacyId ?? product.id,
+    internalId: product.id,
+    slug: product.slug,
+    attributes: normalizedAttributes,
+    variantGroupKey,
+  })
   const resolvedSizes = resolveProductSizeValues(product, normalizedProductType, normalizedAttributes, variantLabel)
   const reviewCountRaw = normalizedAttributes.reviewCount ?? normalizedAttributes.reviewsCount ?? 0
   const resolvedGender = resolveAudienceGenderFromSpecies(
@@ -439,7 +448,8 @@ export const mapProductToDto = (product: ProductWithRelations): ProductType => {
     reviewCount: Number(reviewCountRaw ?? 0),
     variantLabel: typeof variantLabel === 'string' ? normalizeMeasurementLabel(variantLabel) : '',
     variantBaseName: typeof normalizedAttributes.variantBaseName === 'string' ? normalizedAttributes.variantBaseName : '',
-    variantGroupKey: typeof normalizedAttributes.variantGroupKey === 'string' ? normalizedAttributes.variantGroupKey : '',
+    variantGroupKey,
+    productGroupId,
     variantAxis: typeof normalizedAttributes.variantAxis === 'string' ? normalizedAttributes.variantAxis : '',
     variantPresentation: typeof normalizedAttributes.presentation === 'string' ? normalizeMeasurementLabel(normalizedAttributes.presentation) : '',
     inventory: product.inventory ? {

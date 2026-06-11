@@ -25,6 +25,28 @@ const PRODUCTS_ENDPOINT = normalizePathOrUrl(
 const LEGACY_URL_PATTERN = /\/(?:product\/default|shop\/breadcrumb1)(?:[?#'"]|$)/i
 const OLD_CSS_PATTERN = /\/_next\/static\/css\/app\/page\.css\?v=1777158824991/i
 const REMOVED_ROUTE_PREFIXES = ['/product', '/shop', '/blog', '/homepages']
+const PRODUCT_GROUP_ID_PATTERN = /^[A-Za-z0-9]{1,50}$/
+const SUPPORTED_SCHEMA_VARIES_BY = new Set([
+  'https://schema.org/size',
+  'https://schema.org/color',
+  'https://schema.org/material',
+  'https://schema.org/pattern',
+  'https://schema.org/ageGroup',
+  'https://schema.org/gender',
+])
+const GENERIC_VARIANT_COLOR_TOKENS = new Set([
+  'contenido',
+  'empaque',
+  'formato',
+  'opcion',
+  'opciones',
+  'packaging',
+  'peso',
+  'presentacion',
+  'presentaciones',
+  'tamano',
+  'talla',
+])
 const TRANSACTIONAL_NOINDEX_PATHS = [
   '/cart',
   '/checkout',
@@ -137,6 +159,26 @@ const requestUrl = (value) => {
 
 const stripQueryAndHash = (value) => value.replace(/[?#].*$/, '')
 
+const uniq = (values) => Array.from(new Set(values.filter(Boolean)))
+
+const normalizeIdentity = (value = '') =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+
+const asArray = (value) => {
+  if (Array.isArray(value)) return value.filter(Boolean)
+  return value ? [value] : []
+}
+
+const isValidProductGroupId = (value) => PRODUCT_GROUP_ID_PATTERN.test(String(value || ''))
+
+const isGenericVariantColorValue = (value) =>
+  GENERIC_VARIANT_COLOR_TOKENS.has(normalizeIdentity(value))
+
 const getInternalPathname = (href) => {
   if (!href || href.startsWith('#') || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:')) {
     return ''
@@ -210,11 +252,14 @@ const readFeed = async () => {
       id: tagValue(item, 'g:id'),
       title: tagValue(item, 'g:title'),
       link: tagValue(item, 'g:link'),
+      canonicalLink: tagValue(item, 'g:canonical_link'),
       image: tagValue(item, 'g:image_link'),
       price: tagValue(item, 'g:price'),
       availability: tagValue(item, 'g:availability'),
       brand: tagValue(item, 'g:brand'),
       itemGroupId: tagValue(item, 'g:item_group_id'),
+      size: tagValue(item, 'g:size'),
+      color: tagValue(item, 'g:color'),
     }
   })
 
@@ -405,6 +450,33 @@ const inspectProductStructuredData = (html, url) => {
   const productOffers = normalizeOffers(canonicalProduct?.offers)
   const offerOwners = [...productNodes, ...productGroupNodes]
   const allOffers = offerOwners.flatMap((node) => normalizeOffers(node.offers))
+  const productGroupIds = uniq([
+    ...productGroupNodes.map((node) => node.productGroupID || node.productGroupId),
+    ...productNodes.flatMap((node) => asArray(node.isVariantOf).map((group) => group?.productGroupID || group?.productGroupId)),
+  ].map((value) => String(value || '').trim()))
+  const invalidProductGroupIds = productGroupIds.filter((value) => !isValidProductGroupId(value))
+  const genericVariantColors = productNodes
+    .flatMap((node) => asArray(node.color).map((value) => String(value || '').trim()))
+    .filter(isGenericVariantColorValue)
+  const variesByIssues = productGroupNodes
+    .map((node, index) => {
+      const variesBy = asArray(node.variesBy).map((value) => String(value || '').trim()).filter(Boolean)
+      const unsupported = variesBy.filter((value) => !SUPPORTED_SCHEMA_VARIES_BY.has(value))
+      const variantCount = Array.isArray(node.hasVariant) ? node.hasVariant.length : 0
+      const missing = variantCount > 1 && variesBy.length === 0
+
+      if (!missing && unsupported.length === 0) return null
+
+      return {
+        index,
+        productGroupID: String(node.productGroupID || node.productGroupId || ''),
+        variantCount,
+        variesBy,
+        missing,
+        unsupported,
+      }
+    })
+    .filter(Boolean)
 
   const missingProductFields = [
     !canonicalProduct ? '@type: Product' : '',
@@ -444,6 +516,10 @@ const inspectProductStructuredData = (html, url) => {
     hasProductGroup: productGroupNodes.length > 0,
     productCount: productNodes.length,
     productGroupCount: productGroupNodes.length,
+    productGroupIds,
+    invalidProductGroupIds,
+    genericVariantColors,
+    variesByIssues,
     offerCount: allOffers.length,
     missingProductFields,
     missingOfferFields,
@@ -519,7 +595,18 @@ const main = async () => {
   const publicProducts = products.filter((product) => product.published !== false)
   const sitemapSet = new Set(sitemapUrls.map(stripQueryAndHash))
   const feedLinks = feedItems.map((item) => item.link).filter(Boolean)
-  const feedCanonicalLinks = Array.from(new Set(feedLinks.map(stripQueryAndHash)))
+  const feedCanonicalLinks = Array.from(new Set(
+    feedItems
+      .map((item) => stripQueryAndHash(item.canonicalLink || item.link || ''))
+      .filter(Boolean)
+  ))
+  const feedItemsWithGroups = feedItems.filter((item) => item.itemGroupId)
+  const feedInvalidItemGroupIds = feedItemsWithGroups
+    .filter((item) => !isValidProductGroupId(item.itemGroupId))
+    .map((item) => ({ id: item.id, itemGroupId: item.itemGroupId, link: item.link }))
+  const feedGenericColorValues = feedItems
+    .filter((item) => item.color && isGenericVariantColorValue(item.color))
+    .map((item) => ({ id: item.id, color: item.color, link: item.link }))
 
   const feedRedirectChecks = await mapLimit(
     feedLinks.slice(0, REDIRECT_LIMIT),
@@ -556,6 +643,43 @@ const main = async () => {
     }))
     .filter((entry) => entry.missing.length > 0)
   const productStructuredChecks = sitemapChecks.filter((check) => check.structuredProduct)
+  const jsonLdProductGroupIdsByUrl = new Map(
+    productStructuredChecks.map((check) => [
+      stripQueryAndHash(check.url),
+      new Set(check.structuredProduct.productGroupIds),
+    ])
+  )
+  const feedGroupIdsByCanonical = new Map()
+  feedItemsWithGroups.forEach((item) => {
+    const canonical = stripQueryAndHash(item.canonicalLink || item.link || '')
+    if (!canonical) return
+    const groupIds = feedGroupIdsByCanonical.get(canonical) ?? new Set()
+    groupIds.add(item.itemGroupId)
+    feedGroupIdsByCanonical.set(canonical, groupIds)
+  })
+  const feedJsonLdGroupMismatches = Array.from(feedGroupIdsByCanonical.entries())
+    .map(([canonical, feedGroupIds]) => {
+      const jsonLdGroupIds = jsonLdProductGroupIdsByUrl.get(canonical) ?? new Set()
+      const missingInJsonLd = Array.from(feedGroupIds).filter((id) => !jsonLdGroupIds.has(id))
+      const missingProductGroup = jsonLdGroupIds.size === 0
+
+      if (missingInJsonLd.length === 0 && !missingProductGroup) return null
+
+      return {
+        canonical,
+        feedGroupIds: Array.from(feedGroupIds),
+        jsonLdGroupIds: Array.from(jsonLdGroupIds),
+        missingProductGroup,
+        missingInJsonLd,
+      }
+    })
+    .filter(Boolean)
+  const feedCanonicalGroupIdConflicts = Array.from(feedGroupIdsByCanonical.entries())
+    .filter(([, groupIds]) => groupIds.size > 1)
+    .map(([canonical, groupIds]) => ({
+      canonical,
+      feedGroupIds: Array.from(groupIds),
+    }))
   const feedItemsMissingRequiredFields = feedItems
     .map((item) => ({
       id: item.id,
@@ -589,6 +713,10 @@ const main = async () => {
       templateTextMatches: findPublicTemplateText(feed.text),
       uniqueLinks: new Set(feedLinks).size,
       itemsMissingRequiredFields: feedItemsMissingRequiredFields,
+      invalidItemGroupIds: feedInvalidItemGroupIds,
+      genericColorValues: feedGenericColorValues,
+      canonicalGroupIdConflicts: feedCanonicalGroupIdConflicts,
+      jsonLdGroupMismatches: feedJsonLdGroupMismatches,
       canonicalLinksMissingFromSitemap: feedCanonicalLinks.filter((link) => !sitemapSet.has(link)),
       linksRedirecting: feedRedirectChecks.filter((check) => check.redirected),
       linkErrors: feedRedirectChecks.filter((check) => check.error || check.status >= 400 || check.status === 0),
@@ -643,6 +771,15 @@ const main = async () => {
       productJsonLdParseErrors: productStructuredChecks
         .filter((check) => check.structuredProduct.parseErrorCount > 0)
         .map((check) => ({ url: check.url, parseErrorCount: check.structuredProduct.parseErrorCount })),
+      invalidProductGroupIds: productStructuredChecks
+        .filter((check) => check.structuredProduct.invalidProductGroupIds.length > 0)
+        .map((check) => ({ url: check.url, productGroupIds: check.structuredProduct.invalidProductGroupIds })),
+      genericVariantColors: productStructuredChecks
+        .filter((check) => check.structuredProduct.genericVariantColors.length > 0)
+        .map((check) => ({ url: check.url, colors: check.structuredProduct.genericVariantColors })),
+      variesByIssues: productStructuredChecks
+        .filter((check) => check.structuredProduct.variesByIssues.length > 0)
+        .map((check) => ({ url: check.url, issues: check.structuredProduct.variesByIssues })),
       productPagesMissingFields: productStructuredChecks
         .filter((check) => check.structuredProduct.missingProductFields.length > 0 || check.structuredProduct.missingOfferFields.length > 0)
         .map((check) => ({
@@ -661,7 +798,7 @@ const main = async () => {
     },
     products: {
       missingFieldCount: missingProductFields.length,
-      missingFields: missingProductFields,
+      manualSeoWarnings: missingProductFields,
     },
   }
 
@@ -669,6 +806,10 @@ const main = async () => {
     imageSitemap.errors.length > 0 ? 'image_sitemap_errors' : '',
     report.feed.templateTextMatches.length > 0 ? 'feed_template_text' : '',
     report.feed.itemsMissingRequiredFields.length > 0 ? 'feed_items_missing_required_fields' : '',
+    report.feed.invalidItemGroupIds.length > 0 ? 'feed_invalid_item_group_ids' : '',
+    report.feed.genericColorValues.length > 0 ? 'feed_generic_color_values' : '',
+    report.feed.canonicalGroupIdConflicts.length > 0 ? 'feed_canonical_group_id_conflicts' : '',
+    report.feed.jsonLdGroupMismatches.length > 0 ? 'feed_jsonld_group_id_mismatches' : '',
     report.feed.canonicalLinksMissingFromSitemap.length > 0 ? 'feed_canonical_links_missing_from_sitemap' : '',
     report.feed.linksRedirecting.length > 0 ? 'feed_links_redirecting' : '',
     report.feed.linkErrors.length > 0 ? 'feed_link_errors' : '',
@@ -687,9 +828,11 @@ const main = async () => {
     report.llms.templateTextMatches.length > 0 ? 'llms_template_text' : '',
     report.structuredData.productPagesWithoutProduct.length > 0 ? 'product_jsonld_missing' : '',
     report.structuredData.productJsonLdParseErrors.length > 0 ? 'product_jsonld_parse_errors' : '',
+    report.structuredData.invalidProductGroupIds.length > 0 ? 'product_jsonld_invalid_product_group_ids' : '',
+    report.structuredData.genericVariantColors.length > 0 ? 'product_jsonld_generic_variant_colors' : '',
+    report.structuredData.variesByIssues.length > 0 ? 'product_jsonld_varies_by_issues' : '',
     report.structuredData.productPagesMissingFields.length > 0 ? 'product_jsonld_missing_fields' : '',
     report.structuredData.productOfferPolicyIssues.length > 0 ? 'product_offer_policy_issues' : '',
-    report.products.missingFieldCount > 0 ? 'public_products_missing_required_seo_fields' : '',
   ].filter(Boolean)
 
   report.failures = failures

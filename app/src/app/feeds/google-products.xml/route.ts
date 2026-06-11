@@ -9,6 +9,8 @@ import {
 } from '@/lib/catalog'
 import { getVariantColorValue, getVariantSizeValue } from '@/lib/catalogAttributes'
 import { buildProductSeoProfile } from '@/lib/productSeoProfile'
+import { getCanonicalProductGroupId } from '@/lib/productGroupIdentity'
+import { hasGoogleProductVariantAxes } from '@/lib/productVariantSeo'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
 import { getProductSeoPath } from '@/lib/seoUrls'
 import type { ProductType } from '@/type/ProductType'
@@ -87,8 +89,8 @@ const getFeedProductLink = (baseUrl: string, product: ProductType, family?: Prod
 }
 
 const getItemGroupId = (family?: ProductType) => {
-  if (!family || getProductVariants(family).length <= 1) return ''
-  return family.variantGroupKey || family.internalId || family.id || family.slug
+  if (!family || getProductVariants(family).length <= 1 || !hasGoogleProductVariantAxes(family)) return ''
+  return getCanonicalProductGroupId(family)
 }
 
 const renderItem = (baseUrl: string, product: ProductType, family?: ProductType) => {

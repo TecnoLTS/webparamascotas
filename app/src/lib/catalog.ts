@@ -3,6 +3,7 @@ import { getCategoryAlt, getCategoryImage, getCategoryLabel, getShopBrowseCatego
 import type { SiteId } from '@/lib/site'
 import { ProductType, ProductVariantOption } from '@/type/ProductType'
 import { normalizeMeasurementLabel, normalizeMeasurementLabels } from '@/lib/measurementLabel'
+import { getCanonicalProductGroupId } from '@/lib/productGroupIdentity'
 import { normalizeProductType } from '@/lib/productTaxonomy'
 import type { ProductCategoryImageReference } from '@/lib/productReferenceData'
 
@@ -1074,6 +1075,10 @@ export const groupCatalogProducts = (products: ProductType[]): ProductType[] => 
     const variantLabel = getProductVariantLabel(product)
     const variantBaseName = getProductVariantBaseName(product)
     const variantGroupKey = getProductVariantGroupKey(product)
+    const productGroupId = getCanonicalProductGroupId({
+      ...product,
+      variantGroupKey,
+    })
     const reviewCount = getProductReviewCount(product)
     const variantSizeValue = getProductVariantSizeValue(product)
     const uniqueSizes = normalizeMeasurementLabels(variantSizeValue ? [variantSizeValue] : [])
@@ -1085,6 +1090,7 @@ export const groupCatalogProducts = (products: ProductType[]): ProductType[] => 
       variantLabel,
       variantBaseName,
       variantGroupKey,
+      productGroupId,
       variantAxis: variantSizeValue ? 'size' : (product.variantAxis ?? ''),
       variantPresentation: getProductVariantPresentation(product),
     }
@@ -1128,6 +1134,7 @@ export const groupCatalogProducts = (products: ProductType[]): ProductType[] => 
       variantLabel: getProductVariantLabel(representative),
       variantBaseName: getProductVariantBaseName(representative),
       variantGroupKey: getProductVariantGroupKey(representative),
+      productGroupId: getCanonicalProductGroupId(representative),
       priceMin: priceValues.length > 0 ? Math.min(...priceValues) : Number(representative.price ?? 0),
       priceMax: priceValues.length > 0 ? Math.max(...priceValues) : Number(representative.price ?? 0),
       originPriceMin: originValues.length > 0 ? Math.min(...originValues) : Number(representative.originPrice ?? 0),

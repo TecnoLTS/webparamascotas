@@ -3,16 +3,17 @@ import {
     getProductCurrentPrice,
     getProductOriginalPrice,
     getProductSku,
-    getProductVariantLabel,
     getProductVariants,
 } from '@/lib/catalog'
-import { getVariantColorValue, getVariantSizeValue } from '@/lib/catalogAttributes'
+import { getVariantAxisValue, getVariantColorValue, getVariantSizeValue } from '@/lib/catalogAttributes'
 import { versionLocalImagePath } from '@/lib/staticAsset'
 import type { SiteConfig } from '@/config/siteConfig'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
 import { getProductSeoPath } from '@/lib/seoUrls'
 import { buildProductSeoProfile } from '@/lib/productSeoProfile'
 import type { ProductReview, ProductReviewSummary } from '@/lib/api/productReviews'
+import { getCanonicalProductGroupId } from '@/lib/productGroupIdentity'
+import { getGoogleProductVariantAxes } from '@/lib/productVariantSeo'
 
 const toAbsoluteUrl = (baseUrl: string, path?: string | null) => {
     if (!path) return undefined
@@ -132,6 +133,8 @@ const buildVariantProductJsonLd = ({
     const variantUrl = getProductVariantUrl(productUrl, product)
     const size = getVariantSizeValue(product)
     const color = getVariantColorValue(product)
+    const material = getVariantAxisValue(product, 'material')
+    const pattern = product.attributes?.pattern
 
     return {
         '@type': 'Product',
@@ -144,6 +147,8 @@ const buildVariantProductJsonLd = ({
         url: variantUrl,
         size: size || undefined,
         color: color || undefined,
+        material: material || undefined,
+        pattern: pattern || undefined,
         brand: {
             '@type': 'Brand',
             name: product.brand || brandName,
@@ -160,20 +165,6 @@ const buildVariantProductJsonLd = ({
             variantUrl,
         }),
     }
-}
-
-const getProductGroupId = (product: ProductType) =>
-    product.variantGroupKey || product.internalId || product.id || product.slug
-
-const getVariantAxes = (variants: ProductType[]) => {
-    const hasSizes = new Set(variants.map((variant) => getVariantSizeValue(variant)).filter(Boolean)).size > 1
-    const hasColors = new Set(variants.map((variant) => getVariantColorValue(variant)).filter(Boolean)).size > 1
-    const hasLabels = new Set(variants.map((variant) => getProductVariantLabel(variant)).filter(Boolean)).size > 1
-    return [
-        hasSizes ? 'https://schema.org/size' : null,
-        hasColors ? 'https://schema.org/color' : null,
-        !hasSizes && !hasColors && hasLabels ? 'https://schema.org/model' : null,
-    ].filter(Boolean)
 }
 
 export function generateProductJsonLd(
@@ -199,7 +190,8 @@ export function generateProductJsonLd(
     const sku = getProductSku(product) || product.internalId || product.id
     const imageList = getProductImages(product, siteUrl)
     const productGroupId = `${productUrl}#product-group`
-    const productGroupIdentifier = getProductGroupId(product)
+    const productGroupIdentifier = getCanonicalProductGroupId(product)
+    const variantAxes = getGoogleProductVariantAxes(variants)
     const aggregateOffer = {
         '@type': 'AggregateOffer',
         url: productUrl,
@@ -263,7 +255,7 @@ export function generateProductJsonLd(
         review: reviewJsonLd.length > 0 ? reviewJsonLd : undefined,
     }
 
-    if (variants.length > 1) {
+    if (variants.length > 1 && variantAxes.length > 0) {
         return {
             '@context': 'https://schema.org',
             '@graph': [
@@ -273,7 +265,7 @@ export function generateProductJsonLd(
                     '@id': productGroupId,
                     name: product.name,
                     productGroupID: productGroupIdentifier,
-                    variesBy: getVariantAxes(variants),
+                    variesBy: variantAxes,
                     sku,
                     mpn: sku,
                     category: product.category,

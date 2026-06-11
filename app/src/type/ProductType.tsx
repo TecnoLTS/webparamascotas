@@ -131,6 +131,7 @@ export interface ProductType {
     variantLabel?: string,
     variantBaseName?: string,
     variantGroupKey?: string,
+    productGroupId?: string,
     variantAxis?: string,
     variantCount?: number,
     variantPresentation?: string,

@@ -1,7 +1,7 @@
 import React from 'react'
 import type { Metadata, ResolvingMetadata } from 'next'
 import { headers } from 'next/headers'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import MenuOne from '@/components/Header/Menu/MenuPet'
 import Default from '@/components/Product/Detail/Default'
 import Footer from '@/components/Footer/Footer'
@@ -107,7 +107,7 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
 
   const canonicalPath = getProductSeoPath(currentProduct)
   if (slug !== getProductSeoSlug(currentProduct)) {
-    notFound()
+    permanentRedirect(canonicalPath)
   }
 
   const baseUrl = getCanonicalSiteUrl()

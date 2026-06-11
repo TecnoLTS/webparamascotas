@@ -11,6 +11,69 @@ const normalizeIdentity = (value?: string | null) =>
     .toLowerCase()
 const SIZE_PATTERN = /^(?:XXS|XS|S|M|L|XL|XXL|STANDARD|\d+(?:[.,]\d+)?\s?(?:KGS?|KG|K|GR|G|LB|L|ML|MG|OZ|TAB|TABS|DS|UN|UNI|PACK|PZA|PZ)|X?\d+)$/i
 const looksLikeSizeValue = (value?: string | null) => SIZE_PATTERN.test(normalizeLabel(value))
+const GENERIC_VARIANT_VALUE_TOKENS = new Set([
+  'contenido',
+  'empaque',
+  'formato',
+  'opcion',
+  'opciones',
+  'packaging',
+  'peso',
+  'presentacion',
+  'presentaciones',
+  'tamano',
+  'talla',
+])
+const COLOR_WORDS = new Set([
+  'amarillo',
+  'amarilla',
+  'azul',
+  'beige',
+  'blanco',
+  'blanca',
+  'cafe',
+  'celeste',
+  'crema',
+  'dorado',
+  'dorada',
+  'fucsia',
+  'gris',
+  'lila',
+  'marron',
+  'morado',
+  'morada',
+  'naranja',
+  'negro',
+  'negra',
+  'plateado',
+  'plateada',
+  'rojo',
+  'roja',
+  'rosa',
+  'rosado',
+  'rosada',
+  'turquesa',
+  'verde',
+])
+
+const isGenericVariantValue = (value?: string | null) =>
+  GENERIC_VARIANT_VALUE_TOKENS.has(normalizeIdentity(value))
+
+const cleanPublicVariantValue = (value?: string | null) => {
+  const normalized = normalizeLabel(value)
+  return normalized && !isGenericVariantValue(normalized) ? normalized : ''
+}
+
+const looksLikeColorValue = (value?: string | null) => {
+  const normalized = normalizeIdentity(value)
+  if (!normalized || isGenericVariantValue(normalized) || looksLikeSizeValue(value)) return false
+
+  return normalized
+    .split(/(?:\/|\+|,|\s+y\s+|\s+con\s+|\s+)/)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .some((part) => COLOR_WORDS.has(part))
+}
 
 export type ProductVariantAxisKey =
   | 'color'
@@ -62,31 +125,74 @@ const collectVariantValues = (
 ) => getProductVariants(product).flatMap((variant) => extractor(variant))
 
 export const getVariantSizeValue = (variant: ProductType) => {
-  if (normalizeProductType(variant.productType ?? '', variant.category) === 'cuidado') {
+  const productType = normalizeProductType(variant.productType ?? '', variant.category)
+  if (productType === 'cuidado') {
     return ''
   }
 
-  const explicitSize = normalizeLabel(variant.attributes?.size)
+  const normalizePublicSize = (value?: string | null) => {
+    const cleaned = cleanPublicVariantValue(value)
+    return cleaned ? (normalizeMeasurementLabels([cleaned])[0] ?? cleaned) : ''
+  }
+
+  const explicitSize = normalizePublicSize(variant.attributes?.size)
   if (explicitSize) {
-    return normalizeMeasurementLabels([explicitSize])[0] ?? explicitSize
+    return explicitSize
+  }
+
+  if (productType === 'Alimento') {
+    const foodSize = [
+      variant.attributes?.weight,
+      variant.attributes?.volume,
+      variant.attributes?.presentation,
+      variant.attributes?.packaging,
+      variant.variantPresentation,
+      variant.variantLabel,
+      variant.attributes?.variantLabel,
+    ]
+      .map(normalizePublicSize)
+      .find(Boolean)
+
+    if (foodSize) return foodSize
   }
 
   const variantLabel = normalizeLabel(variant.variantLabel || variant.attributes?.variantLabel)
-  return looksLikeSizeValue(variantLabel)
+  return looksLikeSizeValue(variantLabel) && !isGenericVariantValue(variantLabel)
     ? (normalizeMeasurementLabels([variantLabel])[0] ?? variantLabel)
     : ''
 }
 
 export const getVariantColorValue = (variant: ProductType) => {
-  const explicitColor = normalizeLabel(variant.attributes?.color)
+  const explicitColor = cleanPublicVariantValue(variant.attributes?.color)
   if (explicitColor) return explicitColor
 
-  const variationColor = uniqueLabels((variant.variation ?? []).map((item) => item.color))[0] ?? ''
+  const variationColor = uniqueLabels((variant.variation ?? []).map((item) => cleanPublicVariantValue(item.color)))[0] ?? ''
   if (variationColor) return variationColor
 
-  const explicitSize = normalizeLabel(variant.attributes?.size)
+  const axis = normalizeIdentity(
+    variant.attributes?.displayAxis
+    || variant.attributes?.publicVariantAxis
+    || variant.attributes?.catalogDisplayAxis
+    || variant.attributes?.variantAxis
+    || variant.attributes?.variantDefinitionField
+  )
+  const productType = normalizeProductType(variant.productType ?? '', variant.category)
+  const explicitSize = cleanPublicVariantValue(variant.attributes?.size)
   const variantLabel = normalizeLabel(variant.variantLabel || variant.attributes?.variantLabel)
-  if (!explicitSize && variantLabel && !looksLikeSizeValue(variantLabel)) {
+  if (
+    axis === 'color'
+    && !explicitSize
+    && cleanPublicVariantValue(variantLabel)
+    && !looksLikeSizeValue(variantLabel)
+  ) {
+    return variantLabel
+  }
+
+  if (
+    ['ropa', 'accesorios'].includes(productType)
+    && !explicitSize
+    && looksLikeColorValue(variantLabel)
+  ) {
     return variantLabel
   }
 
