@@ -7,11 +7,14 @@ export type ContactMessagePayload = {
   phone?: string
   subject: string
   message: string
+  website?: string
 }
 
 export type ContactMessageResponse = {
-  id: string
+  id: string | null
   delivered: boolean
+  confirmationDelivered?: boolean
+  spamFiltered?: boolean
 }
 
 export const sendContactMessage = (body: ContactMessagePayload) =>

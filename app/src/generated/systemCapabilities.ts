@@ -158,6 +158,12 @@ export const backendApiRoutes = [
     "capabilityId": "users.auth"
   },
   {
+    "id": "backend:GET:/api/tenant/context",
+    "method": "GET",
+    "path": "/api/tenant/context",
+    "capabilityId": "users.auth"
+  },
+  {
     "id": "backend:GET:/api/orders",
     "method": "GET",
     "path": "/api/orders",

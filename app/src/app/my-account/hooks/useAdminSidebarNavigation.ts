@@ -113,8 +113,11 @@ export const useAdminSidebarNavigation = ({
 
     if (requestedTab === 'catalogs') {
       setActiveTab('catalogs')
+      setSelectedDeepDive(null)
       if (requestedCatalog && PRODUCT_REFERENCE_KEY_SET.has(requestedCatalog as ProductReferenceKey)) {
         setFocusedReferenceCatalogKey(requestedCatalog as ProductReferenceKey)
+      } else {
+        setFocusedReferenceCatalogKey(null)
       }
       return
     }
@@ -126,6 +129,13 @@ export const useAdminSidebarNavigation = ({
       if (requestedReportSection && ADMIN_REPORT_SECTION_SET.has(requestedReportSection as AdminReportSection)) {
         setAdminReportSection(requestedReportSection as AdminReportSection)
       }
+      return
+    }
+
+    if (requestedTab && getAdminGroupForTab(requestedTab)) {
+      setActiveTab(requestedTab)
+      setSelectedDeepDive(null)
+      setFocusedReferenceCatalogKey(null)
     }
   }, [searchParams, setActiveTab, setAdminReportSection, setSelectedDeepDive, userRole])
 

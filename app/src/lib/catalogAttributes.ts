@@ -11,6 +11,8 @@ const normalizeIdentity = (value?: string | null) =>
     .toLowerCase()
 const SIZE_PATTERN = /^(?:XXS|XS|S|M|L|XL|XXL|STANDARD|\d+(?:[.,]\d+)?\s?(?:KGS?|KG|K|GR|G|LB|L|ML|MG|OZ|TAB|TABS|DS|UN|UNI|PACK|PZA|PZ)|X?\d+)$/i
 const looksLikeSizeValue = (value?: string | null) => SIZE_PATTERN.test(normalizeLabel(value))
+const looksLikeContentMeasurementValue = (value?: string | null) =>
+  /^\d+(?:[.,]\d+)?\s?(?:KGS?|KG|K|GR|G|LB|LBS?|L|ML|MG|OZ)$/i.test(normalizeLabel(value))
 const GENERIC_VARIANT_VALUE_TOKENS = new Set([
   'contenido',
   'empaque',
@@ -109,6 +111,32 @@ export const PRODUCT_VARIANT_AXIS_ORDER: ProductVariantAxisKey[] = [
   'age',
   'material',
 ]
+
+const normalizeVariantAxisKey = (value?: string | null): ProductVariantAxisKey | '' => {
+  const normalized = normalizeIdentity(value)
+  return PRODUCT_VARIANT_AXIS_ORDER.includes(normalized as ProductVariantAxisKey)
+    ? normalized as ProductVariantAxisKey
+    : ''
+}
+
+const getExplicitVariantDefinitionAxis = (variant: ProductType): ProductVariantAxisKey | '' => {
+  const definitionAxis = normalizeVariantAxisKey(variant.attributes?.variantDefinitionField)
+  if (definitionAxis) return definitionAxis
+
+  const legacyAxis = normalizeVariantAxisKey(variant.attributes?.variantAxis || variant.variantAxis)
+  if (
+    legacyAxis === 'size'
+    && normalizeProductType(variant.productType ?? '', variant.category) === 'Alimento'
+    && (
+      looksLikeContentMeasurementValue(variant.attributes?.size)
+      || normalizeLabel(variant.attributes?.weight) !== ''
+    )
+  ) {
+    return 'weight'
+  }
+
+  return legacyAxis
+}
 
 const uniqueLabels = (values: Array<string | null | undefined>) =>
   Array.from(
@@ -246,6 +274,47 @@ const getUniqueVariantAxisValues = (product: ProductType, axis: ProductVariantAx
         collectVariantValues(product, (variant) => [getVariantAxisValue(variant, axis)])
       )
 
+const variantAxisValuesIdentity = (values: string[]) =>
+  Array.from(new Set(values.map(normalizeIdentity).filter(Boolean)))
+    .sort()
+    .join('|')
+
+const hasEquivalentAxisValues = (left: ProductVariantAxis, right: ProductVariantAxis) =>
+  variantAxisValuesIdentity(left.values) !== ''
+  && variantAxisValuesIdentity(left.values) === variantAxisValuesIdentity(right.values)
+
+const shouldSkipDuplicateVariantAxis = (
+  product: ProductType,
+  axisInfo: ProductVariantAxis,
+  axisCandidates: ProductVariantAxis[],
+) => {
+  void product
+
+  if (
+    axisInfo.axis === 'size'
+    && axisCandidates.some((candidate) =>
+      ['weight', 'volume'].includes(candidate.axis) && hasEquivalentAxisValues(axisInfo, candidate)
+    )
+  ) {
+    return true
+  }
+
+  return false
+}
+
+const getConsistentExplicitVariantAxis = (variants: ProductType[]): ProductVariantAxisKey | '' => {
+  const explicitAxes = Array.from(new Set(
+    variants
+      .map((variant) => getExplicitVariantDefinitionAxis(variant))
+      .filter(Boolean)
+  ))
+
+  return explicitAxes.length === 1 ? explicitAxes[0] : ''
+}
+
+const hasMultipleVariantValues = (values: string[]) =>
+  new Set(values.map(normalizeIdentity).filter(Boolean)).size > 1
+
 const getCommonPresentationLabel = (product: ProductType) => {
   const presentations = uniqueLabels(
     collectVariantValues(product, (variant) => [
@@ -255,13 +324,20 @@ const getCommonPresentationLabel = (product: ProductType) => {
   return presentations.length === 1 ? presentations[0] : ''
 }
 
+const normalizeVariantAxisLabel = (label: string) => {
+  const identity = normalizeIdentity(label)
+  if (identity === 'presentacion' || identity === 'presentaciones') return 'Presentación'
+  if (identity === 'tamano') return 'Tamaño'
+  return label
+}
+
 export const getVariantAxisLabel = (product: ProductType, axis: ProductVariantAxisKey) => {
   const productType = normalizeProductType(product.productType ?? '', product.category)
   if (axis === 'color') return 'Color'
   if (axis === 'size') return ['ropa', 'accesorios'].includes(productType) ? 'Talla' : 'Tamaño'
   if (axis === 'presentation') return 'Formato'
-  if (axis === 'weight') return getCommonPresentationLabel(product) || 'Peso'
-  if (axis === 'volume') return getCommonPresentationLabel(product) || 'Contenido'
+  if (axis === 'weight') return normalizeVariantAxisLabel(getCommonPresentationLabel(product) || 'Peso')
+  if (axis === 'volume') return normalizeVariantAxisLabel(getCommonPresentationLabel(product) || 'Contenido')
   if (axis === 'packaging') return 'Empaque'
   if (axis === 'dosage') return 'Dosis'
   if (axis === 'range') return 'Rango recomendado'
@@ -276,16 +352,27 @@ export const getProductVariantAxes = (product: ProductType): ProductVariantAxis[
   const variants = getProductVariants(product)
   if (variants.length <= 1) return []
 
-  return PRODUCT_VARIANT_AXIS_ORDER
+  const explicitAxis = getConsistentExplicitVariantAxis(variants)
+  if (explicitAxis) {
+    const explicitValues = getUniqueVariantAxisValues(product, explicitAxis)
+    if (hasMultipleVariantValues(explicitValues)) {
+      return [{
+        axis: explicitAxis,
+        label: getVariantAxisLabel(product, explicitAxis),
+        values: explicitValues,
+      }]
+    }
+  }
+
+  const axisCandidates = PRODUCT_VARIANT_AXIS_ORDER
     .map((axis) => ({
       axis,
       label: getVariantAxisLabel(product, axis),
       values: getUniqueVariantAxisValues(product, axis),
     }))
-    .filter((item) => {
-      const distinctIdentities = new Set(item.values.map(normalizeIdentity).filter(Boolean))
-      return distinctIdentities.size > 1
-    })
+    .filter((item) => hasMultipleVariantValues(item.values))
+
+  return axisCandidates.filter((item) => !shouldSkipDuplicateVariantAxis(product, item, axisCandidates))
 }
 
 export const getProductSizeValues = (product: ProductType) =>

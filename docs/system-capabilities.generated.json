@@ -1931,6 +1931,14 @@
           "handler": "AuthController@session",
           "capabilityId": "users.auth",
           "source": "paramascotasec-backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/tenant/context",
+          "method": "GET",
+          "path": "/api/tenant/context",
+          "handler": "TenantController@context",
+          "capabilityId": "users.auth",
+          "source": "paramascotasec-backend/config/routes.php"
         }
       ],
       "facturadorRoutes": []
@@ -2224,6 +2232,14 @@
         "method": "GET",
         "path": "/api/auth/session",
         "handler": "AuthController@session",
+        "capabilityId": "users.auth",
+        "source": "paramascotasec-backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/tenant/context",
+        "method": "GET",
+        "path": "/api/tenant/context",
+        "handler": "TenantController@context",
         "capabilityId": "users.auth",
         "source": "paramascotasec-backend/config/routes.php"
       },

@@ -242,12 +242,12 @@ const resolveVariantLabelForProduct = (product: ProductWithRelations, attributes
   const normalizedType = normalizeProductType(product.productType ?? '', product.category)
   const color = typeof attributes.color === 'string' ? attributes.color.trim() : ''
   const size = typeof attributes.size === 'string' ? normalizeMeasurementLabel(attributes.size).trim() : ''
-  const variantAxis = typeof attributes.displayAxis === 'string' && attributes.displayAxis.trim()
-    ? attributes.displayAxis.trim().toLowerCase()
+  const variantAxis = typeof attributes.variantDefinitionField === 'string' && attributes.variantDefinitionField.trim()
+    ? attributes.variantDefinitionField.trim().toLowerCase()
     : typeof attributes.variantAxis === 'string' && attributes.variantAxis.trim()
       ? attributes.variantAxis.trim().toLowerCase()
-      : typeof attributes.variantDefinitionField === 'string'
-        ? attributes.variantDefinitionField.trim().toLowerCase()
+      : typeof attributes.displayAxis === 'string'
+        ? attributes.displayAxis.trim().toLowerCase()
         : ''
   if (normalizedType === 'accesorios' && color && size) {
     if (variantAxis === 'size') {
@@ -450,7 +450,9 @@ export const mapProductToDto = (product: ProductWithRelations): ProductType => {
     variantBaseName: typeof normalizedAttributes.variantBaseName === 'string' ? normalizedAttributes.variantBaseName : '',
     variantGroupKey,
     productGroupId,
-    variantAxis: typeof normalizedAttributes.variantAxis === 'string' ? normalizedAttributes.variantAxis : '',
+    variantAxis: typeof normalizedAttributes.variantDefinitionField === 'string' && normalizedAttributes.variantDefinitionField
+      ? normalizedAttributes.variantDefinitionField
+      : (typeof normalizedAttributes.variantAxis === 'string' ? normalizedAttributes.variantAxis : ''),
     variantPresentation: typeof normalizedAttributes.presentation === 'string' ? normalizeMeasurementLabel(normalizedAttributes.presentation) : '',
     inventory: product.inventory ? {
       onHand: Number(product.inventory.onHand ?? product.quantity ?? 0),
