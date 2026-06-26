@@ -162,9 +162,9 @@ failed = !expectStatus('legacy-api-block', '/api/products', [404]) || failed
 failed = !expectStatus('legacy-facturador-block', '/facturador/api/test/v1/invoices/rides', [404]) || failed
 failed = !expectStatus('legacy-uploads-block', '/uploads-api/images', [404, 405]) || failed
 
-for (const route of manifest.indexes.facturadorRoutes) {
+for (const route of manifest.indexes.billingApiRoutes ?? []) {
   if (route.path.startsWith('/api/production/')) {
-    addResult(`facturador-production-guard:${route.path}`, 'passed', { guard: 'not-called-in-development' })
+    addResult(`billing-production-guard:${route.path}`, 'passed', { guard: 'not-called-in-development' })
   }
 }
 

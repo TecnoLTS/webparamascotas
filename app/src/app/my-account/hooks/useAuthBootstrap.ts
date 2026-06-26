@@ -37,16 +37,27 @@ export const useAuthBootstrap = ({
 }: UseAuthBootstrapParams) => {
   React.useEffect(() => {
     let cancelled = false
+    const redirectAdminToDashboard = () => {
+      if (typeof window !== 'undefined') {
+        window.location.replace('/dashboard/')
+        return
+      }
+
+      router.replace('/dashboard/')
+    }
+
     const storedUser = hasCookieSessionMarker() ? getStoredSessionUser() : null
+
+    if (storedUser?.role === 'admin') {
+      redirectAdminToDashboard()
+      return () => {
+        cancelled = true
+      }
+    }
 
     if (storedUser?.id && storedUser.name && storedUser.email) {
       setUser(storedUser)
-      if (storedUser.role === 'admin') {
-        setAdminReportSection('general')
-        setActiveTab('reports')
-      } else {
-        setActiveTab('dashboard')
-      }
+      setActiveTab('dashboard')
       setAuthBootstrapping(false)
     }
 
@@ -59,13 +70,12 @@ export const useAuthBootstrap = ({
         }
         setCookieSessionMarker()
         setStoredSessionUser(sessionUser)
-        setUser(sessionUser)
         if (sessionUser.role === 'admin') {
-          setAdminReportSection('general')
-          setActiveTab('reports')
-        } else {
-          setActiveTab('dashboard')
+          redirectAdminToDashboard()
+          return
         }
+        setUser(sessionUser)
+        setActiveTab('dashboard')
       })
       .catch(() => {
         if (cancelled) return

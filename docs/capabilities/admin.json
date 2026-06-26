@@ -18,6 +18,14 @@
       "e2e": { "mode": "scenario", "fixture": "e2e-settings-snapshot", "assertDb": true, "cleanup": true, "scenario": "admin-settings-roundtrip" }
     },
     {
+      "id": "admin.tenants",
+      "summary": "Gestion de tenants, modulos contratados y configuracion funcional por tenant.",
+      "auth": "platform-admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "e2e-tenant-module-assignment", "assertions": ["tenant-modules-updated", "tenant-context-refreshed"] },
+      "e2e": { "mode": "scenario", "fixture": "e2e-tenant-module-assignment", "assertDb": true, "cleanup": true, "scenario": "tenant-module-assignment-roundtrip" }
+    },
+    {
       "id": "admin.discounts",
       "summary": "Codigos de descuento y auditoria de uso.",
       "auth": "admin",

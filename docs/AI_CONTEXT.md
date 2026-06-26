@@ -5,7 +5,7 @@ Fuente canonica de contexto IA para `/home/admincenter/contenedores`.
 
 ## Proposito del proyecto
 
-ParamascotasEC es un workspace integrado para e-commerce de mascotas en Ecuador. Incluye frontend Next.js, backend PHP, base PostgreSQL, microservicio de facturacion electronica SRI y gateway APISIX/etcd con Certbot oficial.
+ParamascotasEC es un workspace integrado para e-commerce de mascotas en Ecuador. Incluye frontend Next.js, backend PHP modular, base PostgreSQL compartida con bases logicas por dominio, Billing SRI dentro del backend y gateway APISIX/etcd con Certbot oficial.
 
 El objetivo operativo es mantener un entorno desplegable por scripts, con reglas de negocio server-side, seguridad admin estricta y contexto suficiente para que una IA o un desarrollador pueda continuar trabajo sin redescubrir decisiones recientes.
 
@@ -38,28 +38,31 @@ cd /home/admincenter/contenedores
 ./deploy-production.sh        # production: Let's Encrypt
 
 # Servicio individual development:
-./scripts/deploy-development.sh facturador
 ./scripts/deploy-development.sh db
+./scripts/deploy-development.sh billing
 ./scripts/deploy-development.sh backend
 ./scripts/deploy-development.sh frontend
 ./scripts/deploy-development.sh gateway
 
 # Servicio individual production:
-./scripts/deploy-production.sh facturador
 ./scripts/deploy-production.sh db
+./scripts/deploy-production.sh billing
 ./scripts/deploy-production.sh backend
 ./scripts/deploy-production.sh frontend
 ./scripts/deploy-production.sh gateway
 
 # Operaciones puntuales:
 RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend
-RUN_DB_MIGRATIONS=1 ./scripts/deploy-development.sh facturador
 ```
 
-Servicios validos para wrappers individuales: `facturador`, `db`, `backend`, `frontend`, `gateway`.
-Orden del despliegue completo: Facturador -> DB -> Backend -> Frontend -> Gateway.
+Servicios validos del workspace orquestado: `db`, `billing`, `backend`, `frontend`, `gateway`. `billing` despliega el backend actual donde vive Billing SRI; el repo `Facturador` queda fuera del flujo orquestado normal y no debe desplegarse salvo trabajo legacy/standalone explicitamente solicitado.
+Orden del despliegue completo: DB -> Backend -> Frontend -> Gateway.
 Los scripts materializan el modo activo en `entorno/.env` por componente; `development` y `production` se despliegan solo por los wrappers de deploy.
-PostgreSQL major actual: 18. La DB principal usa `postgres18_data` y conserva `postgres16_data` para rollback; Facturador usa el volumen Docker `postgres18-data` y conserva `postgres-data` para rollback.
+Persistencia real actual verificada:
+- Servicio PostgreSQL compartido: PostgreSQL 18 (`next-test-db`, data dir `postgres18_data`; conserva `postgres16_data` para rollback) con bases logicas por modulo.
+- Base logica ecommerce actual: `paramascotasec`.
+- Base logica Billing SRI actual: `billing_service`, atendida por `platform-core/Billing`.
+- Store de infraestructura Gateway: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
 
 ## Red
 
@@ -67,28 +70,48 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 
 - `apisix-gateway-internal`: APISIX, etcd y webroot ACME interno.
 - `paramascotasec-web-internal`: APISIX Gateway, Frontend y Backend Web.
-- `paramascotasec-db-internal`: Backend App y DB principal.
-- `paramascotasec-services-internal`: APISIX Gateway, Backend App y Facturador Nginx (`facturador`).
-- Redes de egreso no publicadas: Backend App para SMTP; Facturador service/worker para SRI y SMTP.
-- En desarrollo, los puertos locales de diagnostico del Facturador se publican mediante sidecars (`billing-nginx-local`, `billing-postgres-local`) en `127.0.0.1`; los servicios reales y DBs permanecen en redes internas.
+- `paramascotasec-db-internal`: Backend App, worker Billing nativo y DB compartida.
+- Redes de egreso no publicadas: Backend App para SMTP; worker Billing nativo para SRI y SMTP.
+- `paramascotasec-services-internal` no pertenece al flujo orquestado actual; APISIX y backend no deben unirse a esa red.
 - Mantener el aislamiento de redes tambien en development: no conectar contenedores internos a `bridge`/egreso temporal como solucion normal. Si una tarea exige egreso para instalar dependencias o diagnosticar, preferir los scripts/imagenes/caches previstos; cualquier excepcion debe ser explicita, temporal, documentada y revertida antes de cerrar.
 
 | Servicio | Host interno | Notas |
 |----------|--------------|-------|
 | Backend API | `http://paramascotasec-backend-web:8080/api` | PHP-FPM detras de Nginx |
 | Frontend | `http://paramascotasec-frontend:3000` | Next.js |
-| Facturador | `http://facturador:8080` | Alias interno en `paramascotasec-services-internal` |
-| DB principal | `db:5432` | PostgreSQL principal |
+| DB compartida | `db:5432` | PostgreSQL compartido con bases logicas por modulo |
 
 ## Arquitectura
 
 | Componente | Tech | Contenedores |
 |------------|------|--------------|
 | Frontend | Node 24 LTS + Next.js 16 + React 19 + Tailwind CSS 4 + TypeScript 6 | `paramascotasec-app` prod / `paramascotasec-app-dev` dev |
-| Backend | PHP 8.5 MVC propio + PostgreSQL | `paramascotasec-backend-app`, `paramascotasec-backend-web` |
+| Backend | PHP 8.5 MVC propio + PostgreSQL | `paramascotasec-backend-app`, `paramascotasec-backend-web`, `paramascotasec-backend-billing-worker` |
 | Database | PostgreSQL 18 | `next-test-db` |
-| Facturador | PHP 8.5 + PostgreSQL 18 | `billing-service`, `billing-recovery-worker`, `billing-postgres`, `billing-nginx`; dev agrega `billing-nginx-local`, `billing-postgres-local` |
 | Gateway | APISIX 3.16 + etcd 3.5 + Certbot oficial | `apisix-gateway`, `apisix-etcd`, `apisix-acme-webroot`, `certbot` |
+
+## Modularidad orquestada
+
+- El Dashboard es el orquestador visual y operativo; no es duenio de catalogo, pedidos, clientes ni facturas.
+- Cada modulo real debe soportar dos modos: `individual` y `orquestado`.
+- El registro canonico del orquestador vive en `Dashboard/public/module-registry.json`.
+- Cada modulo real publica su contrato en `module.json`.
+- La relacion entre modulo runtime y modulo contratado/feature del Dashboard vive en `Dashboard/public/tenant-module-topology.json`.
+- `Dashboard/public/system-runtime-topology.json` debe publicar por runtime sus entrypoints, `standalone.requires`, `orchestrated.requires`, `dataOwnershipRules`, `consumesRuntimeApis` y `migrationBoundaries`; `/module-topology` debe leer esa misma capa.
+- `Dashboard/docs/MODULE-EVOLUTION-PLAYBOOK.md` define cuando ampliar un owner actual, cuando crear un runtime nuevo y como extraer un dominio del `platform-core`; `system-runtime-topology.json` debe referenciar esa guia.
+- Contrato minimo por modulo integrable: `GET /health`, `GET /module.json`, migraciones propias, backup/restore propio y permisos/capacidades propias.
+- En modo orquestado, `billing-sri` entra por `platform-core/Billing`; no hay runtime fiscal HTTP paralelo ni fallback Facturador.
+- El contrato publico APISIX `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` reescribe a `platform-core/Billing` (`/api/{test|production}/v1/*`) y queda protegido por `X-API-Key` o `Authorization: Bearer`.
+- Regla vigente de persistencia: un solo servicio PostgreSQL y una base logica por modulo/servicio; multiples tenants del mismo modulo comparten esa base logica bajo aislamiento por `tenant_id` o equivalente del owner.
+- Regla vigente de identidad: los usuarios humanos pertenecen al tenant, no al modulo. `IdentityPlatform` es el owner unico de auth, sesiones, recovery, tenants, membresias, roles y permisos; los modulos solo consumen `tenant_id`, `user_id` y permisos `module.action`.
+- El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
+- Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
+- Tipos de identidad vigentes: `platform` para superadmins/recovery TECNOLTS, `tenant_staff` para admins/equipo operativo del tenant, `customer` para compradores ecommerce y `service` para integraciones internas.
+- `/api/users` debe listar solo `tenant_staff` del tenant actual; compradores ecommerce (`customer`) no aparecen como usuarios operativos y superadmins (`platform`) viven en `platform-access`.
+- `paramascotasec-backend` sigue siendo un solo runtime `platform-core`, pero sus dominios principales ya resuelven bases logicas dedicadas: `identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance` y `mailer_service`. La base legacy `paramascotasec` puede existir para bootstrap/compatibilidad, pero no es owner funcional de esos dominios.
+- Regla permanente: no crear foreign keys entre DBs de modulos; integrar por IDs estables, snapshots o contratos API. Las tablas FDW cross-domain son compatibilidad temporal para consultas existentes, no un permiso para crear acoplamientos nuevos.
+- Guia detallada: `Dashboard/docs/MODULAR-ORCHESTRATION.md`.
+- En `Dashboard`, `npm run verify` debe incluir `npm run module:check` para romper temprano si deriva el contrato modular publicado.
 
 ## Frontend `paramascotasec/app`
 
@@ -112,21 +135,32 @@ npm run test         # lint + typecheck
 - Entry point: `public/index.php`.
 - Arquitectura: MVC propio sin framework; Router custom, JWT auth, CORS, CSRF y tenant resolution.
 - Namespace PHP: `App\` -> `src/`.
+- Modularizacion backend en curso: `src/Modules/{IdentityPlatform,CatalogInventory,Commerce,Billing,ReportingFinance,Mailer}` con registries de rutas por dominio en `src/Modules/*/routes.php`.
+- `config/routes.php` ya no debe crecer como lista plana; agrega/ajusta rutas dentro del registro del modulo duenio y deja al agregador central preservar el contrato HTTP actual.
+- `src/Core/ConnectionRegistry.php` resuelve la conexion por dominio usando `config/module-databases.php`; los dominios principales ya apuntan a bases logicas dedicadas (`identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance`, `mailer_service`). La DB legacy `paramascotasec` queda solo para bootstrap/compatibilidad.
+- `src/Modules/Billing/Native/` contiene la logica fiscal nativa para XML, RIDE, SRI, configuracion, sucursales, certificados, mail y recuperacion.
+- `src/Modules/Mailer/` contiene la frontera tecnica de correo del Core API: contacto, outbox, auditoria de entregas y salud operativa sobre `mailer_service`. La feature comercial visible `email-service` sigue planned hasta tener UI/contratos propios.
+- `src/Modules/Billing/Controllers/PublicBillingController.php` atiende el contrato fiscal publico compatible `/api/{test|production}/v1/*` dentro del backend, sin sesion Dashboard y autenticado por API key fiscal.
+- `BillingGatewayFactory` usa solo `BILLING_GATEWAY_DRIVER=native`; `native_fallback` y `facturador_http` deben fallar si reaparecen en configuracion.
+- El worker fiscal del backend vive en `scripts/process_billing_recovery.php` y corre como contenedor `paramascotasec-backend-billing-worker`; respeta minimo `3600` segundos entre reintentos.
+- `src/Modules/IdentityPlatform/Application/TenantAccessService.php` es la regla central para modulos contratados, permisos `module.action`, identidad platform/tenant/customer/service y bloqueo de rutas operativas por modulo.
+- `Auth::requireAdmin()` en el backend legacy significa "identidad gestionada de tenant o plataforma"; los permisos reales se deciden despues por `TenantAccessService`, no por el campo legacy `User.role`.
 - Bootstrap DB: `scripts/bootstrap_schema.php`, ejecutado con `RUN_DB_SETUP=1`.
 - Composer se ejecuta en build de imagen; no se instala ni corre dentro del contenedor runtime.
 
-## Facturador SRI Ecuador
+## Billing SRI Ecuador
 
-- Requiere certificado `.p12` en `Facturador/certs/firma.p12` como volumen read-only.
-- API principal: `POST /api/{env}/v1/invoices` y `GET /api/{env}/v1/invoices/{accessKey}/status`.
-- Auth: `X-API-Key` o `Authorization: Bearer`.
-- Worker: `php bin/process_pending_invoices.php --limit=50 --min-age-seconds=3600`, ejecutado en loop por `billing-recovery-worker`.
-- DB propia: `billing-postgres`, puerto interno 5432; en desarrollo `billing-postgres-local` publica `127.0.0.1:5434` solo para diagnostico.
-- HTTP local de facturador `127.0.0.1:8084` existe solo en desarrollo via `billing-nginx-local` para diagnostico.
-- Acceso publico del facturador, cuando aplique, entra por Gateway bajo `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/health` y `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`; APISIX reescribe a `/health` y `/api/{test|production}/v1/*`. Paneles/admin no se publican por Gateway.
+- Billing SRI vive dentro de `platform-core`; no debe ser llamado como servicio paralelo por frontends, APISIX ni backend.
+- API principal publica por backend: `POST /api/{env}/v1/invoices`, `GET /api/{env}/v1/invoices/{accessKey}/status`, XML/RIDE y configuracion fiscal registrada en rutas del modulo Billing.
+- Auth publica fiscal: `X-API-Key` o `Authorization: Bearer`, usando `BILLING_API_KEY`/keys registradas en `billing_service`.
+- Worker: `php scripts/process_billing_recovery.php --limit=50 --min-age-seconds=3600`, ejecutado por `paramascotasec-backend-billing-worker`.
+- Base logica propia: `billing_service` en `db:5432`.
+- Certificados `.p12` cargados por Billing nativo se guardan bajo `paramascotasec-backend/storage/billing/certs`.
+- Acceso publico fiscal entra por Gateway bajo `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/health` y `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`; APISIX reescribe a `/health` y `/api/{test|production}/v1/*` dentro del backend.
 - SRI por entorno: desarrollo usa `pruebas` (`celcer.sri.gob.ec`) y produccion usa `produccion` (`cel.sri.gob.ec`).
-- El correo del facturador puede venir de la configuracion de sucursal en DB; `billing-service` y `billing-recovery-worker` requieren egreso SMTP cuando haya sucursales con mail activo.
-- Rutas por entorno: `FACTURADOR_API_INVOICES_PATH=/api/test/v1/invoices` en dev y `/api/production/v1/invoices` en prod.
+- En QA/desarrollo puede restaurarse una base de produccion para diagnostico. En ese caso pueden existir facturas con `ambiente=produccion`, pero el entorno debe seguir usando SRI pruebas; no cambiar endpoints a produccion ni consultar SRI produccion desde QA. Las consultas de estado deben preservar la autorizacion local de esas facturas restauradas.
+- Los eventos internos de Billing (`invoice.emitted`, `invoice.authorized`, `invoice.rejected`) se persisten en `billing_service.billing_domain_events` desde el dispatcher nativo; una falla del registro de evento no debe bloquear emision ni consulta de estado.
+- El correo fiscal puede venir de la configuracion de sucursal en DB; `paramascotasec-backend-billing-worker` requiere egreso SMTP cuando haya sucursales con mail activo.
 
 ## Gateway
 
@@ -135,9 +169,9 @@ npm run test         # lint + typecheck
 - APISIX se configura desde `Gateway/entorno/.env`; no hardcodear dominio, tenant, base path ni upstream en rutas.
 - Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
 - En QA local actual, probar ese contrato por `https://paramascotasec.com/` y, si el DNS/hosts del cliente no resuelve al host virtualizado, usar `--resolve paramascotasec.com:443:192.168.100.229` en `curl`.
-- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`, `FACTURADOR_UPSTREAM`.
+- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
 - Rutas legacy publicas `/api/*`, `/facturador/*` y `/uploads-api/*` quedan bloqueadas por APISIX.
-- `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed.
+- `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed. Para APIs backend lee `config/routes.php` y `src/Modules/*/routes.php`; excluye `/api/{apiMode}/v1/*` porque Billing publico tiene rutas APISIX explicitas hacia `platform-core`.
 - Dashboard local de APISIX: `http://${APISIX_ADMIN_BIND_IP}:${APISIX_ADMIN_PORT}/ui/` (development actual: `127.0.0.1:9180`).
 - En desarrollo `GATEWAY_BIND_IP` debe apuntar a localhost/LAN; en produccion publica solo `80/443`.
 - `certbot` corre solo en produccion via perfil `certbot`.
@@ -151,10 +185,13 @@ cd Gateway && ./scripts/renew-letsencrypt.sh
 
 ```bash
 scripts/check-paramascotas.sh    # capability registry + frontend lint/typecheck + backend PHP syntax + backend health
+php paramascotasec-backend/scripts/check_modular_routes.php # handlers HTTP bajo src/Modules sin App\Controllers legacy
+docker exec paramascotasec-backend-app php scripts/check_module_databases.php # ownership real de bases logicas
+node Dashboard/tools/check-module-manifests.mjs
 scripts/check-env-secrets.sh all # preflight .env/secrets sin imprimir valores
 scripts/check-container-connectivity.sh development
 scripts/check-container-connectivity.sh production
-scripts/e2e-development.sh       # suite development: contracts, checks, SEO, Facturador y probes Gateway
+scripts/e2e-development.sh       # suite development: contracts, checks, SEO, Billing y probes Gateway
 
 cd paramascotasec/app
 npm run capabilities:check       # valida registro maestro de capacidades
@@ -163,7 +200,9 @@ npm run capabilities:generate    # regenera docs/system-capabilities.generated.j
 
 `check-container-connectivity.sh` tambien valida que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelva productos publicos y que las rutas legacy `/api/*`, `/facturador/*` y `/uploads-api/*` respondan 404. Un deploy dev/prod debe fallar si el catalogo publico queda vacio; en development solo se permite sembrar datasets demo con `SEED_DEVELOPMENT_CATALOG=1`, no por defecto. `check-container-connectivity.sh production` valida el runtime de produccion; no correrlo esperando exito mientras el workspace esta desplegado en development. Para cambios acotados, correr tambien checks del componente afectado cuando aplique.
 
-El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.json`; el manifiesto generado queda en `paramascotasec/docs/system-capabilities.generated.json` y el helper frontend en `paramascotasec/app/src/generated/systemCapabilities.ts`. Toda ruta backend nueva debe registrarse en `paramascotasec-backend/config/routes.php` con `capability`; toda ruta Facturador auditable debe registrarse en `Facturador/config/routes.capabilities.php`. Si una pagina, route handler o uso API queda fuera del registro, `npm run capabilities:check` debe fallar.
+`paramascotasec-backend/scripts/check_module_databases.php` valida que `ConnectionRegistry` resuelva cada dominio a su base dedicada, que las tablas owner sean locales, que las tablas ajenas de compatibilidad sean foreign tables FDW y que no existan foreign keys fisicas entre dominios. `scripts/check-paramascotas.sh` y `scripts/check-container-connectivity.sh` lo ejecutan desde el contenedor backend.
+
+El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.json`; el manifiesto generado queda en `paramascotasec/docs/system-capabilities.generated.json` y el helper frontend en `paramascotasec/app/src/generated/systemCapabilities.ts`. Toda ruta backend nueva debe registrarse en `paramascotasec-backend/config/routes.php` o `src/Modules/*/routes.php` con `capability`. Si una pagina, route handler o uso API queda fuera del registro, `npm run capabilities:check` debe fallar.
 
 ## Reglas de negocio criticas
 
@@ -171,7 +210,7 @@ El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.j
 - IVA default: 15% Ecuador. `tax_exempt` por producto; soporta carritos mixtos exentos/no exentos.
 - Envio: gratis en Centro/Norte Quito; USD 5.00 para Sur/Valles. Se determina desde direccion via `GET /api/settings/shipping`.
 - Descuentos: server-side; tipos porcentaje o fijo; soportan `min_subtotal`, `max_discount`, `max_uses`.
-- Consumidor final: `9999999999999` solo se permite hasta USD 50.00 oficiales. Ventas mayores deben tener cedula o RUC valido del cliente; backend y Facturador bloquean el caso antes de emitir.
+- Consumidor final: `9999999999999` solo se permite hasta USD 50.00 oficiales. Ventas mayores deben tener cedula o RUC valido del cliente; backend/Billing bloquean el caso antes de emitir.
 - Inventario FIFO: `inventory_lots` rastrea lotes de compra; ordenes consumen lotes antiguos primero; costos se restauran al cancelar.
 - Sitio publico: dominio principal, alias y tenant salen de `.env` del Gateway; en development actual son `paramascotasec.com`, `www.paramascotasec.com` y `paramascotasec`. Dominios ajenos deben quedar rechazados o redirigidos por APISIX segun reglas.
 
@@ -179,7 +218,7 @@ El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.j
 
 - Auth: JWT HS256 en cookie httpOnly y Bearer opcional. Payload: `sub`, `email`, `name`, `role`, `tenant_id`, `jti`.
 - CSRF: requerido para mutaciones API excepto auth/contact/health/quote. Header `X-CSRF-Token` debe coincidir con cookie `pm_csrf`.
-- Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren `role='admin'` y allowlist IP (`ADMIN_IP_MODE=private` por defecto en dev/prod; usar `custom` para IP publica fija).
+- Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren identidad gestionada (`platform` o `tenant_staff`) y allowlist IP (`ADMIN_IP_MODE=private` por defecto en dev/prod; usar `custom` para IP publica fija). El acceso funcional se valida despues por permisos `module.action` desde `TenantAccessService`.
 - Bloqueo de cuenta: despues de `AUTH_LOGIN_MAX_ATTEMPTS` (default 5), bloqueo por `AUTH_LOGIN_LOCK_MINUTES` (default 15).
 - MFA: OTP por email para admins (`request-otp`, `verify-otp`).
 - Proxy interno: `INTERNAL_PROXY_TOKEN` permite auth inter-contenedores sin login.
@@ -210,6 +249,3620 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `paramascotasec/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-25 - Dashboard QA: e2e completo y single-site sin deriva
+
+Objetivo: cerrar las fallas reales que seguian apareciendo en la corrida completa del Dashboard y validar que el workspace development no conserve configuracion legacy de dominios o servicios.
+
+Cambios:
+- `paramascotas-list-views.spec.ts` ahora espera a que el listado de productos termine de cargar antes de buscar filas, evitando lecturas prematuras en variantes agrupadas.
+- `paramascotas-real-integrations.spec.ts` agrega helpers robustos para navegacion renderizada, clicks con espera de URL, catalogo de productos cargado y colapso del sidebar; el caso multi-grupo del sidebar tiene margen acorde a sus cinco navegaciones reales.
+- `Gateway/entorno/.env` elimina el dominio legacy `rescatevenezuela.paramascotasec.com` de `CERTBOT_DOMAINS`; queda alineado a `paramascotasec.com,www.paramascotasec.com`.
+
+Verificacion:
+- Paso `npm run e2e` en `Dashboard`: 267/267 pruebas.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en `Dashboard`.
+- Paso `scripts/check-paramascotas.sh`.
+- Paso `scripts/check-container-connectivity.sh development`.
+- Paso `scripts/check-env-secrets.sh all` con 0 fallos; conserva solo la advertencia esperada de validar el modo activo `development`.
+
+### 2026-06-25 - Dashboard QA: inventario operativo y SRI fiscal reforzados
+
+Objetivo: corregir problemas reales de usabilidad y contrato en inventario/compras y facturacion SRI, manteniendo el Dashboard como workspace operativo unico y evitando dependencias cruzadas entre features.
+
+Cambios:
+- `/paramascotas-panel/catalog/inventory` ahora abre `ParamascotasInventoryReportComponent`, con acciones de compra/reposicion, ajuste de stock, detalle de factura de compra y carga de catalogos de referencia.
+- El selector SRI de productos limita la lista visible a 12 resultados, mantiene footer usable, permite cerrar con `Usar detalle cargado` aunque no haya lineas y muestra subtotal/IVA/total en el resumen.
+- `invoice-list` recupera el panel operativo de RIDE/correo/ambiente SRI: ambiente de pruebas visible, estado de correo, PDF/RIDE, filtros por estado/periodo/busqueda y bloqueo de reemision de documentos de produccion en QA.
+- La navegacion SRI conserva compatibilidad legacy: `billing-status` sigue sirviendo consultas y `billing-status?section=settings` muestra configuracion/sucursales; se mantienen alias CSS legacy para flujos APISIX existentes.
+- La analitica fiscal de RIDE se movio a `src/app/shared/billing/`; `features/business` ya no importa servicios/modelos desde `features/dashboard`.
+- `BillingServicesComponent` carga datos por seccion: emision carga configuracion/productos, consultas/clientes cargan RIDE y configuracion carga solo configuracion, reduciendo latencia y consultas innecesarias.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`.
+- Pasaron unitarias focalizadas de `billing-services`, `invoice-list`, analitica fiscal compartida, modal de producto, sucursales y branch modal.
+- Paso `npm run e2e -- --grep "billing rides|invoice editor|billing product"` con 5/5 casos.
+
+### 2026-06-25 - Dashboard/Identity QA: paginacion, permisos ecommerce y e2e real
+
+Objetivo: responder que mas quedaba por arreglar con fallas concretas del e2e autenticado y dejar el flujo real de tenant admin operable en ecommerce.
+
+Cambios:
+- `TABLE_PAGE_SIZE_OPTIONS` vuelve a respetar el contrato operativo de facturas/pedidos con `6, 8, 10, 50, 100`, dejando `6` como default y manteniendo las nuevas opciones de 50 y 100 por pagina.
+- `UsersListComponent` agrega nombres accesibles `Ver usuario ...` en el roster y las pruebas e2e se alinean al workspace inline actual, sin reintroducir el modal/listado legacy.
+- `layout-density.spec.ts`, `smoke.spec.ts`, `paramascotas-real-auth.spec.ts` y `paramascotas-real-integrations.spec.ts` se actualizaron a las rutas y componentes actuales: SRI, platform access, module topology, headings H1 y workspaces separados.
+- `paramascotasec` recupero el entitlement activo `ecommerce` en `identity_platform.tenant_module_entitlements`, corrigiendo el bloqueo real hacia `module-unavailable`.
+- `UserController` y `TenantAccessService` ahora respetan `role=admin` como rol admin implicito cuando se crea un usuario gestionado sin `roleIds`, evitando que nuevos admins queden con permisos de solo lectura y fallen en `ecommerce.update`.
+
+Operacion y verificacion:
+- Se redeployo `backend` development con `./scripts/deploy-development.sh backend`.
+- Paso el e2e focalizado: `npm run e2e -- --grep "layout density|business configuration|invoice workspace|tenant admin|users|roles"` con 20/20 pruebas.
+- Paso `npm run e2e -- --grep "paramascotas tenant admin signs in with MFA and stays tenant-scoped"`.
+- Paso `npm run verify` completo en `Dashboard`: 254 archivos de test, 780 pruebas, build development y `bundle:check` production.
+- Paso `./scripts/check-paramascotas.sh`.
+
+### 2026-06-25 - Dashboard QA: verify completo recuperado y toolbar financiero robusto
+
+Objetivo: responder que mas quedaba por arreglar con validacion completa, no solo con checks parciales, y corregir la falla real detectada en `npm run verify`.
+
+Cambios:
+- `ParamascotasFinancialToolbarComponent` deja de exigir `scopeOptions` obligatorio y trata opciones `undefined` como lista vacia, evitando que una vista completa falle si un padre aun no resolvio sus opciones de periodo.
+- `paramascotas-product-purchases.component.spec.ts` y `paramascotas-security-settings.component.spec.ts` usan stub de `DeferredApexChartComponent`, alineadas con otras pruebas de workspaces que no deben depender del observer de viewport del entorno de test.
+- Las pruebas de seguridad usan el contrato `PARAMASCOTAS_SECURITY_PRESETS` como fuente directa para validar presets, en lugar de acoplarse al render de graficos diferidos.
+
+Operacion y verificacion:
+- Pasaron las pruebas focalizadas de `paramascotas-product-purchases`, `paramascotas-security-settings` y `paramascotas-general-report`.
+- Paso `npm run verify` completo en `Dashboard`: env/runtime/ports/typecheck/explicit-any/lint/arch/module/blueprint/unused, 254 archivos de test con 780 pruebas, build development y `bundle:check` production.
+- Tambien quedaron verificados `./scripts/e2e-development.sh`, `./scripts/check-container-connectivity.sh development`, `./scripts/check-paramascotas.sh`, `scripts/check-env-secrets.sh development`, `Dashboard npm run docker:health`, acceso publico a `/dashboard/` por APISIX y `docker exec paramascotasec-backend-app php scripts/check_billing_public_document_errors.php`.
+
+### 2026-06-25 - Backend Billing: errores publicos de XML/RIDE sin detalles internos
+
+Objetivo: evitar que la consulta de XML/RIDE exponga URLs internas, nombres de upstream o mensajes tecnicos cuando el documento fiscal aun no esta disponible.
+
+Cambios:
+- `PublicBillingController` ahora trata `xml` y `ride-pdf` como tipos documentales explicitos en `runFile`.
+- Los errores publicos de XML/RIDE pendientes devuelven codigo semantico (`BILLING_XML_NOT_AVAILABLE`, `BILLING_RIDE_PDF_NOT_AVAILABLE`), `status_code`, `details.action=check_status` y `retry_after_seconds=3600`.
+- `NativeBillingGateway` publica `xml_exists`, `xml_url`, `xml_size` y `authorized_xml_received` solo cuando existe XML autorizado real; los XML firmados/generados quedan como fuente interna para RIDE, no como descarga de XML autorizado.
+- `getInvoiceXml()` ya no entrega XML firmado/generado como si fuera autorizado: si el autorizado no existe, consulta estado una vez y responde pendiente con retry.
+- `InvoiceListComponent` usa `xmlAvailable` y mantiene el boton XML deshabilitado en facturas autorizadas hasta que el backend confirme XML autorizado disponible.
+- Se agrego `paramascotasec-backend/scripts/check_billing_public_document_errors.php` para fijar que el mensaje no vuelva a exponer `facturador:8080`, rutas `/api/test/v1/invoices` ni codigos upstream crudos.
+- `scripts/check-paramascotas.sh` ejecuta el nuevo contrato despues de validar rutas modulares.
+
+Operacion y verificacion:
+- Pasaron `php -l src/Modules/Billing/Controllers/PublicBillingController.php`, `php -l src/Modules/Billing/Infrastructure/NativeBillingGateway.php`, `php -l scripts/check_billing_public_document_errors.php`, lint PHP de `src`, `public` y `scripts`, `php scripts/check_billing_public_document_errors.php`, `php scripts/check_modular_routes.php`, `bash -n scripts/check-paramascotas.sh`, `npm test -- --watch=false --include src/app/features/business/pages/invoice-list/invoice-list.component.spec.ts --include src/app/features/business/data/invoices-api.service.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build`, `git -C Dashboard diff --check`, `git -C paramascotasec-backend diff --check` y `git -C paramascotasec diff --check -- docs/AI_CONTEXT.md`.
+- `php scripts/check_module_databases.php` no se pudo verificar desde el host porque ese PHP no tiene el driver PDO PostgreSQL; ese check debe correrse dentro de `paramascotasec-backend-app`.
+
+### 2026-06-25 - Dashboard QA: KPI clicable de tienda alineado al strip compartido
+
+Objetivo: cerrar el ultimo KPI informativo/clicable de estado de tienda que seguia usando markup y CSS legacy dentro de Paramascotas.
+
+Cambios:
+- `ParamascotasKpiStripComponent` ahora soporta items con `actionId` y emite `itemAction`, manteniendo el mismo patron visual para KPIs informativos y KPIs que navegan.
+- `paramascotas-store-status` usa el strip compartido para `Estado actual`, `Pedidos activos`, `Mes actual` y `Ultima actualizacion`.
+- El KPI `Pedidos activos` navega al workspace de pedidos mediante el canal `orders`, con guardia si no existe canal disponible.
+- Se retiraron las clases muertas `paramascotas-report-kpis--store` y `paramascotas-clickable-kpi` de `paramascotas-workspace-shared.css`.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-store-status/paramascotas-store-status.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal observado en aprox. `964.91 kB`.
+
+### 2026-06-25 - Dashboard QA: KPIs informativos de gastos migrados
+
+Objetivo: terminar de separar KPIs informativos de las vistas Paramascotas, dejando manuales solo los que son controles interactivos.
+
+Cambios:
+- `paramascotas-expenses-workspace` ahora usa `ParamascotasKpiStripComponent` para la vista previa de cierre financiero.
+- La carga historica de ventas en `paramascotas-expenses-workspace` tambien usa `ParamascotasKpiStripComponent` para total, neto, IVA y utilidad.
+- Se agregaron mappers `financialPreviewKpis()` y `historicalSaleKpis()` para sacar el armado visual del template.
+- Una busqueda focalizada confirma que los `paramascotas-report-kpis` manuales restantes en paginas Paramascotas son interactivos: filtros de inventario, filtros de gastos y una tarjeta clicable de estado de tienda.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build mantiene el lazy chunk principal observado en aprox. `965.96 kB`.
+
+### 2026-06-25 - Dashboard QA: KPIs de seguridad alineados al strip compartido
+
+Objetivo: continuar retirando KPIs manuales informativos de Paramascotas y reducir variantes CSS legacy.
+
+Cambios:
+- `paramascotas-security-settings` ahora usa `ParamascotasKpiStripComponent` para `Sesion clientes`, `Sesion admins`, `Perfil actual` y `Rango permitido`.
+- `ParamascotasKpiStripComponent` agrega la variante `security` para conservar la grilla de cuatro columnas.
+- La pagina mapea riesgo de sesion `low/medium/high` a tonos `success/warning/danger` sin cambiar el servicio de analitica ni el contrato de guardado.
+- Se retiro la regla CSS muerta `paramascotas-report-kpis--security` de `paramascotas-workspace-shared.css`.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-security-settings/paramascotas-security-settings.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal observado en aprox. `965.96 kB`.
+
+### 2026-06-25 - Dashboard QA: KPIs de cupones alineados al strip compartido
+
+Objetivo: seguir reemplazando markup visual repetido de Paramascotas por componentes compartidos y reducir CSS legacy en `paramascotas-workspace-shared.css`.
+
+Cambios:
+- `paramascotas-discount-codes` ahora usa `ParamascotasKpiStripComponent` para `Total de cupones`, `Activos`, `Atencion` y `Usos acumulados`.
+- `ParamascotasKpiStripComponent` agrega la variante `discounts` para conservar la grilla de cuatro columnas.
+- Se retiro la regla CSS muerta `paramascotas-report-kpis--discounts` del stylesheet compartido.
+- La barra completa del filtro `Todos` conserva su clase local `paramascotas-discount-status-list__bar-full`, sin estilos inline.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal observado en aprox. `966.27 kB`.
+
+### 2026-06-25 - Dashboard QA: KPIs de IVA alineados al strip compartido
+
+Objetivo: seguir unificando patrones visuales en Paramascotas y retirar markup/CSS especifico que ya puede vivir en componentes reutilizables.
+
+Cambios:
+- `paramascotas-tax-settings` ahora usa `ParamascotasKpiStripComponent` para los indicadores `IVA general`, `Base gravada`, `IVA estimado` y `Exentos / sin PVP`.
+- `ParamascotasKpiStripComponent` agrega la variante `taxes` para mantener la distribucion de cuatro columnas sin depender de clases legacy.
+- Se retiro la regla CSS muerta `paramascotas-report-kpis--taxes` de `paramascotas-workspace-shared.css`.
+- Una busqueda focalizada confirma que `paramascotas-report-kpis--taxes` ya no existe en `Dashboard/src/app/features/dashboard`.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-tax-settings/paramascotas-tax-settings.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal observado en aprox. `966.59 kB`.
+
+### 2026-06-25 - Dashboard QA: ranking de ventas alineado a componentes financieros compartidos
+
+Objetivo: quitar patrones visuales duplicados de `paramascotas-sales-ranking` y mantener la pagina dedicada consistente con el resto de superficies financieras de Paramascotas.
+
+Cambios:
+- `paramascotas-sales-ranking` ahora usa `ParamascotasFinancialToolbarComponent` para titulo, periodo y selector Dia/Semana/Mes/Ano/Total.
+- Los seis KPIs del ranking se movieron a un mapper `salesRankingKpis()` y se renderizan con `ParamascotasKpiStripComponent`.
+- Se retiro el bloque manual `paramascotas-ranking-controls` y el markup directo `paramascotas-report-kpis` de la pagina.
+- Una busqueda focalizada confirma que `paramascotas-report-kpis` y `paramascotas-ranking-controls` ya no aparecen en `paramascotas-sales-ranking`, `paramascotas-general-report` ni el host de transicion.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-sales-ranking/paramascotas-sales-ranking.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts --include src/app/features/dashboard/components/paramascotas-financial-toolbar/paramascotas-financial-toolbar.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build mantiene el lazy chunk principal observado en aprox. `966.85 kB`.
+
+### 2026-06-25 - Dashboard QA: KPIs Paramascotas encapsulados
+
+Objetivo: seguir reduciendo `ParamascotasTransitionHostComponent` y convertir el patron repetido de KPIs financieros en una pieza reutilizable con CSS propio.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-kpi-strip/` con `ParamascotasKpiStripComponent` y spec propia.
+- El host de transicion usa `<app-paramascotas-kpi-strip>` para los KPIs financieros iniciales y para los KPIs compactos de balance.
+- `paramascotas-general-report` tambien reutiliza el strip para sus indicadores de reporte general.
+- El host conserva solo el armado de datos (`financialKpis`, `financialTrendTotalKpis`) y deja el render de cards al componente presentacional.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-general-report/paramascotas-general-report.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal observado en aprox. `966.85 kB`.
+
+### 2026-06-25 - Dashboard QA: estilos inline retirados de vistas Paramascotas activas
+
+Objetivo: eliminar estilos incrustados en vistas operativas de Paramascotas para reducir inconsistencias visuales y facilitar componentes reutilizables.
+
+Cambios:
+- `ParamascotasFinancialToolbarComponent` ahora soporta modo solo periodo, ocultando el selector segmentado cuando la pantalla solo necesita un mes.
+- `paramascotas-expenses-workspace` usa el toolbar financiero compartido para `Gastos y cierre financiero`, eliminando el input mensual con `style="max-width: 160px"`.
+- `paramascotas-discount-codes` reemplaza el `width: 100%` inline de la barra `Todos` por la clase `paramascotas-discount-status-list__bar-full`.
+- Una busqueda sobre `Dashboard/src/app/features/dashboard/pages/paramascotas-*` y `Dashboard/src/app/features/dashboard/components/paramascotas-*` ya no encuentra `style="..."` en esas superficies activas.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-financial-toolbar/paramascotas-financial-toolbar.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts`, `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: toolbar financiero Paramascotas fuera del host de transicion
+
+Objetivo: seguir reduciendo el `ParamascotasTransitionHostComponent` y corregir un bloque visual que mantenia controles financieros con estilos inline dentro del template grande.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-financial-toolbar/` con `ParamascotasFinancialToolbarComponent` y spec propia.
+- `paramascotas-transition-host.component.html` delega titulo, periodo, selector Dia/Semana/Mes/Ano/Total, inputs de fecha y acciones `Exportar Excel`/`Actualizar` al componente nuevo.
+- `paramascotas-general-report` y `paramascotas-product-purchases` tambien reutilizan el toolbar, retirando controles de periodo duplicados con `style="max-width..."`.
+- `paramascotas-expenses-workspace` reutiliza el mismo toolbar en modo solo mes, sin selector segmentado ni botones extra.
+- El host conserva la logica de negocio (`setFinancialReportScope`, updates de periodo, exportacion y refresco), mientras el componente nuevo solo renderiza y emite eventos.
+- El componente acepta subtitulo propio y botones opcionales, de modo que sirve para reportes con exportacion y para vistas que solo necesitan selector de periodo.
+- Se eliminaron los anchos inline de los bloques financieros activos; las dimensiones de inputs y botones viven en CSS local con comportamiento responsive estable.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-financial-toolbar/paramascotas-financial-toolbar.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts`, `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-financial-toolbar/paramascotas-financial-toolbar.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-general-report/paramascotas-general-report.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-product-purchases/paramascotas-product-purchases.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal observado en aprox. `972.43 kB`.
+
+### 2026-06-25 - Dashboard QA: dialogos Paramascotas fuera del host de transicion
+
+Objetivo: seguir reduciendo el `ParamascotasTransitionHostComponent`, sacando del template grande los modales genericos de confirmacion y prompt.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-decision-dialog/` con `ParamascotasDecisionDialogComponent` y spec propia.
+- `paramascotas-transition-host.component.html` reemplaza los bloques `panelConfirmation()` y `panelPrompt()` por `<app-paramascotas-decision-dialog>`.
+- El host conserva la decision de negocio y los callbacks (`confirmPanelAction`, `confirmPanelPrompt`), pero ya no renderiza internamente la estructura modal.
+- Las reglas `paramascotas-decision*` se retiraron de `paramascotas-workspace-shared.css` y viven localmente en el componente nuevo para evitar duplicar CSS compartido.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-decision-dialog/paramascotas-decision-dialog.component.spec.ts --include src/app/features/dashboard/components/paramascotas-support-strip/paramascotas-support-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build deja el lazy chunk principal en aprox. `977.95 kB`, sin repetir el stylesheet compartido completo.
+
+### 2026-06-25 - Dashboard QA: soporte Paramascotas extraido del host de transicion
+
+Objetivo: seguir reduciendo el `ParamascotasTransitionHostComponent`, sacando del host un bloque presentacional de contexto/acciones verificadas sin cambiar el flujo operativo.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-support-strip/` con `ParamascotasSupportStripComponent` y spec propia.
+- `paramascotas-transition-host.component.html` ahora delega el strip superior a `<app-paramascotas-support-strip>`, pasando solo `surfaceMode` y `verifiedActions`.
+- Se retiraron `supportModeLabel()` y `supportModeDescription()` del host.
+- Las reglas CSS del support strip se movieron al componente nuevo y se retiraron de `paramascotas-workspace-shared.css`, evitando duplicar el stylesheet compartido completo en el chunk lazy.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-support-strip/paramascotas-support-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run build` y `git diff --check` en `Dashboard`.
+- El build confirmo que el lazy chunk principal quedo en aprox. `969.5 kB`; se evito el crecimiento accidental a aprox. `1.46 MB` que aparecia al reutilizar el CSS compartido completo dentro del componente nuevo.
+
+### 2026-06-25 - Dashboard SRI: modal de producto con footer siempre visible
+
+Objetivo: evitar que el modal de registro de productos SRI vuelva a sentirse cortado o deje botones fuera de alcance en pantallas bajas.
+
+Cambios:
+- `Dashboard/src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.css` ahora estructura el dialogo con header, formulario scrollable y footer fijo dentro del modal.
+- El scroll queda limitado al cuerpo del formulario (`overscroll-behavior: contain`), dejando `Cancelar` y `Guardar producto` visibles sin depender del scroll completo del backdrop.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run arch:check`, `npm run lint`, `npm run build` y `git diff --check` en `Dashboard`.
+
+### 2026-06-25 - Dashboard SRI: pantallas legacy de factura retiradas
+
+Objetivo: eliminar codigo viejo de `invoice-add`, `invoice-edit` e `invoice-preview` ahora que esas URLs publicas ya redirigen al flujo SRI real.
+
+Cambios:
+- Se eliminaron los componentes, templates, estilos y specs legacy de `Dashboard/src/app/features/business/pages/invoice-add/`, `invoice-edit/` e `invoice-preview/`.
+- `Dashboard/src/app/features/business/business.routes.ts` conserva el contrato publico con redirecciones: `invoice-add` e `invoice-edit` a `billing-services`, e `invoice-preview` a `invoice-list`.
+- `Dashboard/src/app/features/business/business.routes.spec.ts` protege que esas rutas sigan siendo solo redirecciones y no vuelvan a cargar pantallas paralelas.
+- `Dashboard/tools/check-architecture.mjs` ahora falla si reaparecen directorios legacy para esas pantallas SRI.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/business/business.routes.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts --include src/app/features/business/pages/invoice-list/invoice-list.component.spec.ts --include src/app/features/business/components/billing-product-picker-modal/billing-product-picker-modal.component.spec.ts --include src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.spec.ts`, `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: host Paramascotas como transicion, no pagina legacy
+
+Objetivo: sacar el ultimo host historico Paramascotas del arbol de `pages`, para que las rutas exactas no dependan de una pagina legacy llamada `paramascotas-panel`.
+
+Cambios:
+- `ParamascotasPanelComponent` se movio y renombro a `ParamascotasTransitionHostComponent` en `Dashboard/src/app/features/dashboard/components/paramascotas-transition-host/`.
+- `paramascotas-products-workspace` y `paramascotas-financial-workspace` son los unicos consumidores permitidos del host de transicion, usando `<app-paramascotas-transition-host>`.
+- Se elimino `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/`; el host ya no vive bajo `pages`.
+- `Dashboard/tools/check-architecture.mjs` ahora exige el host de transicion en `components`, bloquea referencias a `ParamascotasPanelComponent`, bloquea `<app-paramascotas-panel>` y falla si reaparece `pages/paramascotas-panel`.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md`, `Dashboard/src/app/features/ecommerce/README.md` y `Dashboard/src/app/tenants/paramascotasec/README.md` actualizan la lectura de transicion.
+
+Operacion y verificacion:
+- Pasaron `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: componentes compartidos fuera del panel legacy
+
+Objetivo: seguir desacoplando las vistas exactas de Paramascotas del host `ParamascotasPanelComponent`, sacando componentes reutilizados que aun vivian bajo `pages/paramascotas-panel/components`.
+
+Cambios:
+- Se movieron `paramascotas-order-detail-modal`, `paramascotas-product-preview-modal` y `paramascotas-product-editor-images` a `Dashboard/src/app/features/dashboard/components/`.
+- `ParamascotasPanelComponent`, `paramascotas-orders` y `paramascotas-shipping-workspace` ahora consumen esos componentes desde la carpeta compartida del feature, no desde el panel legacy.
+- `Dashboard/tools/check-architecture.mjs` ahora falla si reaparece `pages/paramascotas-panel/components` o si algun archivo importa desde `paramascotas-panel/components`.
+
+Operacion y verificacion:
+- Pasaron specs focales de los tres componentes movidos, `paramascotas-orders` y `paramascotas-shipping-workspace` (`5` archivos, `11` pruebas).
+- Pasaron `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: estilos Paramascotas fuera del componente legacy
+
+Objetivo: reducir la dependencia de vistas ya extraidas hacia `ParamascotasPanelComponent`, evitando que importen su CSS aunque ya tengan rutas/workspaces propios.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` se renombro a `Dashboard/src/app/features/dashboard/pages/paramascotas-workspace-shared.css`.
+- `ParamascotasPanelComponent` y las vistas exactas extraidas ahora consumen `paramascotas-workspace-shared.css` como capa comun, no el stylesheet del componente legacy.
+- `Dashboard/tools/check-architecture.mjs` ahora falla si reaparece `paramascotas-panel.component.css` o si alguna vista importa CSS desde `paramascotas-panel/paramascotas-panel.component.css`.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan que los estilos compartidos Paramascotas viven en `paramascotas-workspace-shared.css`.
+
+Operacion y verificacion:
+- Pasaron `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
+- `rg -n "paramascotas-panel.component.css|paramascotas-panel/paramascotas-panel.component.css" Dashboard/src/app Dashboard/docs Dashboard/tools` ya solo encuentra la regla preventiva en `check-architecture.mjs`.
+
+### 2026-06-25 - Backend QA: guardrail para rutas modulares
+
+Objetivo: evitar que los registries modulares vuelvan a exponer controladores legacy despues de cerrar la frontera HTTP de `src/Modules`.
+
+Cambios:
+- Se agrego `paramascotasec-backend/scripts/check_modular_routes.php`.
+- El verificador carga `src/Modules/*/routes.php`, exige handlers `App\Modules\<Modulo>\Controllers\*`, bloquea `App\Controllers\*`, valida clase/metodo, detecta duplicados `METHOD path` y compara el total con `config/routes.php`.
+- `scripts/check-paramascotas.sh` ahora ejecuta ese check despues de la sintaxis PHP del backend.
+
+Operacion y verificacion:
+- Se regenero el registro de capacidades con `npm run capabilities:generate` en `paramascotasec/app` despues de cambiar handlers de rutas.
+- Pasaron `php paramascotasec-backend/scripts/check_modular_routes.php`, `php -l paramascotasec-backend/scripts/check_modular_routes.php`, `bash -n scripts/check-paramascotas.sh` y `scripts/check-paramascotas.sh`.
+- El check reporta `OK modules=6 routes=147`.
+
+### 2026-06-25 - Backend QA: rutas modulares sin handlers legacy
+
+Objetivo: seguir cerrando la modularizacion del backend unico, evitando que los registries de `src/Modules/*/routes.php` publiquen controladores `App\Controllers\*` como frontera HTTP de los dominios.
+
+Cambios:
+- Se agregaron controladores puente dentro de `CatalogInventory`, `Commerce`, `IdentityPlatform` y `ReportingFinance` para reseñas, compras, datos de referencia, descuentos, POS, cotizaciones, envios, contacto, sesiones, health, CSP, inteligencia de inventario, gastos, cierres financieros y reportes recientes.
+- `src/Modules/CatalogInventory/routes.php`, `src/Modules/Commerce/routes.php`, `src/Modules/IdentityPlatform/routes.php` y `src/Modules/ReportingFinance/routes.php` ahora apuntan solo a handlers `App\Modules\...`.
+- La implementacion heredada sigue disponible detras de esos controladores puente hasta extraer repositorios y servicios por dominio con paridad completa.
+
+Operacion y verificacion:
+- `rg -n "App\\\\Controllers" paramascotasec-backend/src/Modules -g 'routes.php'` ya no devuelve coincidencias.
+- Pasaron `find paramascotasec-backend/src/Modules -path '*/Controllers/*.php' -type f -print0 | xargs -0 -n1 php -l` y `php -r '$routes=require "paramascotasec-backend/config/routes.php"; echo count($routes), PHP_EOL;'` con 147 rutas cargadas.
+- `php paramascotasec-backend/scripts/check_module_databases.php` no pudo ejecutarse en el PHP del host por falta de driver PDO PostgreSQL; debe correrse dentro del runtime backend o entorno PHP correcto.
+
+### 2026-06-25 - Dashboard QA: modal de producto SRI extraido
+
+Objetivo: reducir el ultimo bloque modal grande dentro de `billing-services`, separando el formulario de producto facturable, imagen, IVA, estado activo y acciones de guardado en un componente dedicado.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-product-modal/` con `BillingSriProductModalComponent`.
+- El componente renderiza datos fiscales del producto, precio/costo/stock/IVA, flags de exento/activo, vista previa de imagen, selector de archivo, URL y descripcion.
+- `billing-services.component.html` reemplaza el modal inline por `<app-billing-sri-product-modal>`.
+- El padre conserva validaciones de negocio, subida de imagen, creacion del producto, actualizacion de catalogo y carga al detalle de factura.
+- `uploadProductImageFromEvent` pasa a `uploadProductImageFile(File | null)` y se retiraron `setTaxExemptFromEvent`/`setProductActiveFromEvent`.
+- Se eliminaron del CSS del padre las clases de modal generico, formulario de producto e imagen (`.billing-services-modal*`, `.billing-services-product-form*`, `.billing-services-product-image*`).
+- Se agrego spec directo para render, cambios de campos texto/numero/checkbox, seleccion de imagen, acciones y estados bloqueados.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: modal de sucursal SRI extraido
+
+Objetivo: seguir reduciendo `billing-services`, sacando el modal de alta/edicion de sucursales fiscales a un componente dedicado con eventos de campo, cierre y guardado.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-branch-modal/` con `BillingSriBranchModalComponent`.
+- El componente renderiza establecimiento, punto de emision, nombre, direccion, flags de ambiente/reintentos/default/activa y acciones `Cancelar` / `Guardar sucursal`.
+- `billing-services.component.html` reemplaza el modal inline por `<app-billing-sri-branch-modal>`.
+- El padre conserva validacion fiscal, normalizacion de serie, permisos y persistencia mediante `saveBranch`.
+- Se retiro `setBranchCheckboxFromEvent`, el helper `checkboxValue` y la variante CSS `.billing-services-product-form--branch`.
+- Se agrego spec directo para render, cambios de campos, checkboxes, cierre, guardado y estado `Guardando`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-branch-modal/billing-sri-branch-modal.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: certificado SRI extraido de configuracion
+
+Objetivo: seguir reduciendo la configuracion fiscal dentro de `billing-services`, separando certificado `.p12`, contrasena, carga de archivo y credencial segura en una pieza dedicada.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-certificate-panel/` con `BillingSriCertificatePanelComponent`.
+- El componente renderiza estado del certificado, titular, vencimiento, campo de contrasena, selector `.p12` y resumen de credencial segura.
+- `billing-services.component.html` reemplaza el bloque inline por `<app-billing-sri-certificate-panel>`.
+- El componente hijo emite `File | null` al seleccionar certificado; `billing-services` conserva validaciones de contrasena, extension, tamano y llamada a `uploadCertificate`.
+- Se retiraron del CSS del padre `.billing-services-certificate-card` y `.billing-services-api-summary`, que ya no tenian consumidores vivos.
+- Se agrego spec directo para render, cambios de contrasena, seleccion de archivo y fallbacks seguros sin certificado.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-certificate-panel/billing-sri-certificate-panel.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: reintentos SRI por ambiente extraidos
+
+Objetivo: reducir repeticion y deuda visual en la configuracion fiscal de `billing-services`, separando las tarjetas de ambiente pruebas/produccion y reintentos en un componente dedicado.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-retry-settings-panel/` con `BillingSriRetrySettingsPanelComponent`.
+- El componente renderiza ambientes pruebas/produccion, activacion, reintentos automaticos, recuperacion activa, intentos, horas entre reintentos y ventana de dias.
+- `billing-services.component.html` reemplaza las dos tarjetas repetidas por `<app-billing-sri-retry-settings-panel>`.
+- Se retiraron del CSS del padre `.billing-services-environment-grid`, `.billing-services-environment-card`, `.billing-services-environment-card__head` y `.billing-services-switch`.
+- Se eliminaron handlers `setEnvironmentEnabledFromEvent` y `setRetryCheckboxFromEvent`; el componente hijo emite valores tipados y el padre conserva la normalizacion/guardado.
+- Se agrego spec directo para render, eventos de cambio y etiqueta singular/plural de horas.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-retry-settings-panel/billing-sri-retry-settings-panel.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: sucursales SRI extraidas de configuracion
+
+Objetivo: reducir la configuracion fiscal dentro de `billing-services`, separando el panel de sucursales SRI con sus estados, ambientes y acciones de alta/edicion.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-branches-panel/` con `BillingSriBranchesPanelComponent`.
+- El componente renderiza sucursales fiscales, badges de default/activa/pruebas/produccion, estado vacio y acciones `Nueva sucursal` / `Editar`.
+- `billing-services.component.html` delega el bloque a `<app-billing-sri-branches-panel>` y conserva solo el manejo de `openBranchModal`.
+- Se retiraron del CSS del padre `.billing-services-branches-panel`, `.billing-services-branch-list`, `.billing-services-branch-card` y `.billing-services-branch-card__badges`.
+- Se agrego spec directo para render de sucursales, permisos de escritura, eventos y estado vacio.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-branches-panel/billing-sri-branches-panel.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: resumen de comprobante SRI extraido
+
+Objetivo: continuar reduciendo `billing-services` sacando la ficha de comprobante activo y la ayuda de estado SRI a una pieza visual propia, sin duplicar reglas fiscales ni cambiar acciones del comprobante.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-document-summary/` con `BillingSriDocumentSummaryComponent`.
+- El componente renderiza cliente, total, IVA, fecha de emision, ambiente y texto de ayuda de estado SRI a partir de valores ya calculados por el padre.
+- `billing-services.component.html` reemplaza el bloque inline de resumen por `<app-billing-sri-document-summary>`.
+- Se retiraron del CSS del padre `.billing-services-selected-card` y `.billing-services-status-help`, dejando la responsividad del resumen dentro del componente dedicado.
+- Se agrego spec directo para estado con comprobante y estado vacio sin comprobante seleccionado.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-document-summary/billing-sri-document-summary.component.spec.ts --include src/app/features/business/components/billing-sri-service-status-card/billing-sri-service-status-card.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: estado tecnico SRI extraido
+
+Objetivo: seguir reduciendo `billing-services` separando el panel de estado tecnico del servicio SRI, sin exponer rutas protegidas ni mezclar estilos de salud/control dentro del workspace fiscal principal.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-service-status-card/` con `BillingSriServiceStatusCardComponent`.
+- El componente muestra salud del servicio, version, ultima respuesta y resumen de acciones protegidas, y emite la accion para abrir el modal de integraciones.
+- `billing-services.component.html` reemplaza el panel inline por `<app-billing-sri-service-status-card>`.
+- Se retiraron del CSS del padre las clases locales `.billing-services-health` y `.billing-services-control-grid`, conservando `.billing-services-api-summary` solo donde sigue viva en configuracion.
+- Se agrego spec directo para render, fallback sin respuesta y emision de `Ver integraciones`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-service-status-card/billing-sri-service-status-card.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: acciones del comprobante SRI extraidas
+
+Objetivo: seguir reduciendo el workspace fiscal `billing-services`, aislando la barra de acciones del comprobante activo para que sus permisos, estados y estilos no sigan mezclados con la logica API de la pagina.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-document-actions/` con `BillingSriDocumentActionsComponent`.
+- El componente concentra las acciones `Consultar SRI`, `RIDE PDF`, `XML`, `Correo prueba` y `Revisar reemision`, respetando permisos `canUpdate`, disponibilidad SRI y accion en ejecucion.
+- `billing-services.component.html` delega la barra a `<app-billing-sri-document-actions>` y el padre conserva solo handlers de API y estado de negocio.
+- Se retiro CSS muerto de `.billing-services-action-bar` y `.billing-services-action-button*`, dejando la responsividad de botones dentro del componente dedicado.
+- Se agrego spec directo para render por permisos, emision de eventos y bloqueo de acciones online cuando SRI no esta disponible.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-document-actions/billing-sri-document-actions.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: modal de reemision SRI extraido
+
+Objetivo: separar la accion peligrosa de anulacion/reemision del workspace `billing-services`, dejandola como componente dedicado, testeable y con bloqueo visual durante procesamiento.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-reissue-modal/` con `BillingSriReissueModalComponent`.
+- El componente muestra clave abreviada, referencia fiscal, motivo visible en auditoria y acciones `Cancelar` / `Anular y reemitir`.
+- El modal bloquea textarea, cierre y confirmacion mientras `processing` esta activo.
+- `billing-services.component.html` delega el modal a `<app-billing-sri-reissue-modal>` y el padre conserva solo validacion, API y estado de apertura.
+- Se retiro CSS muerto de `.billing-services-action-summary` y `.billing-services-modal--narrow`.
+- Se agrego spec directo para render, cambio de motivo, cancelar/confirmar y bloqueo durante procesamiento.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-reissue-modal/billing-sri-reissue-modal.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: modal de integraciones SRI extraido
+
+Objetivo: reducir mezcla tecnica dentro de `billing-services` moviendo el modal de acciones protegidas SRI a un componente propio con estilos y pruebas propias.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-integrations-modal/` con `BillingSriIntegrationsModalComponent`.
+- El modal conserva el contrato visible de integraciones: metodo, ruta interna y descripcion, sin exponer permisos crudos al usuario.
+- `billing-services.component.html` delega el modal a `<app-billing-sri-integrations-modal>` y el padre solo controla apertura/cierre.
+- Se retiraron de `billing-services` los helpers `endpointBadge`/`methodClass` y el CSS muerto de `.billing-services-contract*`/`.billing-services-method*`.
+- Se agrego spec directo para render de endpoints y cierre por backdrop, X y accion principal.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-integrations-modal/billing-sri-integrations-modal.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: estado SRI extraido del workspace fiscal
+
+Objetivo: reducir el tamaño y mezcla de `billing-services` separando el indicador de disponibilidad del SRI, que es una pieza funcional critica y visible para emision/consulta.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-availability-banner/` con `BillingSriAvailabilityBannerComponent`, estilos propios, estados `online/offline/checking/idle` y accion `Verificar SRI`.
+- `billing-services.component.html` ahora delega el banner a `<app-billing-sri-availability-banner>` usando las señales existentes de disponibilidad.
+- Se retiraron del CSS de `billing-services` los estilos locales `.billing-services-sri-banner*`, evitando que el banner dependa del componente padre.
+- Se agrego spec directo del banner para render, evento de verificacion y estado bloqueado mientras carga.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-availability-banner/billing-sri-availability-banner.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: navegacion SRI compartida
+
+Objetivo: evitar que `Documentos`, `Emision`, `Consultas`, `Productos`, `Clientes` y `Configuracion` vuelvan a declararse por separado entre la bandeja de facturas y el workspace de facturacion SRI.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/business/components/billing-sri-nav/` con `BillingSriNavComponent`, permisos SRI centralizados y responsive propio.
+- `invoice-list` y `billing-services` ahora usan `<app-billing-sri-nav>` en lugar de tener menus locales duplicados.
+- Se retiro CSS muerto de `.invoice-sri-nav` y `.billing-services-section-nav`.
+- Los tests de `invoice-list` y `billing-services` ahora validan el menu compartido; se agrego spec directo para `BillingSriNavComponent`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-sri-nav/billing-sri-nav.component.spec.ts --include src/app/features/business/pages/invoice-list/invoice-list.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: selector de productos SRI responsive y cubierto
+
+Objetivo: corregir el riesgo de recorte en el modal `Agregar productos a la factura`, especialmente en viewports estrechos donde el componente hijo no recibia las reglas responsive de la pagina `billing-services`.
+
+Cambios:
+- `billing-product-picker-modal.component.css` ahora contiene sus propias reglas responsive para convertir filas de productos en tarjetas, ocultar la cabecera tabular en movil, evitar columnas comprimidas y conservar botones completos.
+- El buscador del selector pasa a una sola columna en movil y el footer del modal conserva acciones completas sin depender de estilos del componente padre.
+- Se agrego `billing-product-picker-modal.component.spec.ts` para cubrir render del selector, resumen del detalle, busqueda y seleccion de producto.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/components/billing-product-picker-modal/billing-product-picker-modal.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint` y `git diff --check` en los archivos tocados de `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: servicio snapshot Paramascotas eliminado
+
+Objetivo: cerrar la limpieza del panel Paramascotas retirando el servicio legacy que seguia construyendo snapshots genericos de endpoints aunque ya no existiera catch-all ni UI consumidora.
+
+Cambios:
+- Se eliminaron `Dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts`, su spec y `Dashboard/src/app/features/dashboard/state/paramascotas-panel-data.service.ts`.
+- `paramascotas-panel.model.ts` deja solo el contrato de navegacion/host que usa la UI transicional; se retiraron tipos de endpoint, preview y snapshot.
+- `paramascotas-panel.registry.ts` vuelve a ser un derivado simple de `PARAMASCOTAS_PANEL_MANIFEST`, sin URLs al viejo `my-account` ni mapas de endpoints.
+- `paramascotas-panel.registry.spec.ts` protege la derivacion del manifiesto y las rutas, no la auditoria legacy de endpoints.
+- `Dashboard/tools/check-architecture.mjs` elimina la excepcion especial que permitia a ese servicio usar `apiCatalog.publicUrl/path` para firmas visuales.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run lint`, `npm run arch:check` y `npm run module:check` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: snapshot generico retirado del host Paramascotas
+
+Objetivo: limpiar codigo muerto despues de retirar el catch-all `paramascotas-panel/:group/:view`, evitando que el host transicional muestre `Fuentes 0/N` o conserve lecturas genericas que ya no tienen ruta activa.
+
+Cambios:
+- `ParamascotasPanelComponent` deja de inyectar `ParamascotasPanelDataService` y elimina `snapshot`, `loading`, `adminLoginUrl`, helpers de endpoints y el loader generico del panel anterior.
+- `paramascotas-panel.component.html` elimina la franja de fuentes/estado operativo basada en snapshot y el bloque final de lecturas verificadas que solo funcionaba para el catch-all eliminado.
+- La cabecera del host transicional ya no muestra un boton global `Actualizar`; Productos y Finanzas conservan sus acciones propias dentro de cada bloque.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run module:check` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: uso del host Paramascotas limitado por arquitectura
+
+Objetivo: impedir que `ParamascotasPanelComponent` vuelva a usarse como dependencia general ahora que solo debe sostener temporalmente Productos y Finanzas.
+
+Cambios:
+- `Dashboard/tools/check-architecture.mjs` valida que solo `paramascotas-products-workspace` y `paramascotas-financial-workspace` puedan importar o renderizar `ParamascotasPanelComponent`.
+- La regla permite seguir compartiendo el CSS existente del panel en workspaces ya extraidos, pero bloquea consumo del componente host transicional.
+
+Operacion y verificacion:
+- Paso `npm run arch:check` en `Dashboard`.
+
+### 2026-06-25 - Dashboard QA: catch-all Paramascotas retirado
+
+Objetivo: evitar que el panel generico `paramascotas-panel/:group/:view` vuelva a absorber pantallas nuevas o rutas mal escritas ahora que todas las vistas del manifiesto tienen ruta exacta.
+
+Cambios:
+- Se comprobo que los 28 items de `PARAMASCOTAS_PANEL_MANIFEST` tienen ruta exacta en `dashboard.routes.ts`.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` elimina la ruta comodin `:group/:view` bajo `paramascotas-panel`.
+- `dashboard.routes.spec.ts` ahora falla si reaparece el catch-all y valida que cada item del manifiesto tenga ruta exacta.
+- `Dashboard/tools/check-architecture.mjs` ahora tambien falla si reaparece el catch-all, si una ruta apunta directo a `ParamascotasPanelComponent` o si algun item del manifiesto no tiene ruta exacta.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` actualizan la regla operativa: las vistas del panel Paramascotas se declaran una por una; no hay catch-all para pantallas nuevas.
+
+Pendiente:
+- `ParamascotasPanelComponent` sigue existiendo como implementacion transicional para `catalog/products` y el bloque financiero; el siguiente paso real es extraer esas logicas internas sin perder paridad funcional.
+
+### 2026-06-25 - Dashboard QA: rutas financieras fuera del catch-all
+
+Objetivo: seguir reduciendo dependencia accidental de `paramascotas-panel/:group/:view` en las vistas financieras que aun quedaban dentro del panel generico.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara rutas exactas para `reporting/sales`, `reporting/balance`, `reporting/traceability` y `operations/balances` antes del catch-all.
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-financial-workspace/` agrega un workspace de transicion que fija el `ParamascotasPanelRouteKey` desde route data.
+- `dashboard.routes.spec.ts` protege que las cuatro rutas carguen `ParamascotasFinancialWorkspaceComponent` y conserven su route key canonico.
+- `ParamascotasPanelComponent` limpia `CONTEXTUAL_REFRESH_ITEM_IDS` para no declarar como propias vistas ya extraidas (`general`, `inventory`, `sales-ranking`).
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` reflejan la frontera real: las rutas ya son exactas, pero el bloque financiero todavia reutiliza `ParamascotasPanelComponent` hasta extraer ventas, balance, trazabilidad y cierres con paridad funcional.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check` y `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`.
+
+### 2026-06-25 - Dashboard QA: `catalog/products` con ruta exacta de transicion
+
+Objetivo: evitar que `catalog/products` siga dependiendo accidentalmente del catch-all `paramascotas-panel/:group/:view`, sin repetir la regresion anterior donde una lista generica reemplazo el editor real de productos.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `catalog/products` como ruta exacta antes del catch-all.
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-products-workspace/` agrega un workspace dedicado que fija el flujo a `catalog.products`.
+- `ParamascotasPanelComponent` acepta `fixedRouteKey` para abrir una vista concreta cuando lo consume un workspace dedicado.
+- `dashboard.routes.spec.ts` protege que `catalog/products` cargue `ParamascotasProductsWorkspaceComponent` antes de la ruta generica.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan la frontera real: Productos ya tiene ruta exacta, pero el editor completo todavia reutiliza `ParamascotasPanelComponent` hasta extraer compras, variantes, imagenes, publicacion e inventario con paridad funcional.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` enfocado en `Dashboard`.
+
+### 2026-06-25 - Dashboard SRI: copy operativo y reintentos en horas
+
+Objetivo: seguir puliendo Facturacion SRI para usuarios reales, quitando lenguaje tecnico visible y dejando claro que los reintentos fiscales no pueden ser menores a una hora.
+
+Cambios:
+- `Dashboard/src/app/features/business/pages/billing-services/billing-services.component.html/ts` reemplaza copy visible de `tenant`, `API`, `APISIX`, `development`, `QA` y rutas protegidas por lenguaje operativo de empresa activa, acciones protegidas e integraciones.
+- La configuracion de reintentos SRI ahora se edita como `Horas entre reintentos`; el componente convierte horas a `delay_seconds` para conservar el contrato backend y mantiene minimo de 1 hora.
+- El modal avanzado de integraciones ya no muestra `backendLabel` ni permisos internos como texto de usuario; conserva las rutas tecnicas solo al abrir la vista avanzada.
+- `Dashboard/src/app/features/business/pages/invoice-list/invoice-list.component.html` cambia textos de bandeja de facturas para hablar de empresa activa y facturas, no de API/tenant.
+- `Dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.ts` limpia los textos de RIDE/reemision para hablar de ambiente SRI de pruebas y no de backend/QA/endpoints.
+- El selector de productos facturables carga 50 resultados por busqueda desde `billing-services.component.ts`; el backend permite hasta 100 en `BillingDocumentController::products()` y `ProductRepository::searchForBilling()` preserva `has_more` con `limit + 1`.
+- `InvoicesApiService` limpia el ultimo mensaje visible de mutacion que hablaba de `tenant` y usa `empresa activa`.
+- Las pruebas E2E de auth, smoke e integraciones quedan alineadas con los nuevos nombres visibles de Facturacion SRI, consultas y selector de productos.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/services/paramascotas-billing-analytics.service.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts --include src/app/features/business/pages/invoice-list/invoice-list.component.spec.ts --include src/app/features/business/data/invoices-api.service.spec.ts`, `npm run lint`, `php -l src/Controllers/BillingDocumentController.php`, `php -l src/Repositories/ProductRepository.php`, `git -C Dashboard diff --check -- src/app/features/business/pages/billing-services src/app/features/business/pages/invoice-list src/app/features/business/data/invoices-api.service.ts` y `git -C paramascotasec-backend diff --check -- src/Controllers/BillingDocumentController.php src/Repositories/ProductRepository.php`.
+- La busqueda de textos tecnicos en pantallas SRI ya no encuentra `tenant actual`, `API del tenant`, `APISIX`, `development`, `Contratos API`, `rutas protegidas`, `segundos`, `Reintentos QA`, `Ambiente QA`, `Facturador QA/pruebas` ni `Estado y configuracion SRI`; las coincidencias restantes viven en pruebas que validan que esos textos no aparezcan o en documentacion historica.
+- `https://paramascotasec.com/dashboard/billing-services` y `https://paramascotasec.com/dashboard/invoice-list` responden 200 por APISIX en QA local, pero el gateway aun servia un build anterior; la validacion visual real requiere redeploy/build del Dashboard antes de dar por cerrada la revision UI.
+
+### 2026-06-25 - Dashboard QA: gastos fuera del panel legacy
+
+Objetivo: sacar `finance/expenses` del `ParamascotasPanelComponent` y dejar gastos como workspace dedicado, conservando en balance solo la lectura agregada necesaria de gastos y periodos.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-expenses-workspace/` agrega `ParamascotasExpensesWorkspaceComponent` con carga propia de gastos, recurrencias, periodos financieros, preview de cierre, reversos, ventas historicas y confirmaciones.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `finance/expenses` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar el bloque `expenses` y se retiraron imports, signals y mutaciones de alta/pago de gastos, recurrencias, reversos, cierre financiero y ventas historicas; el panel conserva solo resumen read-only para `Balance general`/`Balances`.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que `finance/expenses` vive en `paramascotas-expenses-workspace`, no en el panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run bundle:check` y `npm run bundle:hotspots -- --top=20`.
+- `npm run bundle:check` deja `main` en `489.2 kB / 550.0 kB` y `paramascotas-panel-component` en `425.2 kB` lazy; los mayores lazy chunks restantes son ApexCharts diferido.
+
+### 2026-06-25 - Dashboard QA: compras por producto fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando `reporting/products-purchases` del catch-all legacy y dejando ventas, compras, lotes y facturas de compra en un workspace dedicado.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-product-purchases/` agrega `ParamascotasProductPurchasesComponent` con carga propia de reporte, productos, pedidos, facturas de compra, detalle de lotes, modal de factura y exportacion.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `reporting/products-purchases` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `products-purchases` y se retiraron sus imports, signals, charts, helpers, modal de factura y sincronizacion de seleccion asociados a esa vista.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que productos x compra vive en `paramascotas-product-purchases`, no en el panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-product-purchases/paramascotas-product-purchases.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run bundle:check` y `npm run bundle:hotspots -- --top=20`.
+- `npm run bundle:check` deja `main` en `489.1 kB / 550.0 kB` y `paramascotas-panel-component` en `482.5 kB` lazy.
+
+### 2026-06-25 - Dashboard QA: fixtures fuera del bundle productivo y POS legacy retirado
+
+Objetivo: quitar fragilidad real del `main` de produccion y retirar codigo viejo de POS/cotizaciones que seguia dentro de `ParamascotasPanelComponent` despues de que esas rutas ya vivian en `paramascotas-sales-workspace`.
+
+Cambios:
+- `Dashboard/angular.json` reemplaza `src/app/app-fixture-handlers.ts` por `src/app/core/http/fixtures/app-fixture-handlers.production.ts` en build de produccion; development/testing conservan los fixtures completos.
+- `Dashboard/src/app/core/http/fixtures/app-fixture-handlers.production.ts` publica `APP_FIXTURE_HANDLERS` vacio para que datos demo, monitoring, usuarios, workspace y billing fixtures no entren al bundle inicial productivo.
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` retira imports, signals, loaders, helpers y mutaciones POS/cotizaciones que ya no tienen template ni ruta activa dentro del catch-all legacy.
+- Se confirmo con busqueda que el panel legacy ya no referencia `localSale`, `quotation`, `pos`, `AdminNative` ni helpers asociados.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint` y `npm run bundle:check` en `Dashboard`.
+- `npm run bundle:check` deja `main` en `489.0 kB / 550.0 kB` y `paramascotas-panel-component` en `510.9 kB` lazy.
+
+### 2026-06-25 - Dashboard QA: precios fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando `finance/prices`, `finance/margins`, `finance/calculations` y `finance/pricing-rules` del catch-all legacy y corrigiendo la documentacion que aun presentaba `Facturador` como fallback orquestado.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-pricing-workspace/` agrega `ParamascotasPricingWorkspaceComponent` con auditoria de PVP, margenes, simulador de calculo, reglas comerciales, busqueda, filtros de riesgo, graficas y navegacion hacia `Productos`.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `finance/prices`, `finance/margins`, `finance/calculations` y `finance/pricing-rules` como rutas exactas antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar precios y se retiraron sus signals, computed, loaders y metodos especificos de `prices`, `margins`, `calculations` y `pricing-rules`.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que el workspace de precios vive fuera del panel generico.
+- `Facturador/module.json` queda marcado como runtime legacy standalone, sin soporte orquestado ni fallback HTTP; en modo orquestado el owner operativo es `platform-core/Billing`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-pricing-workspace/paramascotas-pricing-workspace.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `jq empty Facturador/module.json` y busqueda de referencias legacy de precios en `ParamascotasPanelComponent`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `537.5 kB` lazy y `main` dentro de presupuesto en `550.0 kB / 550.0 kB`.
+
+### 2026-06-25 - Dashboard QA: impuestos fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando `finance/taxes` del catch-all legacy sin romper el IVA que todavia usan Productos y Precios.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-tax-settings/` agrega `ParamascotasTaxSettingsComponent` con resumen fiscal, graficas, productos con impacto, revision fiscal, parametros de IVA/credito y contexto de envios.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/finance/taxes` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `taxes` y se retiraron sus estados, computed, metodos y loader especificos de impuestos; conserva `taxSettings` y `taxAnalytics` porque `Productos` y `Precios` siguen necesitando IVA.
+- Las rutas lazy extraidas usan barrels `index.ts` con alias corto `C` para mantener `main` dentro del presupuesto sin relajar limites.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que `Impuestos` vive fuera del panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-tax-settings/paramascotas-tax-settings.component.spec.ts`, `npm run bundle:check`, busqueda de referencias legacy de `taxes` en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `571.3 kB` lazy y `main` dentro de presupuesto en `549.7 kB / 550.0 kB`.
+
+### 2026-06-25 - Dashboard QA: envios y mapa fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la operacion logistica de envios/mapa del catch-all legacy y dejandola como workspace dedicado.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-shipping-workspace/` agrega `ParamascotasShippingWorkspaceComponent` con carga de tarifas, cobertura, proveedores, recogidas, pedidos de entrega/retiro, guardado de configuracion y detalle de pedido.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/operations/shipments` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `shipments` y se retiraron sus estados, computed, metodos y loader especificos de envios; conserva `shippingSettings` solo como dato auxiliar de `Impuestos`.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que `Envios y mapa` vive fuera del panel generico.
+- `dashboard.routes.ts` deduplica la metadata de rutas demo de graficas contra `privateDashboardTemplateRoute` para mantener `main` dentro del presupuesto sin subir limites.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-shipping-workspace/paramascotas-shipping-workspace.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy de `shipments` en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `588.3 kB` lazy y `main` dentro de presupuesto en `550.0 kB / 550.0 kB`.
+
+### 2026-06-25 - Dashboard QA: catalogos operativos fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la administracion de listas maestras e imagenes publicas de categorias/marcas del catch-all legacy.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-reference-catalogs/` agrega `ParamascotasReferenceCatalogsComponent` con KPIs, filtros, graficas, edicion de listas, media de categorias/marcas, proveedores y guardado por API.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/catalog/catalogs` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `catalogs` y se retiraron sus estados, metodos y loader especificos de edicion de catalogos; conserva `referenceData` solo como dato auxiliar para productos, compras y proveedores.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que catalogos operativos vive fuera del panel generico; tambien corrigen la lista para no afirmar que `catalog/products` esta delegado cuando actualmente sigue en el catch-all por paridad funcional.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-reference-catalogs/paramascotas-reference-catalogs.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy de `catalogs` en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `607.7 kB` lazy, frente a `648.8 kB` antes de extraer catalogos; `main` queda dentro de presupuesto en `550.0 kB / 550.0 kB`.
+
+### 2026-06-25 - Dashboard QA: ficha de producto fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la configuracion comun de ficha publica de producto del catch-all legacy.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-product-page-settings/` agrega `ParamascotasProductPageSettingsComponent` con preview de producto, salud de ficha, textos visibles y guardado de configuracion comun.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/catalog/product-page` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `product-page` y se retiraron sus señales, computed, metodos y loader especificos de ficha.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que ficha de producto vive fuera del panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-product-page-settings/paramascotas-product-page-settings.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `648.8 kB` lazy, frente a `658.8 kB` antes de extraer ficha de producto; `main` queda dentro de presupuesto en `550.0 kB / 550.0 kB`.
+
+### 2026-06-25 - Dashboard QA: cupones fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent` y separar la gestion de cupones/descuentos en una ruta dedicada.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-discount-codes/` agrega `ParamascotasDiscountCodesComponent` con listado, filtros, graficas, creacion/edicion, activacion/desactivacion y auditoria de cupones.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/finance/discount-codes` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `discount-codes` y se retiraron sus imports, señales, computed, metodos, loader y helpers de formulario de cupones.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que cupones vive fuera del panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `658.8 kB` lazy, frente a `684.4 kB` antes de extraer cupones.
+
+### 2026-06-25 - Dashboard QA: seguridad de sesion fuera del panel legacy
+
+Objetivo: seguir reduciendo el catch-all `ParamascotasPanelComponent` y separar la configuracion de sesiones en una ruta dedicada.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-security-settings/` agrega `ParamascotasSecuritySettingsComponent` con carga/guardado de sesiones via `ParamascotasAdminDataService`.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/monitoring/security-settings` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de renderizar `security-settings` y se retiraron sus imports, señales, computed, metodos e inyeccion de analitica de sesion.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que seguridad de sesion vive fuera del panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-security-settings/paramascotas-security-settings.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+- `npm run bundle:check` deja `paramascotas-panel-component` en `684.4 kB` lazy, frente a `697.1 kB` antes de extraer seguridad.
+
+### 2026-06-25 - Dashboard QA: reporte de inventario fuera del panel legacy
+
+Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la lectura ejecutiva de inventario de la operacion diaria y del catch-all legacy.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-inventory-report/` agrega `ParamascotasInventoryReportComponent` como workspace dedicado para KPIs, riesgo, plan de compra, categorias, facturas recientes y tabla filtrable de inventario.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/reporting/inventory-report` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `ParamascotasPanelComponent` deja de cargar y renderizar `inventory-report`; la operacion diaria queda en `catalog/inventory` y las acciones del reporte abren ese modulo para compras, ajustes y fichas.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que el reporte de inventario ya no vive en el panel generico.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-inventory-report/paramascotas-inventory-report.component.spec.ts`, `npm run lint`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
+
+### 2026-06-25 - Backend QA: nombres internos Billing sin runtime Facturador
+
+Objetivo: reducir deuda semantica que podia reintroducir el runtime fiscal viejo, dejando el backend alineado con Billing SRI nativo dentro de `platform-core`.
+
+Cambios:
+- `FacturadorApiException` se renombro a `BillingApiException` y las referencias en controladores/gateway nativo usan el nuevo nombre de dominio.
+- `OrderController` cambio metodos, variables y logs internos de `Facturador` a `Billing`, manteniendo el contrato fiscal y la emision automatica por estado.
+- Las nuevas escrituras de metadata de facturacion en pedidos usan `provider=billing-sri` en lugar de `facturador`.
+- `BillingDocumentController` usa variables/helpers `billing*` y el texto de ajuste de stock ya habla de Billing SRI.
+- Los wrappers `scripts/deploy-development.sh` y `scripts/deploy-production.sh` agregan el servicio `billing` y rechazan `facturador` como despliegue normal del workspace orquestado.
+- La seccion operativa de despliegue documenta `billing` como alias del backend actual de Billing SRI.
+
+Operacion y verificacion:
+- Pasaron `php -l` en `BillingApiException.php`, `NativeBillingGateway.php`, `PublicBillingController.php`, `BillingDocumentController.php` y `OrderController.php`.
+- `class_exists(App\\Services\\BillingApiException)` pasa con el autoload actual.
+- Pasaron `bash -n` de wrappers/scripts tocados, `./scripts/check-env-secrets.sh development` y busqueda de referencias activas `Facturador*` en `paramascotasec-backend/src`.
+
+### 2026-06-25 - Workspace QA: rotacion de secretos alineada a Billing nativo
+
+Objetivo: corregir deuda operativa que aun trataba a Facturador como runtime activo durante rotacion de secretos y podia dejar Billing nativo con credenciales desfasadas.
+
+Cambios:
+- `scripts/rotate-owned-secrets.sh` ahora resuelve archivos `entorno/.env`, actualiza `Gateway/entorno/.env` junto con frontend/backend y deja de tocar `Facturador/entorno/.env`.
+- La rotacion ya no ejecuta `docker compose up` directo ni reintenta levantar `billing-service`, `billing-recovery-worker` o `nginx` del runtime legacy.
+- La rotacion materializa `DB_DATABASE_BILLING=billing_service`, `DB_USERNAME_BILLING` y `DB_PASSWORD_BILLING` en el backend para que el worker fiscal nativo use las mismas credenciales del rol runtime actual.
+- `paramascotasec-backend/scripts/common.sh` y `templates/entorno/.env.example` declaran explicitamente la DB logica Billing, usuario y password de Billing nativo.
+- `scripts/check-env-secrets.sh` ahora falla si `DB_DATABASE_BILLING` no es `billing_service` o si `DB_USERNAME_BILLING` deriva del usuario runtime esperado.
+
+Operacion y verificacion:
+- Pasaron `bash -n` en `scripts/rotate-owned-secrets.sh`, `scripts/check-env-secrets.sh` y `paramascotasec-backend/scripts/common.sh`.
+- Pasaron `./scripts/check-env-secrets.sh development` y `git diff --check` en los repos afectados.
+
+### 2026-06-25 - Dashboard QA: `catalog/inventory` fuera del panel legacy
+
+Objetivo: seguir retirando ownership accidental del `paramascotas-panel`, despues de confirmar que `catalog/inventory` ya entra por ruta exacta a `InventoryListComponent`.
+
+Cambios:
+- `ParamascotasPanelComponent` deja de activar ramas compartidas para `item.id === 'inventory'`; conserva solo `inventory-report`, que todavia no fue extraido.
+- El template del panel ya no renderiza la operacion diaria de inventario desde el catch-all.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` documenta que `catalog/inventory` vive en `InventoryListComponent` y que el panel conserva solo `reporting/inventory-report`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run bundle:check` y `git diff --check`.
+- El mayor lazy chunk `paramascotas-panel-component` queda en `736.7 kB / 800.0 kB`.
+
+### 2026-06-25 - Dashboard QA: `billing-rides` fuera del panel legacy
+
+Objetivo: seguir reduciendo el `paramascotas-panel` monolitico, retirando codigo muerto de facturas/RIDE despues de confirmar que `operations/billing-rides` ya entra por ruta exacta a `InvoiceListComponent`.
+
+Cambios:
+- `ParamascotasPanelComponent` deja de renderizar el bloque interno `item()?.id === 'billing-rides'`.
+- Se eliminaron del panel legacy los signals, loaders, filtros, graficos y helpers de `billing-rides`.
+- `CONTEXTUAL_REFRESH_ITEM_IDS` ya no incluye `billing-rides`; la ruta dedicada sigue protegida en `dashboard.routes.ts` antes del catch-all.
+- `Dashboard/docs/ARCHITECTURE.md` aclara que `Facturas/RIDE` se resuelve en `InvoiceListComponent`, no dentro del catch-all legacy.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run bundle:check`, `scripts/check-container-connectivity.sh development` y `git diff --check`.
+- El mayor lazy chunk `paramascotas-panel-component` queda en `736.8 kB / 800.0 kB`.
+
+### 2026-06-25 - Docs QA: diagrama de red alineado a backend unico
+
+Objetivo: evitar que la documentacion visible contradiga la arquitectura actual, mostrando un runtime fiscal paralelo cuando Billing SRI ya vive dentro de `platform-core`.
+
+Cambios:
+- `Dashboard/docs/diagrams/paramascotas-containers-network.html` deja de mostrar `billing-nginx`, `billing-service`, puerto local `127.0.0.1:8084` y DB fiscal paralela como flujo activo.
+- El diagrama ahora presenta `platform-core/Billing`, `Billing\\Native`, `paramascotasec-backend-billing-worker` y `billing_service @ next-test-db`.
+- `MODULAR-ORCHESTRATION.md` aclara que `Facturador/module.json` puede existir como referencia legacy/standalone historica, pero no como runtime activo del modo orquestado.
+
+Operacion y verificacion:
+- Pasaron `npm run module:check` y `git diff --check` en `Dashboard`.
+
+### 2026-06-25 - Dashboard SRI: endpoint keys internos sin `facturador-*`
+
+Objetivo: terminar de alinear el contrato interno del Dashboard con Billing SRI dentro de `platform-core`, retirando nombres heredados `facturador-*` de los API keys y aliases TypeScript sin cambiar rutas HTTP publicas ni privadas.
+
+Cambios:
+- `dashboard-api.config.ts` renombra los endpoints SRI a claves de dominio como `billing-sri.health`, `billing-sri.invoices.emit`, `billing-sri.invoices.from-products`, `billing-sri.rides`, `billing-sri.invoices.status`, `billing-sri.invoices.xml`, `billing-sri.rides.pdf`, `billing-sri.rides.mail-test` y `billing-sri.rides.cancel-reissue`.
+- `DASHBOARD_API_ENDPOINT_KEYS.billingSri` cambia aliases `facturador*` por `health`, `emit`, `emitProducts`, `rides`, `source`, `status`, `xml`, `ridePdf`, `mailTest` y `cancelReissue`.
+- `BillingFacturadorHealth` pasa a `BillingSriHealth` en API service, facade, fixtures y componente.
+- Las rutas siguen intactas bajo `admin/billing/...`; solo cambio la nomenclatura interna del Dashboard.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run module:check` y pruebas focales `dashboard-api-catalog.service.spec.ts`, `dashboard-modules.config.spec.ts`, `dashboard-module-registry.service.spec.ts` y `billing-services.component.spec.ts`.
+
+### 2026-06-25 - Dashboard SRI: consultas separadas de configuracion y topologia sin Facturador activo
+
+Objetivo: corregir la lectura confusa del modulo SRI, donde consulta de comprobantes, estado, certificado, sucursales y reintentos aparecian como una sola superficie, y retirar lenguaje visible que todavia insinuaba un runtime Facturador paralelo.
+
+Cambios:
+- `/billing-status` queda como `Consultas SRI`: busqueda por referencia/clave, estado SRI, RIDE, XML, correo y comprobantes recientes.
+- Se agrega `/billing-configuration` como superficie de `Configuracion SRI`: certificado `.p12`, identidad fiscal, sucursales, ambientes y reintentos.
+- La navegacion SRI del Dashboard y de la bandeja de facturas ahora separa `Documentos`, `Emision`, `Consultas`, `Productos`, `Clientes` y `Configuracion` segun permisos.
+- `/billing-status` usa permiso de lectura; `/billing-configuration`, productos y clientes conservan permiso de actualizacion.
+- `/module-topology` y textos operativos dejan de presentar `Facturador` como runtime activo; Billing SRI queda bajo `platform-core` en los fixtures de topologia.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint` y pruebas focales `billing-services.component.spec.ts`, `invoice-list.component.spec.ts`, `dashboard-modules.config.spec.ts`, `dashboard-module-registry.service.spec.ts`, `navigation.service.spec.ts` y `module-topology.component.spec.ts`.
+
+### 2026-06-25 - Backend SRI: errores XML/RIDE sin detalles internos
+
+Objetivo: evitar que la consulta o descarga de XML/RIDE exponga errores crudos del runtime fiscal, URLs internas o codigos `UPSTREAM` al usuario/API cuando el documento autorizado aun no esta disponible.
+
+Cambios:
+- `BillingDocumentController::xml()` ya responde con mensaje operativo, codigo `BILLING_XML_NOT_AVAILABLE` y `retry_after_seconds=3600` cuando el XML autorizado esta pendiente o vacio.
+- `BillingDocumentController::ridePdf()` aplica el mismo criterio para RIDE con `BILLING_RIDE_PDF_NOT_AVAILABLE`, sin propagar el mensaje interno de la excepcion fiscal.
+- `PublicBillingController::runFile()` sanitiza tambien los errores de documentos de la API fiscal publica, evitando que respuestas publicas filtren endpoints internos.
+- `Response::shouldExposeServerMessage()` permite solo los mensajes 5xx seguros de `BILLING_XML_FAILED` y `BILLING_RIDE_PDF_FAILED`, ya sanitizados por el controlador.
+
+Operacion y verificacion:
+- Pasaron `php -l` en `src/Core/Response.php`, `src/Controllers/BillingDocumentController.php` y `src/Modules/Billing/Controllers/PublicBillingController.php`.
+- Pasaron pruebas focales Dashboard SRI: `billing-services.component.spec.ts`, `invoices-api.service.spec.ts` e `invoice-list.component.spec.ts`.
+- Se verifico por reflexion que una excepcion con `http://facturador:8080/...` devuelve `El XML autorizado aun no esta disponible...`, codigo `BILLING_XML_NOT_AVAILABLE` y detalle seguro con `retry_after_seconds: 3600`.
+
+### 2026-06-25 - Dashboard SRI: XML/RIDE solo accionables cuando corresponde
+
+Objetivo: evitar que la bandeja de facturas envie al usuario a pestañas con errores JSON cuando intenta abrir XML o RIDE de comprobantes pendientes o sin documento disponible.
+
+Cambios:
+- `invoice-list` ahora muestra RIDE/XML como acciones deshabilitadas con motivo claro cuando no hay clave SRI o el comprobante aun no esta autorizado.
+- El modal de detalle usa la misma regla y muestra `RIDE pendiente` / `XML pendiente` en lugar de enlaces prematuros.
+- `InvoicesApiService` corrige `pdfAvailable`: si `pdf_exists=false` pero `pdf_can_generate=true`, el RIDE se trata como disponible porque el backend puede generarlo bajo demanda.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `git diff --check` y pruebas focales `invoice-list.component.spec.ts`, `invoices-api.service.spec.ts`, `billing-services.component.spec.ts`.
+
+### 2026-06-25 - Dashboard QA: rutas Paramascotas, E2E y bundle verificados
+
+Objetivo: corregir la regresion creada al extraer `catalog/products` hacia un componente generico sin paridad funcional, mantener el workspace real de productos Paramascotas y bajar nuevamente el bundle del panel monolitico.
+
+Cambios:
+- `/dashboard/paramascotas-panel/catalog/products` vuelve al catch-all `ParamascotasPanelComponent` porque el componente generico `ProductsListComponent` no cubre compra/reabastecimiento, variantes, publicacion por identidad interna ni el editor completo que usan los E2E reales.
+- Se repuso `ParamascotasProductEditorImagesComponent` dentro de `ParamascotasPanelComponent`, necesario para compilar el editor completo de productos.
+- `privateRouteSourceRoute` ahora acepta `routeData` opcional para metadata visual segura sin romper el contrato central de modulo/permisos; `monitoring/alerts` lo usa para titular la vista como `Alertas`.
+- Se retiraron del template monolitico los bloques inalcanzables de `alerts`, `users` y `admin-orders`, que ya tienen rutas dedicadas, bajando `paramascotas-panel-component` por debajo del presupuesto.
+- Se retiro tambien del TypeScript del panel la carga interna de `alerts`, `users` y `admin-orders`, junto con estado/metodos muertos de alertas y usuarios; esas superficies quedan exclusivamente en sus rutas dedicadas.
+- El E2E de usuarios se alineo al workspace actual `users-workspace`/`user-roster-item`, no a la tabla legacy, manteniendo la regla de no mostrar `paramascotas-user-card`.
+
+Operacion y verificacion:
+- Pasaron Playwright focal `paramascotas-list-views.spec.ts --grep "paramascotas catalog (products uses list view|users uses tenant roster workspace)"`, `npm run verify` completo en Dashboard y `git diff --check`. Tras la limpieza TS adicional pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run bundle:check`, `git diff --check` y el mismo Playwright focal; el bundle de produccion quedo con lazy mayor `paramascotas-panel-component` en `773.0 kB / 800.0 kB`.
+
+### 2026-06-25 - Dashboard QA: e2e alineado a IdentityPlatform y modal SRI verificado
+
+Objetivo: corregir pruebas reales que aun leian usuarios/OTP desde la base legacy `paramascotasec` y dejar verificada en navegador la correccion visual del selector de productos SRI.
+
+Cambios:
+- `tests/e2e/paramascotas-real-auth.spec.ts` y `tests/e2e/paramascotas-product-modal-real.spec.ts` ahora consultan fixtures de usuarios, OTP y roles en `identity_platform`, coherente con `UserRepository`.
+- El e2e de asignacion de modulos usa locators mas precisos para `Roles` y `APIs`, evitando ambiguedad entre navegacion y acciones rapidas.
+- La verificacion del modal SRI protege el resumen actual `Detalle de factura`, unidades, subtotal, IVA, total, cantidad editable, importe visible y boton de eliminar.
+- Se limpiaron fixtures residuales `qa.platform.modules.*@tecnolts.com` que habian quedado por el helper apuntando a la DB equivocada.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run module:check`, `git diff --check` y Playwright focal `paramascotas-real-auth.spec.ts --grep "platform admin module assignment persists"`.
+
+### 2026-06-25 - Backend QA: guardrail de ownership de bases logicas
+
+Objetivo: evitar regresiones en la modularizacion de datos, verificando automaticamente que cada dominio del `platform-core` escriba en su base logica dedicada y que la compatibilidad FDW no se convierta en ownership compartido.
+
+Cambios:
+- Se agrego `paramascotasec-backend/scripts/check_module_databases.php` para validar conexiones por modulo, tablas owner locales, tablas ajenas como foreign tables FDW y ausencia de foreign keys fisicas cross-domain.
+- `scripts/check-container-connectivity.sh` reemplaza su check PHP embebido por el nuevo script backend reusable.
+- `scripts/check-paramascotas.sh` ahora incluye la etapa `Module database ownership`, por lo que el smoke principal falla si una base modular vuelve a mezclarse.
+
+Operacion y verificacion:
+- Pasaron `php -l`, `bash -n`, redeploy backend development, `php scripts/check_module_databases.php` dentro del contenedor, `scripts/check-container-connectivity.sh development` y `scripts/check-paramascotas.sh`.
+
+### 2026-06-25 - Backend Mailer: modulo tecnico con outbox y auditoria
+
+Objetivo: avanzar el pendiente de `mailer_service`, dejando de tratarlo como una reserva pasiva y activandolo como frontera tecnica real del `platform-core` sin exponer todavia la feature comercial `email-service` como workspace operativo.
+
+Cambios:
+- Se agrego `src/Modules/Mailer/routes.php` al agregador central de rutas y se crearon endpoints admin `GET /api/admin/mailer/health`, `GET /api/admin/mailer/outbox` y `GET /api/admin/mailer/delivery-log`.
+- `EmailOutboxRepository` persiste en `mailer_service.EmailOutbox` y `mailer_service.EmailDeliveryLog` cada intento de correo del backend, con estados `pending`, `sent` y `failed`.
+- `MailService::send()` y `MailService::sendWithAttachment()` conservan el contrato actual de Auth, contacto y cotizaciones, pero ahora registran auditoria en el modulo Mailer; una falla de auditoria no bloquea el envio.
+- La capacidad `mail.service` queda registrada en el capability registry y `TenantAccessService` la mapea a permisos `email-service.*`, manteniendo la feature visible `email-service` como planned si el tenant no la tiene habilitada.
+
+Operacion y verificacion:
+- Pasaron `php -l` sobre los archivos PHP tocados y `npm run capabilities:generate` en `paramascotasec/app`.
+
+### 2026-06-25 - Dashboard SRI: lenguaje operativo sin Facturador legacy
+
+Objetivo: alinear la interfaz con la arquitectura actual donde Billing SRI vive dentro del backend unico, evitando que usuarios vean referencias al runtime legacy `Facturador` en pantallas operativas.
+
+Cambios:
+- Textos visibles de Billing en Dashboard ahora hablan de `servicio SRI`, `modulo SRI`, `Facturacion SRI` o `Catalogo SRI` segun el contexto.
+- `dashboard-api.config.ts`, permisos de tenant, catalogo de modulos, bandeja SRI, selector de productos, marketplace y mensajes de errores fiscales dejaron de presentar `Facturador` como owner visible.
+- Se mantuvieron identificadores internos existentes como `facturador-*` y tipos TS heredados para no romper contratos ni rutas publicas.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, pruebas focales de Billing/roles/permisos/invoices, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en Dashboard.
+
+### 2026-06-25 - Dashboard SRI: detalle editable en selector de productos
+
+Objetivo: mejorar la experiencia real de emision SRI corrigiendo el selector de productos que antes dejaba el detalle cargado como resumen pasivo y con total poco contextual.
+
+Cambios:
+- `BillingProductPickerModalComponent` ahora muestra resumen fiscal separado por unidades, subtotal, IVA y total, en lugar de presentar el monto como dato suelto.
+- Las lineas del detalle dentro del modal permiten editar cantidad y quitar productos sin cerrar el selector.
+- `BillingServicesComponent` cablea esos eventos al carrito fiscal existente (`updateCartQuantity` y `removeCartLine`), por lo que el payload de emision usa la cantidad editada desde el modal.
+- La accion `Usar detalle cargado` queda deshabilitada si no hay productos, evitando cierres ambiguos del modal vacio.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` en Dashboard.
+
+### 2026-06-25 - Backend Billing: dispatcher de eventos fiscales nativos
+
+Objetivo: cerrar el TODO de eventos de dominio que quedo en Billing nativo despues de asimilar Facturacion SRI dentro de `platform-core`, dejando soporte real para auditoria e integraciones futuras sin depender del runtime Facturador.
+
+Cambios:
+- Se agrego `DomainEventDispatcher` y `PostgresDomainEventDispatcher` dentro de `BillingService`, con persistencia en `billing_service.billing_domain_events` e indices por clave de acceso y cliente/evento.
+- `EmitInvoice` ahora registra eventos `invoice.rejected`, `invoice.authorized` e `invoice.emitted` en los puntos fiscales correspondientes.
+- `CheckInvoiceStatus` registra `invoice.authorized` cuando una consulta cambia o completa autorizacion, y `invoice.rejected` cuando el SRI responde `NO AUTORIZADO`.
+- `NativeBillingGateway` cablea el dispatcher persistente al construir los casos de uso nativos.
+- El registro de eventos es no bloqueante para el usuario: si falla, queda logueado y la emision/consulta fiscal continua.
+
+Operacion y verificacion:
+- Pasaron `php -l` de los archivos Billing tocados, autoload de las nuevas clases, prueba focal de escritura/eliminacion en `billing_domain_events`, `./scripts/deploy-development.sh backend`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh`, `scripts/e2e-development.sh` y `git diff --check`.
+
+### 2026-06-25 - QA cleanup: SEO de catalogo y fallback legacy de APISIX
+
+Objetivo: corregir problemas detectados despues del cierre modular, especialmente warnings SEO del catalogo local y una ruta de configuracion que aun podia aceptar credenciales legacy del Facturador.
+
+Cambios:
+- `ProductRepository` aplica `ProductSeoMetadata::applyDefaults()` al formatear productos, por lo que productos existentes y futuros salen por API con `seoTitle`, `seoDescription`, `seoImageAlt` y terminos de busqueda consistentes aunque la fila antigua no tenga esos atributos completos.
+- `Gateway/scripts/sync-apisix.sh` ya no acepta `FACTURADOR_API_KEY` como fallback; la proteccion externa de facturacion usa `GATEWAY_BILLING_API_KEY` o `BILLING_API_KEY`.
+- `scripts/check-env-secrets.sh` falla si compose/backend/gateway vuelven a exponer `FACTURADOR_API_KEY`, `FACTURADOR_API_URL`, `FACTURADOR_UPSTREAM` o fallback legacy en el sync de APISIX.
+- Se retiro `FACTURADOR_API_KEY` del `.env` local del backend development para que los contenedores activos no hereden variables legacy.
+
+Operacion y verificacion:
+- Se redeplegaron `backend` y `gateway` con `./scripts/deploy-development.sh backend` y `./scripts/deploy-development.sh gateway`.
+- Verificado que `paramascotasec-backend-app` no expone variables `FACTURADOR_*`.
+- Pasaron `php -l`, `bash -n`, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh` y `scripts/e2e-development.sh`.
+- El audit SEO local por APISIX quedo en `missingFieldCount: 0` y `manualSeoWarnings: []`.
+
+### 2026-06-25 - Backend QA: bases logicas dedicadas para dominios del Core API
+
+Objetivo: cerrar la transicion en la que `paramascotasec-main` seguia apareciendo como owner temporal de IdentityPlatform, CatalogInventory, Commerce y ReportingFinance, y activar `mailer_service` como frontera tecnica real del backend.
+
+Cambios:
+- `paramascotasec-backend/config/module-databases.php` resuelve `identity-platform`, `catalog-inventory`, `commerce`/`commerce-orders`, `billing`/`billing-sri`, `reporting-finance` y `mailer-service`/`email-service` como stores dedicados.
+- `paramascotasec-DB/config/module-databases.json` deja `billing_service` bajo `billing-sri` con rol del backend; ya no depende del `.env` del runtime legacy `Facturador`.
+- `bootstrap_module_databases.php` crea/copia las tablas owner por dominio en `identity_platform`, `catalog_inventory`, `commerce_orders`, `reporting_finance` y `mailer_service`, y usa FDW solo como compatibilidad temporal para consultas cross-domain existentes.
+- El bootstrap modular limpia foreign tables heredadas antes de aplicar esquema y omite la FK fisica `InventoryLotAllocation_order_item_id_fkey`; inventario conserva `order_item_id` como ID estable de Commerce, no como foreign key entre bases.
+- Repositorios de usuarios/auth/settings, catalogo/inventario, commerce/POS/descuentos/cotizaciones, reporting/gastos y contacto/correo usan `Database::getModuleInstance(...)` hacia su base logica.
+- `module.json`, `system-runtime-topology.json`, `ecosystem-atlas.json` y docs del Dashboard pasan a publicar `platform-core` como runtime unico con bases logicas dedicadas, no como `shared-database-temporary`.
+
+Operacion y verificacion:
+- `RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend` levanto `paramascotasec-backend-app`, `paramascotasec-backend-web` healthy y `paramascotasec-backend-billing-worker`.
+- Verificado en runtime: `identity-platform=identity_platform`, `catalog-inventory=catalog_inventory`, `commerce=commerce_orders`, `reporting-finance=reporting_finance`, `mailer-service=mailer_service`, `billing=billing_service`.
+- Verificado en PostgreSQL: tablas owner locales (`User`, `Product`, `Order`, `BusinessExpense`, `ContactMessage`, `EmailOutbox`, `EmailDeliveryLog`) viven como tablas reales en su DB; las tablas ajenas aparecen como foreign tables de compatibilidad.
+- Pasaron `php -l`, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh`, `Dashboard npm run module:check`, `node Dashboard/tools/check-module-manifests.mjs` y `scripts/e2e-development.sh`.
+
+### 2026-06-25 - Backend QA: limpieza de cliente Facturador legacy
+
+Objetivo: retirar codigo viejo comprobado como no usado despues de asimilar Billing SRI dentro de `platform-core`, sin romper los consumidores actuales de errores fiscales.
+
+Cambios:
+- Se comprobo con `rg` que `FacturadorApiService` no tenia consumidores activos fuera de su propio archivo y se elimino `paramascotasec-backend/src/Services/FacturadorApiService.php`.
+- `FacturadorApiException` se conservo porque sigue siendo usada por controladores y Billing nativo; ahora vive en `paramascotasec-backend/src/Services/FacturadorApiException.php` como clase PSR-4 separada.
+- `NativeBillingGateway` dejo de aceptar fallback a `FACTURADOR_API_KEY`; Billing nativo depende solo de `BILLING_API_KEY`.
+- La imagen backend development se reconstruyo y se verifico dentro del contenedor que el archivo legacy no existe, que no quedan referencias `FACTURADOR_API_*` en `src/config` y que `BillingGatewayFactory` resuelve `NativeBillingGateway`.
+
+Operacion y verificacion:
+- Pasaron `php -l` de los archivos tocados, autoload de `FacturadorApiException`, `scripts/check-env-secrets.sh development`, `scripts/check-paramascotas.sh`, `RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend`, `scripts/check-container-connectivity.sh development`, `scripts/e2e-development.sh` y `git -C paramascotasec-backend diff --check`.
+
+### 2026-06-24 - Workspace QA: Billing SRI asimilado en platform-core
+
+Objetivo: hacer que el runtime real coincida con el diagrama objetivo: APISIX y frontends entran al Core API router, Billing SRI vive dentro de `platform-core` y `Facturador` deja de ser dependencia runtime del workspace orquestado.
+
+Cambios:
+- `scripts/deploy-workspace.sh` ya no despliega Facturador ni sincroniza API keys hacia ese runtime; el orden completo queda DB -> Backend -> Frontend -> Gateway.
+- `paramascotasec-backend` usa `BILLING_GATEWAY_DRIVER=native`, deja de inyectar URL/path/API key de Facturador a contenedores y falla si reaparecen drivers `native_fallback` o `facturador_http`.
+- Se retiro el adaptador `UpstreamFacturadorBillingGateway`; Billing nativo atiende XML, RIDE, SRI, configuracion, certificados, correo y worker sobre `billing_service`.
+- Gateway dejo de crear `FACTURADOR_UPSTREAM` y ya no se conecta a `paramascotasec-services-internal`; el contrato fiscal publico sigue llegando a `platform-core/Billing`.
+- `scripts/check-container-connectivity.sh` y `scripts/check-env-secrets.sh` ahora rechazan contenedores/redes legacy de Facturador y validan DB/SRI/SMTP desde backend y `paramascotasec-backend-billing-worker`.
+- `Dashboard/public/module-registry.json`, `system-runtime-topology.json`, `ecosystem-atlas.json`, `tenant-module-topology.json` y `paramascotasec-backend/module.json` publican que `billing-sri-db` pertenece a `platform-core` y que no existe runtime `facturador-sri` en modo orquestado.
+
+Operacion y verificacion:
+- Se redesplegaron `backend` y `gateway` con wrappers development, se detuvieron los contenedores `billing-*` legacy sin borrar datos y se confirmo que `facturador` ya no resuelve desde APISIX.
+- Pasaron JSON parse de manifiestos/topologias, `php -l` de Billing factory/gateway, `bash -n` de scripts tocados, `node Dashboard/tools/check-module-manifests.mjs`, `npm run module:check` en Dashboard, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh` y `scripts/e2e-development.sh`.
+- Validacion runtime clave: APISIX solo conserva upstreams `frontend`, `dashboard`, `backend` y `acme`; rutas Billing publicas apuntan a `pmc-paramascotasec-backend-service`; `BillingGatewayFactory` instancia `NativeBillingGateway` y rechaza `facturador_http`.
+
+### 2026-06-24 - Backend Billing nativo detras del Core API
+
+Objetivo: completar la fase transicional en que Facturacion SRI quedaba detras del backend unico con adaptador temporal. Estado vigente posterior: `Workspace QA: Billing SRI asimilado en platform-core` y `Dashboard QA: precios fuera del panel legacy` retiran ese fallback del modo orquestado.
+
+Cambios:
+- `paramascotasec-backend/src/Modules/Billing/Native/` incorpora la logica fiscal absorbida de `Facturador` para XML, RIDE, SRI SOAP, certificados, sucursales, configuracion, correo y recuperacion.
+- En esa fase, `NativeBillingGateway` implementaba el puerto `BillingGateway` con `native_fallback`; ese estado quedo superado y hoy `BillingGatewayFactory` usa solo `native` y rechaza `native_fallback`/`facturador_http`.
+- `PublicBillingController` publica en el Core API el contrato compatible `/api/{test|production}/v1/*` para configuracion fiscal, sucursales, emision, status, XML, RIDE, mail-test y anulacion/reemision.
+- `scripts/process_billing_recovery.php` mueve el worker fiscal al backend y el compose agrega `paramascotasec-backend-billing-worker`, con minimo efectivo de 3600 segundos entre reintentos.
+- La imagen backend instala las dependencias runtime necesarias (`soap`, `pdo_pgsql`, `zip`, `openssl`; `dom` queda provisto por la imagen PHP base).
+- `paramascotasec-DB/config/module-databases.json` y `scripts/common.sh` conceden tambien el rol del backend sobre `billing_service`, sin quitar el rol legacy `billing_user`.
+- En esa fase, los manifiestos publicaban a `Facturador` como runtime legado/fallback; ese estado quedo superado y `Facturador/module.json` queda solo como legacy standalone.
+- `Gateway/scripts/sync-apisix.sh` lee tambien los registries modulares `src/Modules/*/routes.php`, mantiene las rutas fiscales publicas separadas del prefijo tenant API normal y cambia `billing-health`, `billing-api-key` y `billing-api-bearer` al upstream `backend`.
+- El contrato publico APISIX de `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` entra por `platform-core/Billing`; el fallback HTTP interno mencionado aqui ya no esta vigente.
+
+Operacion y verificacion:
+- Se redesplego backend development con `RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend` y se sincronizaron grants con `./paramascotasec-DB/scripts/sync-module-databases.sh development`.
+- Se redesplego gateway development con `./scripts/deploy-development.sh gateway`; APISIX quedo con `billing-health`, `billing-api-key` y `billing-api-bearer` sobre `pmc-paramascotasec-backend-service`.
+- Dentro del contenedor backend, `NativeBillingGateway::dependenciesAvailable()` responde OK y `BillingGatewayFactory::create()` resuelve `NativeBillingGateway`.
+- El worker backend registra `[billing-recovery] ok candidates=0`.
+- Por APISIX `https://paramascotasec.com/paramascotasec/facturacion/health` responde desde `platform-core`, la consulta anonima de RIDE responde 401 y la consulta con `X-API-Key` o Bearer responde 200.
+- Pasaron `composer validate --no-check-publish`, lint PHP de backend, `npm run module:check`, `scripts/check-container-connectivity.sh development`, `bash -n` de scripts tocados y `git diff --check` en los repos tocados.
+
+### 2026-06-24 - Backend IdentityPlatform: usuarios por tenant y accesos por modulo
+
+Objetivo: formalizar que los usuarios pertenecen al tenant y no a cada modulo, dejando a `IdentityPlatform` como owner unico de auth, membresias, roles y permisos, y haciendo que los modulos consuman permisos `module.action`.
+
+Cambios:
+- `paramascotasec-backend/src/Modules/IdentityPlatform/Application/TenantAccessService.php` centraliza catalogo de modulos, permisos `module.action`, tipos de identidad (`platform`, `tenant_staff`, `customer`, `service`), roles del tenant y decision de acceso por ruta.
+- `paramascotasec-backend/src/Modules/IdentityPlatform/Infrastructure/IdentityAccessRepository.php` sincroniza el contrato persistente `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles` sin foreign keys cross-module.
+- `paramascotasec-backend/scripts/bootstrap_schema.php` crea esas tablas e indices de forma idempotente y backfillea membresias basicas desde `User`.
+- `TenantController`, `RoleController`, `UserController`, `Auth`, `Router` y `public/index.php` usan el contrato central para resolver modulos contratados, superadmin, usuarios gestionados, compradores ecommerce y permisos por modulo.
+- `paramascotasec-backend/module.json` declara `identityAccessModel`, `backendModules` y `permissionsProjection=true` para que el contrato quede publicado en el runtime.
+
+Decision:
+- El campo legacy `User.role` queda como puerta de compatibilidad para identidad gestionada; el permiso real lo deciden `roleIds` y `TenantAccessService`. Los clientes ecommerce no aparecen en `/api/users`, y los superadmins se reconocen como identidad de plataforma aunque pierdan asignaciones tenant normales.
+
+### 2026-06-24 - Backend modular base + storefront sin workspace admin
+
+Objetivo: empezar a materializar el backend unico por dominios sin romper rutas publicas actuales, y dejar de usar `paramascotasec/app/my-account` como panel operativo para admins.
+
+Cambios:
+- `paramascotasec-backend/src/Modules/` ahora tiene la estructura base por dominio (`IdentityPlatform`, `CatalogInventory`, `Commerce`, `Billing`, `ReportingFinance`) con registries de rutas modulares en `src/Modules/*/routes.php`.
+- `paramascotasec-backend/config/routes.php` paso a ser un agregador central de registries por dominio; el contrato HTTP se conserva pero ya no depende de una sola lista plana.
+- `paramascotasec-backend/src/Core/Router.php` ahora resuelve handlers FQCN, habilitando controladores namespaced por modulo sin romper controladores legacy.
+- `paramascotasec-backend/src/Core/ConnectionRegistry.php` y `config/module-databases.php` dejan listo el registro de stores logicos por dominio; `billing` ya se resuelve como store dedicado y los demas dominios siguen en modo `legacy-shared`.
+- `paramascotasec-backend/src/Controllers/BillingDocumentController.php` y `src/Controllers/OrderController.php` dejaron de instanciar `FacturadorApiService` directamente; ahora pasan por el puerto interno `BillingGateway`, con adaptador temporal `UpstreamFacturadorBillingGateway`.
+- `paramascotasec/app/src/app/my-account/hooks/useAuthBootstrap.ts` ahora expulsa a usuarios admin hacia `/dashboard/`, dejando `my-account` alineado como cuenta de cliente y no como workspace operativo paralelo.
+- `paramascotasec-backend/module.json` documenta el estado transicional como `modular-monolith-transition`, incluyendo el bounded context `billing` con adaptador temporal al runtime `facturador-sri`.
+
+Operacion y verificacion:
+- Validar sintaxis PHP de `src/Core`, `config/routes.php`, `src/Modules` y controladores modificados antes de desplegar.
+- Validar `npm run typecheck` en `paramascotasec/app` para confirmar el redireccionamiento de `/my-account`.
+
+Pendientes:
+- Mover repositorios y servicios legacy al store logico definitivo de cada dominio; hoy solo `billing` tiene wiring dedicado.
+- Absorber el worker fiscal y la persistencia de Facturador dentro del backend unico antes de retirar ese runtime.
+- Quitar el resto del codigo operativo/admin heredado de `paramascotasec/app/my-account` cuando Dashboard ya cubra toda la operacion privada sin huecos.
+
+### 2026-06-24 - Workspace QA: PostgreSQL unico con bases logicas por modulo
+
+Objetivo: dejar el workspace listo para operar con un solo servicio PostgreSQL compartido y bases de datos internas separadas por modulo/servicio, eliminando el patron por-tenant y el PostgreSQL dedicado del Facturador.
+
+Cambios:
+- `paramascotasec-DB/config/module-databases.json` se agrega como registro canonico de bases logicas por modulo (`platform-core -> paramascotasec`, `facturador-sri -> billing_service`, reserva opcional `mailer-service -> mailer_service`).
+- `paramascotasec-DB/scripts/common.sh` ahora sincroniza roles, grants y bases por modulo; se agregan `scripts/sync-module-databases.sh` y `scripts/migrate-facturador-db-to-shared.sh` para orquestar la creacion de bases logicas y la migracion desde el `billing-postgres` legacy.
+- `paramascotasec-backend/scripts/create_tenant_dbs.sh` queda deprecado a proposito: ya no se permite una base por tenant; el aislamiento correcto pasa a ser por modulo y tenancy interno del owner.
+- `Facturador/docker-compose.yml`, `docker-compose.development.yml`, `scripts/common.sh`, `scripts/backup-and-stop.sh`, `scripts/restore-from-backup.sh`, `templates/entorno/.env.example` y `src/Shared/Infrastructure/Persistence/PostgresConnection.php` se reconectan al PostgreSQL compartido `db:5432`, manteniendo a Facturador aislado por ownership pero ya no por contenedor PostgreSQL propio.
+- `scripts/deploy-workspace.sh`, `scripts/check-container-connectivity.sh`, `scripts/check-env-secrets.sh` y `scripts/rotate-owned-secrets.sh` se actualizan para operar sobre `next-test-db` y la base logica `billing_service`.
+- `Dashboard/public/system-runtime-topology.json`, `Dashboard/public/ecosystem-atlas.json`, `Facturador/module.json`, `MapaCompleto.md` y esta documentacion canonica pasan a describir `billing-sri-db` como base logica del modulo fiscal dentro de `next-test-db`.
+
+Operacion y verificacion:
+- La regla publicada queda fija: un solo servicio PostgreSQL, una base logica por modulo, multiples tenants del mismo modulo dentro de esa misma base y sin foreign keys entre modulos futuros.
+- Queda pendiente la ejecucion de checks/deploy/migracion del runtime para confirmar la sustitucion del contenedor `billing-postgres` por la base logica `billing_service` en `next-test-db`.
+
+### 2026-06-24 - Dashboard QA: superadmin ve identidades gestionadas, no clientes compradores
+
+Objetivo: evitar que la administracion de usuarios mezcle cuentas operativas del tenant con clientes del ecommerce que solo han comprado, manteniendo ademas la separacion entre workspace tenant y accesos globales de plataforma.
+
+Cambios:
+- `paramascotasec-backend/src/Controllers/UserController.php` ahora trata `/users` como un roster de identidades gestionadas, soporta `scope=tenant|platform|all`, deja fuera clientes compradores del listado normal y rechaza `show/update/patch/unlock` sobre usuarios no gestionados.
+- El mismo controlador ya no maquilla compradores como `tenant_reader`: cuando un registro no gestionado se serializa, conserva `roles=['customer']`, con fallback de `Clientes`/`Cliente`, lo que evita que el Dashboard lo presente como usuario operativo.
+- `Dashboard/src/app/features/users/data/users-api.service.ts` fuerza `scope='tenant'` para el workspace de usuarios y `Dashboard/src/app/core/modules/dashboard-api.config.ts` deja documentado el contrato de scope.
+- `Dashboard/src/app/features/users/models/user.model.ts`, `users-list` y `users-grid` agregan la clasificacion `managed` vs `customer`, filtran defensivamente clientes compradores y mejoran el copy de resumen para que la UI explique que queda fuera de la vista en lugar de contar cualquier registro como usuario del workspace.
+- `Dashboard/src/app/features/users/data/users.fixtures.ts` y las pruebas `user.model.spec.ts`, `users-list.component.spec.ts`, `users-grid.component.spec.ts` cubren el caso real con cuentas `customer`, junto con cuentas tenant y plataforma.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/models/user.model.spec.ts --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/users-grid/users-grid.component.spec.ts`, `npm run lint`, `npm run arch:check`, `git -C /home/admincenter/contenedores/Dashboard diff --check -- ...`, `git -C /home/admincenter/contenedores/paramascotasec-backend diff --check -- src/Controllers/UserController.php` y `php -l paramascotasec-backend/src/Controllers/UserController.php`.
+
+### 2026-06-24 - Dashboard QA: accesos de plataforma fuera del modulo de usuarios tenant
+
+Objetivo: dejar de mezclar cuentas globales de plataforma con usuarios operativos del tenant, creando una superficie dedicada para superadmins y recovery sin depender de ocultar filas dentro de `users`.
+
+Cambios:
+- `Dashboard/src/app/features/tenant-admin/pages/platform-access/` agrega la vista `Accesos de plataforma` bajo permisos `platform-admin`, con roster/detalle de cuentas globales, rutas criticas (`Tenants`, `APIs`, `Topologia`) y una regla operativa explicita para no volver a mezclar plataforma con tenant.
+- `Dashboard/src/app/features/tenant-admin/tenant-admin.routes.ts` y `Dashboard/src/app/core/modules/dashboard-navigation.config.ts` registran la ruta `/platform-access` y la nueva entrada lateral `Accesos plataforma` dentro de `Plataforma`.
+- `Dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` suma la pestana `Accesos` y `Dashboard/src/app/features/users/components/identity-workspace-context/` manda el salto de `Plataforma` a esta superficie dedicada, no al gestor general de tenants.
+- `Dashboard/src/app/features/users/data/users.fixtures.ts` ahora incluye cuentas `platform_admin` y soporta `scope=platform|tenant`, de modo que fixtures y pruebas ya reflejan la separacion real entre identidades globales y usuarios del tenant.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` fijan `platform-access` como superficie de identidades globales/recovery, separada del modulo `users`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/data/platform-access-api.service.spec.ts --include src/app/features/tenant-admin/pages/platform-access/platform-access.component.spec.ts --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts --include src/app/core/modules/dashboard-modules.config.spec.ts`, `npm run lint`, `npm run arch:check`, `git diff --check` y `git -C /home/admincenter/contenedores/paramascotasec diff --check -- docs/AI_CONTEXT.md`.
+
+### 2026-06-24 - Dashboard QA: frontera tenant/plataforma mas clara y fallback robusto de marca
+
+Objetivo: dejar mas clara la separacion entre identidad operativa del tenant y orquestacion de plataforma, y eliminar encabezados de tenant que se ven rotos o vacios cuando falla una marca.
+
+Cambios:
+- `Dashboard/src/app/features/users/components/identity-workspace-context/` rediseña el contexto compartido de `Usuarios`, `Roles` y `Nuevo usuario` con navegacion mas clara, tarjetas 2x2 y una frontera explicita: la plataforma queda fuera del flujo operativo del tenant.
+- `Dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` aplica la misma idea a `Tenants`, `APIs` y `Topologia`, dejando mas claro que esa capa administra superadmins, contratos y topologia, no la operacion diaria.
+- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.html/css/ts` ahora degrada de `branding.logoIconUrl/logoUrl` a monograma si la marca falla al renderizar, evitando avatares vacios o visualmente rotos en el tenant seleccionado.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` fijan esa frontera tenant/plataforma como regla operativa y documentan que el branding del tenant debe caer a monograma estable cuando no haya logo valido.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check` y `npm test -- --watch=false --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/users-grid/users-grid.component.spec.ts --include src/app/features/users/pages/add-user/add-user.component.spec.ts --include src/app/features/users/pages/roles/roles.component.spec.ts --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: usuarios alineados al workspace de roles
+
+Objetivo: dejar `Usuarios` y `Roles` con una lectura de interfaz mas coherente, simple y consistente, evitando que `Usuarios` siga como una tabla legacy con modal aparte mientras `Roles` ya usa un workspace roster/detalle.
+
+Cambios:
+- `Dashboard/src/app/features/users/pages/users-list/users-list.component.html/css/ts` reemplaza el patron tabla + modal por un workspace inline con dos columnas: roster de usuarios y detalle del usuario seleccionado.
+- La lista operativa ahora separa `Admins del tenant` y `Equipo operativo`, igualando el patron que `Roles` ya usa con `Base del tenant` y `Roles personalizados`.
+- Se elimino el modo artificial `Edicion rapida`; las acciones de estado quedan visibles y claras dentro del detalle inline, sin un modal extra ni cambios de modo ambiguos.
+- El resumen superior conserva la frontera tenant/plataforma, mantiene visible el conteo de accesos plataforma ocultos y muestra el conteo cargado total para que no haya duda entre `visibles` y `ocultos`.
+- `users-list.component.spec.ts` ahora verifica el workspace inline y la desaparicion del flujo modal legacy.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/roles/roles.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run build` y `git diff --check` en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: resumen tenant mas claro y mapa de bases por dominio
+
+Objetivo: corregir una de las piezas base que mas transmitia desorden visual en plataforma (`tenant-admin`) y dejar aun mas explicito, en la documentacion canonica corta, como deben separarse las bases por modulo cuando el ecosistema siga creciendo.
+
+Cambios:
+- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.html/css/ts` reorganiza el header del tenant seleccionado en tres capas claras: identidad/contexto, hechos operativos y acciones.
+- El resumen del tenant ahora usa logo de marca cuando existe (`branding.logoIconUrl` o `branding.logoUrl`) y cae a monograma solo como fallback; se evita el avatar vacio o debil que dejaba la interfaz con apariencia incompleta.
+- Las acciones rapidas del tenant pasan a una grilla estable, con botones completos y sin competir visualmente con el contexto del tenant.
+- El bloque inferior `tenant-contract-overview` deja de repetir el mismo dato con nombres distintos y pasa a explicar paquetes, cobertura funcional, operacion ecommerce y contexto de administracion.
+- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` agrega el mapa objetivo de bases por dominio (`identity-platform`, `catalog-inventory`, `commerce-orders`, `reporting-finance`, `billing-sri`) y deja explicitos los flujos operativos que no deben mezclarse.
+- `Dashboard/docs/MODULAR-ORCHESTRATION.md` agrega una matriz directa de stores actuales vs stores objetivo para que no vuelva a confundirse runtime, canal, store de infraestructura y base de negocio.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: ranking de productos fuera del panel legacy
+
+Objetivo: seguir reduciendo el `paramascotas-panel` monolitico, sacando `reporting/sales-ranking` a una pagina dedicada para que el reporte comercial no dependa del catch-all legacy ni de modales internos del panel.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/reporting/sales-ranking` antes de `paramascotas-panel/:group/:view`.
+- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-sales-ranking/` con `ParamascotasSalesRankingComponent` como workspace dedicado para ranking comercial y priorizacion de acciones.
+- El nuevo workspace mantiene lectura de ventas, utilidad, margen, cobertura y acciones recomendadas, pero cambia el siguiente paso de cada hallazgo para abrir el modulo correcto (`Inventario`, `Precios`, `Producto` o `Reporte`) en lugar de depender del editor/modal interno del panel generico.
+- Se retiro del template legacy de `ParamascotasPanelComponent` el bloque `sales-ranking` y tambien se eliminaron sus `signals`, loaders y helpers asociados dentro del catch-all.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` ahora incluyen `reporting/sales-ranking` dentro de las proyecciones que deben resolverse por ruta exacta.
+
+Evidencia de performance:
+- `npm run bundle:hotspots -- --top=10` deja `paramascotas-panel.component.ts` en aprox. `737.2 kB` dentro del chunk lazy `854.7 kB`, frente a `753.0 kB` / `870.5 kB` antes de extraer `sales-ranking`.
+- El ranking queda aislado en `paramascotas-sales-ranking-component` con chunk lazy aprox. `265.8 kB`.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-sales-ranking/paramascotas-sales-ranking.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build`, `npm run bundle:hotspots -- --top=10` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: ventas locales y cotizaciones fuera del panel legacy
+
+Objetivo: dejar mas clara la frontera entre Dashboard orquestador y workspace operativo, sacando `operations/local-sales` y `operations/quotations` del `paramascotas-panel` generico para que no vuelvan a mezclarse con el catch-all legacy.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` mantiene `operations/local-sales` y `operations/quotations` como rutas exactas antes de `paramascotas-panel/:group/:view`, usando metadata canonica sin extensiones ad hoc en `data`.
+- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-sales-workspace/` con `ParamascotasSalesWorkspaceComponent` como workspace dedicado compartido para POS local y cotizaciones.
+- El modo del workspace ya no depende de flags incrustados en metadata; se resuelve desde la ruta exacta activa, dejando la orquestacion mas simple y mas alineada con los checks de arquitectura.
+- Se retiro del template legacy de `ParamascotasPanelComponent` el bloque completo que seguia renderizando `local-sales` y `quotations`, con lo que el panel catch-all deja de ser duenio accidental de esas dos operaciones.
+- `dashboard.routes.spec.ts` y `paramascotas-sales-workspace.component.spec.ts` protegen la delegacion exacta y la carga del workspace en ambos modos.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` ahora dejan por escrito que `local-sales` y `quotations` viven en `paramascotas-sales-workspace`, no dentro del panel monolitico.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-sales-workspace/paramascotas-sales-workspace.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: lectura corta y directa del modelo modular
+
+Objetivo: dejar inequívoco, para operadores y futuros cambios, como corre cada modulo solo, como lo orquesta el Dashboard y cual es la jugada correcta al integrar, ampliar o migrar el sistema.
+
+Cambios:
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` ahora abre con una respuesta corta por runtime (`dashboard`, `platform-core`, `facturador-sri`) indicando modo individual, modo orquestado, camino valido de escritura y cambio correcto.
+- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` agrega una matriz rapida de operacion y cambio para que la lectura de 60 segundos tambien deje claro ownership, orquestacion y migracion.
+- `/module-topology` suma una franja de decision rapida con cuatro lecturas explicitas: `Si corre solo`, `Si entra por Dashboard`, `Si quieres ampliar` y `Si quieres migrar o extraer`.
+- La vista `module-topology` deja mas directa la idea central: una pantalla nueva no crea un modulo nuevo, el Dashboard no toma ownership por proyectar UI y el cambio correcto depende de si cambia o no el owner real.
+- `module-topology.component.spec.ts` protege esa lectura rapida para que no vuelva a perderse entre futuras refactorizaciones visuales.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run module:check`, `npm run lint` y `npm run arch:check` OK en `Dashboard`.
+- `git diff --check` OK en `Dashboard` y `paramascotasec`.
+
+### 2026-06-24 - Dashboard QA: reporte general separado del panel legacy
+
+Objetivo: seguir reduciendo el `paramascotas-panel` monolitico, dejando `reporting/general` como vista dedicada y quitando del panel legacy la responsabilidad de renderizar ese reporte.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/reporting/general` antes de `paramascotas-panel/:group/:view`.
+- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-general-report/` con `ParamascotasGeneralReportComponent` como workspace dedicado para KPIs, ventas por categoria, ranking de productos, pedidos recientes y exportacion Excel del reporte general.
+- La nueva vista deja explicito que el Dashboard orquesta permisos, tenancy y navegacion, mientras el reporte consume el contrato API del backend central del ecosistema sin volver a mezclarlo dentro del panel generic.
+- `dashboard.routes.spec.ts` ahora exige tambien la delegacion exacta de `reporting/general`, y `paramascotas-general-report.component.spec.ts` protege la carga inicial, el recambio de periodo y la exportacion del workbook.
+- El bloque `item()?.id === 'general'` y su estado/metodos asociados se retiraron de `ParamascotasPanelComponent`; la extraccion ya no es solo de ruta, tambien reduce responsabilidad dentro del chunk legacy.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` se actualizaron para incluir `reporting/general` dentro de las proyecciones que deben resolverse por ruta exacta antes del catch-all legacy.
+- Se elimino un warning real de build en `module-topology.component.ts` quitando `RouterLink` no usado.
+
+Evidencia de performance:
+- `npm run bundle:hotspots -- --top=20` despues del cambio deja `paramascotas-panel.component.ts` en aprox. `802.0 kB` dentro del chunk legacy principal, frente a `811.7 kB` antes de extraer `reporting/general`.
+- El reporte general queda aislado en `paramascotas-general-report-component` con chunk lazy aprox. de `260.76 kB`.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-general-report/paramascotas-general-report.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `git diff --check`, `npm run build` y `npm run bundle:hotspots -- --top=20` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: pedidos ecommerce separados del panel legacy
+
+Objetivo: dejar mas clara la frontera entre modulo orquestado y panel monolitico, sacando `admin-orders` del catch-all legacy para que la operacion de pedidos tenga pagina propia y no dependa accidentalmente del `paramascotas-panel`.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/operations/admin-orders` antes de `paramascotas-panel/:group/:view`.
+- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-orders/` con `ParamascotasOrdersComponent` como workspace dedicado para pedidos ecommerce.
+- La nueva vista deja explicito que el Dashboard orquesta acceso, navegacion y contexto, mientras la operacion diaria de pedidos corre en una pagina propia con filtros, KPIs, tabla, tarjetas, modal de detalle y factura interna.
+- La paginacion del workspace de pedidos se alinea al contrato compartido `TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100]`.
+- `dashboard.routes.spec.ts` ahora exige tambien la delegacion exacta de `operations/admin-orders`, y `paramascotas-orders.component.spec.ts` protege la ruta dedicada, el copy de orquestacion y la hidratacion del filtro `search` desde query string.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan la regla operativa: cuando una proyeccion ya tiene page propia, la ruta exacta debe vivir antes del catch-all legacy.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-orders/paramascotas-orders.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: propuestas API mas seguras y menos ambiguas
+
+Objetivo: endurecer la UX del catalogo API para que una propuesta local no parezca un contrato operativo y para que la consola deje claro cuando se puede probar, activar o consumir un endpoint.
+
+Cambios:
+- `api-catalog` ahora distingue visualmente `Solo propuesta local` frente a `Versionada en registro` dentro de cada draft y dentro del modal de propuesta.
+- Se agregaron guardrails visibles en la seccion `Propuestas API`, explicando que una propuesta local no se publica, no se prueba desde el cliente estandar y no debe consumirse hasta versionarla.
+- El modal `api-proposal-modal` ahora muestra `Estado de publicacion` con nota de ciclo de vida, para que cambiar el estado (`testing`, `active`, `inactive`) no se interprete como publicacion automatica.
+- `ApiCatalogComponent.setManagedDraftStatus()` bloquea marcar como `active` una propuesta que todavia no existe en el registro central, dejando un aviso explicito en la consola.
+- Los avisos de guardado y edicion distinguen mejor entre `propuesta local` y `contrato ya versionado`.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: workspace de plataforma unificado para Tenants, APIs y Topologia
+
+Objetivo: dejar mas clara y consistente la administracion de plataforma para que `Tenants`, `APIs` y `Topologia` no parezcan herramientas aisladas con navegacion y contexto repetidos.
+
+Cambios:
+- Se creo `Dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` como contexto compartido para las pantallas de plataforma.
+- `tenant-admin`, `api-catalog` y `module-topology` ahora muestran la misma navegacion de workspace (`Tenants`, `APIs`, `Topologia`) y el mismo marco de contexto de plataforma, incluyendo tenant activo, alcance global y un KPI especifico por pantalla.
+- Los headers de `api-catalog` y `module-topology` dejan de duplicar enlaces cruzados; conservan solo la accion principal de la pagina (`Nueva propuesta API` o `Recargar`).
+- `tenant-admin` conserva su editor detallado, pero ahora queda mejor conectado al resto del workspace de plataforma y deja de depender de un acceso redundante a `Topologia` en el header.
+- Las pruebas de `tenant-admin`, `api-catalog` y `module-topology` se actualizaron para cubrir la navegacion y el contexto compartido.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: tenant-admin y users-grid mas coherentes con la frontera plataforma/tenant
+
+Objetivo: seguir limpiando superficies donde el Dashboard todavia mezclaba conceptos de plataforma, tenant y usuarios, y mejorar criterio visual en vistas que seguian con patrones duplicados o decorativos.
+
+Cambios:
+- `users-grid` adopta `identity-workspace-context` igual que `users-list`, `roles` y `add-user`, eliminando el bloque local duplicado de frontera tenant/plataforma.
+- `users-grid` ahora filtra perfiles de plataforma fuera de la vista operativa, muestra un aviso explicito cuando existen accesos globales ocultos y ordena primero admins del tenant y luego usuarios operativos.
+- La vista en cards de usuarios deja el cover decorativo con imagen blur y pasa a un encabezado utilitario con cargo, area, estado y accion rapida, mas coherente con una consola operativa.
+- `tenant-admin` mejora el bloque del tenant seleccionado con monograma estable de dos letras, contexto explicito (`Menu actual` u `Otro tenant`) y una linea resumen mas util del contrato activo.
+- `tenant-admin.component.spec.ts` y `users-grid.component.spec.ts` se actualizaron para cubrir la nueva separacion plataforma/tenant y el encabezado mas claro del tenant.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/pages/users-grid/users-grid.component.spec.ts --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: identidad tenantizada mas clara y sin mezcla con plataforma
+
+Objetivo: dejar mas coherente y simple la administracion de usuarios y roles del tenant, evitando redundancias visuales y mezcla conceptual con superadmins, tenants y flujos de plataforma.
+
+Cambios:
+- `Dashboard/src/app/features/users/components/identity-workspace-context/` se consolida como contexto compartido para `Usuarios`, `Roles`, `Nuevo usuario` y acceso a `Plataforma`, con la frontera tenant/plataforma explicita en una sola pieza reutilizable.
+- `users-list` filtra de la vista operativa a los perfiles de plataforma, muestra aviso cuando existen accesos globales ocultos y ordena primero admins del tenant y luego usuarios operativos.
+- `roles` deja de depender del bloque repetido de alcance y separa el roster en `Base del tenant` y `Roles personalizados`, reduciendo mezcla entre roles base y custom.
+- `add-user` deja el bloque duplicado de resumen y adopta el mismo contexto compartido de identidad para que el alta de usuario use el mismo lenguaje y la misma navegacion que usuarios y roles.
+- `roles.component.css` elimina arrastre visual de la version anterior (`roles-scope-grid`) y agrega estilos del roster agrupado para que la pantalla no mezcle layouts viejos y nuevos.
+- Los specs de `users-list`, `roles` y `add-user` ahora verifican separacion tenant/plataforma, navegacion compartida y ocultamiento de accesos plataforma en la vista operativa.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/roles/roles.component.spec.ts --include src/app/features/users/pages/add-user/add-user.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: referencia rapida del ecosistema y lectura de 60 segundos
+
+Objetivo: dejar una lectura extremadamente clara y rapida del ecosistema completo, con conteo actual de runtimes, bases de datos, stores de infraestructura, flujo de trafico y jugadas correctas para agregar APIs, modulos o extraer dominios.
+
+Cambios:
+- Se agrego `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` como documento corto y operativo del sistema completo.
+- La referencia rapida explica, en una sola pagina, cuantos runtimes reales hay hoy, cuantas bases de negocio y stores de infraestructura existen, por donde entra el trafico, como se comunican Dashboard/Core/Facturador y que archivos mandan cuando se agrega una API, un modulo o se extrae un dominio.
+- `/module-topology` agrega una seccion `Lectura operativa rapida` con cuatro bloques visibles: runtimes activos, persistencia real, cadena de comunicacion y cambio seguro.
+- `module-topology` incorpora `Referencia rapida` dentro de las fuentes canonicas visibles.
+- `Dashboard/docs/ARCHITECTURE.md` enlaza la nueva referencia corta para que la arquitectura tenga una entrada simple ademas de los documentos canonicos largos.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run module:check`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: decision por modulo visible para integrar, ampliar o migrar
+
+Objetivo: dejar explicito por cada feature visible del Dashboard si debe crecer en su owner actual, extraerse a otro target o seguir planned hasta tener runtime propio, y evitar que `futureTarget` quede como texto libre fragil.
+
+Cambios:
+- `Dashboard/public/tenant-module-topology.json` agrega `changePolicy` por modulo visible con modos `orchestrator-native`, `expand-owner-runtime`, `extract-to-target` y `planned-runtime`.
+- `Dashboard/docs/tenant-module-topology.schema.json` ahora exige `changePolicy` como parte del contrato publicado.
+- `Dashboard/tools/check-module-manifests.mjs` valida que `changePolicy` coincida con `ownerKind`, `deliveryStatus` y `futureTarget`, y que los targets futuros apunten a un runtime conocido, a un bounded context declarado o al propio modulo planned.
+- `/module-topology` muestra una columna `Cambio correcto` para que plataforma vea, por modulo contratado, que hacer cuando quiera ampliarlo o migrarlo.
+- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` se actualizaron para consumir el contrato nuevo.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `MODULAR-ORCHESTRATION.md`, `MODULE-EVOLUTION-PLAYBOOK.md` y `ARCHITECTURE.md` documentan esta politica como parte del modelo modular canonico.
+
+Operacion y verificacion:
+- `npm run module:check`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: paramascotas-panel lazy con detalle de pedido diferido
+
+Objetivo: empezar a partir el hotspot principal de `paramascotas-panel` sin tocar reglas de negocio, moviendo un modal grande y poco frecuente fuera del chunk base del panel.
+
+Cambios:
+- Se creo `ParamascotasOrderDetailModalComponent` en `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/components/paramascotas-order-detail-modal/`.
+- El bloque inline de detalle de pedido salio de `paramascotas-panel.component.html` y ahora se carga bajo `@defer` cuando existe `selectedOrder()`.
+- `paramascotas-panel.component.ts` construye un view model `selectedOrderDetailModal` con el pedido seleccionado, etiquetas, readiness, resumen monetario, direcciones y lineas ya preparadas, manteniendo la mutacion de estado del pedido en el padre.
+- El CSS especifico del modal de pedido (`paramascotas-order-readiness`, `paramascotas-order-detail`, `paramascotas-order-confirmation`, `paramascotas-order-item`) salio del padre hacia `paramascotas-order-detail-modal.component.css`.
+- Se agrego unit focal `paramascotas-order-detail-modal.component.spec.ts`.
+
+Evidencia de performance:
+- Antes, `paramascotas-panel-component` pesaba aprox. `1.12 MB` lazy y el contribuyente principal `paramascotas-panel.component.ts` estaba en aprox. `840.9 kB`.
+- Despues de extraer el modal, el reporte `npm run bundle:hotspots -- --chunk=src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts --top=30 --rebuild` lo deja en aprox. `1.11 MB` lazy con `paramascotas-panel.component.ts` en aprox. `831.5 kB`.
+- La baja todavia es parcial, pero confirma que la estrategia correcta para este hotspot es sacar subflujos raros y densos a chunks diferidos propios.
+
+Operacion y verificacion:
+- `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-panel/components/paramascotas-order-detail-modal/paramascotas-order-detail-modal.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run bundle:hotspots -- --chunk=src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts --top=30 --rebuild` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: billing-services lazy con modal de productos diferido
+
+Objetivo: reducir el peso real de `billing-services` sin degradar el flujo de emision SRI ni volver a dejar el selector de productos cortado o fuera del viewport.
+
+Cambios:
+- Se separo el selector de productos en `BillingProductPickerModalComponent` (`Dashboard/src/app/features/business/components/billing-product-picker-modal/`).
+- `billing-services.component.html` ahora carga ese modal bajo `@defer` cuando `productPickerModalOpen()` pasa a `true`, manteniendo el detalle visible de la factura en la pantalla principal.
+- El CSS especifico del selector modal vive en `billing-product-picker-modal.component.css`; el componente padre conserva solo los estilos generales de la vista y de otros modales.
+- `billing-services.component.spec.ts` se ajusto para esperar la resolucion del contenido diferido antes de validar el dialogo y el flujo de agregado a la factura.
+
+Evidencia de performance:
+- Antes, el chunk lazy de `billing-services.component.ts` estaba alrededor de `136.9 kB`.
+- Despues de extraer el modal, `npm run bundle:hotspots -- --chunk=src/app/features/business/pages/billing-services/billing-services.component.ts --top=30 --rebuild` reporta `127.9 kB` para `billing-services-component`.
+- El entrypoint principal del chunk ya no arrastra el modal inline completo; el mayor contribuyente queda concentrado en `billing-services.component.ts` y el selector vive en un chunk diferido.
+
+Operacion y verificacion:
+- `npm test -- --watch=false --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`, `npm run type:check`, `npm run bundle:hotspots -- --chunk=src/app/features/business/pages/billing-services/billing-services.component.ts --top=30 --rebuild` y `git diff --check` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: playbook modular canonico y chequeado en verify
+
+Objetivo: dejar explicito, verificable y repetible como integrar, ampliar o migrar modulos sin depender de memoria humana ni reinterpretar ownership entre Dashboard y servicios.
+
+Cambios:
+- Se agrego `Dashboard/docs/MODULE-EVOLUTION-PLAYBOOK.md` como guia canonica para decidir si un cambio amplia un owner actual, crea un runtime nuevo o extrae un dominio del `platform-core`.
+- `Dashboard/public/system-runtime-topology.json` ahora publica `moduleEvolutionPlaybookDoc` y `Dashboard/docs/system-runtime-topology.schema.json` lo exige como parte del contrato visible.
+- `Dashboard/tools/check-module-manifests.mjs` valida que el playbook exista y que `system-runtime-topology.json` apunte a la ruta canonica correcta.
+- `Dashboard/src/app/features/tenant-admin/pages/module-topology/` agrega `Playbook de evolucion` a las fuentes canonicas visibles de plataforma.
+- `Dashboard/package.json` incorpora `npm run module:check` dentro de `npm run verify`, de modo que el pipeline normal del Dashboard tambien falle si se rompe la topologia modular publicada.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `MODULAR-ORCHESTRATION.md`, `API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `README.md` enlazan el playbook para que el criterio modular no quede disperso.
+
+Operacion y verificacion:
+- Deben pasar `npm run module:check`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` y `git diff --check` en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: api-catalog lazy con modal de propuesta separado
+
+Objetivo: reducir el peso real de `api-catalog` y limpiar la ruta para que el editor de propuestas API no cargue dentro del chunk principal cuando el usuario solo consulta el catalogo.
+
+Cambios:
+- Se creo `ApiProposalModalComponent` en `Dashboard/src/app/features/tenant-admin/components/api-proposal-modal/`.
+- `api-catalog.component.html` ahora difiere el modal de propuesta bajo `@defer` y solo lo carga cuando `proposalModalOpen()` pasa a `true`.
+- `api-catalog.component.ts` deja de renderizar el modal inline, consolida el borrador en `draftState()` y centraliza cambios via `updateDraft(...)`.
+- Los estilos del modal, formulario y snippets salieron de `api-catalog.component.css` hacia `api-proposal-modal.component.css`, evitando que el chunk principal de la ruta siga cargando CSS del editor.
+- `api-catalog.component.spec.ts` se actualizo para esperar la resolucion del contenido diferido al validar la edicion de propuestas.
+
+Evidencia de performance:
+- Antes, `api-catalog.component.ts` cargaba un chunk lazy aprox. de `63.4 kB`.
+- Despues del cambio, `api-catalog.component.ts` baja a aprox. `54.5 kB`.
+- El modal queda en su propio chunk diferido y el reporte de hotspots ya no lo cuenta dentro del entrypoint principal de `api-catalog`.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts`, `npm run bundle:hotspots -- --chunk=src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.ts --top=20 --rebuild`, `npm run lint`, `git diff --check` y `npm run docker:health` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: contrato runtime visible para operar, integrar y migrar modulos
+
+Objetivo: dejar inequívoco, por runtime real, que necesita cada modulo para correr solo, como entra orquestado por el Dashboard y que limites no se pueden romper al integrarlo, ampliarlo o migrarlo.
+
+Cambios:
+- `Dashboard/public/system-runtime-topology.json` ahora publica por runtime `standalone.requires`, `orchestrated.requires`, `dataOwnershipRules`, `consumesRuntimeApis` y `migrationBoundaries`, ademas de entrypoints y ownership.
+- `Dashboard/tools/check-module-manifests.mjs` valida esos campos contra los `module.json` reales para que la topologia publicada no derive del contrato operativo.
+- `/module-topology` muestra por runtime los requisitos de operacion individual y orquestada, las reglas de ownership de datos, las APIs consumidas y los limites de migracion.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/MODULAR-ORCHESTRATION.md` se ajustaron para declarar esta capa runtime como parte obligatoria del contrato modular visible.
+
+Operacion y verificacion:
+- `node Dashboard/tools/check-module-manifests.mjs`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` pendientes de esta iteracion deben pasar en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: tenant-admin lazy con modal de asignacion separado
+
+Objetivo: bajar el peso real de `tenant-admin` sin romper el flujo de contratacion por paquetes y modulos del tenant.
+
+Cambios:
+- Se creo `TenantModuleAssignmentModalComponent` en `Dashboard/src/app/features/tenant-admin/components/tenant-module-assignment-modal/tenant-module-assignment-modal.component.ts`.
+- `tenant-admin.component.html` ahora difiere el modal de asignacion de modulos y lo carga como componente standalone bajo demanda.
+- `tenant-admin.component.spec.ts` se actualizo para esperar la resolucion del contenido diferido al validar estados visuales del modal.
+- `tenant-admin.component.css` agrega estado `tenant-module-modal--loading` para el placeholder del modal diferido.
+
+Evidencia de performance:
+- Antes, `tenant-admin.component.ts` cargaba un chunk lazy aprox. de `111.2 kB`.
+- Despues del cambio, `tenant-admin.component.ts` baja a aprox. `105.7 kB`.
+- La mejora sale de sacar el modal completo de asignacion del chunk principal de la ruta.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts`, `npm run bundle:hotspots -- --chunk=src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.ts --top=20 --rebuild`, `npm run lint`, `npm run arch:check`, `git diff --check` y `npm run docker:health` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: roles lazy con modales separados
+
+Objetivo: reducir el peso real de la ruta `Roles` sin degradar la edicion de permisos ni mezclar mas logica en un componente ya cargado.
+
+Cambios:
+- Se crearon los componentes standalone `RoleCreateModalComponent` y `RolePermissionModalComponent` bajo `Dashboard/src/app/features/users/components/`.
+- `roles.component.html` ahora difiere esos dos modales y carga los componentes standalone bajo demanda; el modal de eliminacion se mantiene diferido dentro de la ruta.
+- `roles.component.ts` deja de renderizar directamente los modales pesados y pasa a orquestarlos desde la pagina principal.
+- `roles.component.spec.ts` se actualizo para esperar la resolucion del contenido diferido al validar el modal de permisos SRI.
+
+Evidencia de performance:
+- Antes, `roles.component.ts` cargaba un chunk lazy aprox. de `54.7 kB`.
+- Despues del cambio, `roles.component.ts` baja a aprox. `48.1 kB`.
+- La reduccion viene de sacar los modales de alta y edicion de permisos del chunk principal de la ruta.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/pages/roles/roles.component.spec.ts`, `npm run bundle:hotspots -- --chunk=src/app/features/users/pages/roles/roles.component.ts --top=20 --rebuild`, `npm run lint`, `npm run arch:check`, `git diff --check` y `npm run docker:health` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: guardrails modulares visibles y verificables
+
+Objetivo: dejar explicito, tanto para operadores como para el propio sistema, como corre cada modulo solo, como entra orquestado por el Dashboard y que reglas mandan al integrar, ampliar o migrar sin romper ownership futuro.
+
+Cambios:
+- `Dashboard/public/system-runtime-topology.json` ahora publica `operationModes` (`standalone` vs `orchestrated`) y `changeGuardrails` (`integrate`, `expand`, `migrate`) como lectura rapida machine-readable del ecosistema.
+- `/module-topology` agrega dos capas nuevas: comparativa visual entre `Modulo individual` y `Modulo orquestado por Dashboard`, y guardrails concretos para `Integrar`, `Ampliar` y `Migrar`.
+- La misma vista agrega `Matriz operativa por runtime`, una lectura compacta por modulo real con modo individual, modo orquestado, ownership de datos/escritura y la jugada correcta de cambio por runtime.
+- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` se actualizaron para tipar y cubrir esos contratos nuevos.
+- `Dashboard/docs/system-runtime-topology.schema.json` y `Dashboard/tools/check-module-manifests.mjs` ahora exigen esos bloques, validan mas estrictamente `docs.architecture`, `docs.operations`, `docs.aiContext` y verifican `integration.consumesApis` contra runtimes reales conocidos.
+- `README.md`, `Dashboard/README.md`, `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/API-FIRST-MODULES.md` quedaron alineados con esta lectura operativa.
+
+Decisiones:
+- La lectura `standalone` vs `orquestado` deja de ser solo narrativa: queda publicada en JSON, renderizada en el Dashboard y validada por checks.
+- Integrar, ampliar o migrar un modulo debe actualizar el manifiesto runtime, la topologia tenantizada y los guardrails del runtime map en el mismo cambio.
+
+Operacion y verificacion:
+- `npm run module:check`, `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run build` OK en `Dashboard`.
+- Paso unit focal `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`.
+- `npm run docker:health` OK en `Dashboard` (`http://127.0.0.1:8081/health -> ok`).
+
+### 2026-06-24 - Dashboard QA: atlas operativo del ecosistema dentro de Topologia modular
+
+Objetivo: dejar en una sola lectura, dentro del propio Dashboard, la foto completa del ecosistema real y no solo del mapa de runtimes que consume el orquestador.
+
+Cambios:
+- Se publico `Dashboard/public/ecosystem-atlas.json` como salida machine-readable del ecosistema completo: piezas reales, bases de negocio, stores persistentes, entradas publicas, cadenas de comunicacion, guias operativas y guardrails de despliegue.
+- `ModuleTopologyApiService` ahora carga tambien ese atlas y la vista privada `/module-topology` agrega secciones nuevas para `Atlas operativo del ecosistema`, `Bases, stores y borde publico`, `Cadenas de comunicacion`, `Si vas a hacer algo` y guardrails de despliegue.
+- `module-topology.component.ts/html/css/spec.ts` se actualizaron para renderizar frontend publico y gateway junto a Dashboard, backend y Facturador, dejando claro cuantas bases hay y por donde entra cada flujo.
+- `Dashboard/tools/check-module-manifests.mjs` ahora valida la forma del `ecosystem-atlas.json` y lo cruza contra los stores y runtimes reales publicados por `system-runtime-topology.json`.
+- `Dashboard/README.md`, `Dashboard/docs/ARCHITECTURE.md` y `MapaCompleto.md` quedaron enlazados al atlas publicado para que la documentacion corta, la larga y la vista UI cuenten la misma historia.
+
+Decisiones:
+- `Topologia modular` deja de ser solo un mapa de ownership del Dashboard y pasa a ser el atlas operativo corto del ecosistema entero.
+- El frontend publico y el gateway se documentan como piezas de primer nivel del sistema, aunque no sean runtimes proyectados por `module-registry.json`.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `git diff --check` y `npm run docker:health` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: matriz por feature visible para orquestacion modular
+
+Objetivo: dejar explicito, por cada modulo visible del Dashboard, quien es el owner real, como opera dentro de su runtime, como entra orquestado y cual es la jugada correcta para integrarlo, ampliarlo o migrarlo sin romper ownership.
+
+Cambios:
+- La seccion `Features visibles del Dashboard` de `/module-topology` se reemplazo por una `Matriz de modulos visibles del Dashboard` centrada en features y no solo en runtimes.
+- Cada fila visible ahora responde cinco preguntas sin abrir JSONs aparte: modulo visible, owner real, operacion individual dentro del owner, operacion orquestada por Dashboard y politica de cambio correcta.
+- La vista agrega KPIs cortos (`Features implementadas`, `Nativas del Dashboard`, `Proyectadas por servicios`) y un bloque `Si vas a integrar/ampliar/migrar` para que la lectura humana no dependa de interpretar varias columnas dispersas.
+- `module-topology.component.ts/html/css/spec.ts` se actualizaron para tipar y renderizar esa lectura por feature visible usando el runtime owner real y su entrypoint orquestado.
+- `Dashboard/tools/check-module-manifests.mjs` ahora rompe si una `service-projection` no declara `routeSources`, si una feature visible dice soportar modo `standalone` u `orchestrated` sin que su owner runtime lo soporte o si el owner no publica entrypoints orquestados coherentes.
+- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md`, `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ARCHITECTURE.md`, `Dashboard/README.md` y `MapaCompleto.md` quedaron alineados con la nueva lectura por runtime real y por feature visible.
+
+Decisiones:
+- La pregunta operativa correcta ya no es solo `que runtime existe`, sino tambien `que modulo visible del Dashboard representa y por donde debe cambiarse`.
+- La deriva entre proyeccion visual y owner real debe fallar en `module:check` antes de llegar a integraciones futuras o migraciones manuales.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `git diff --check` y `npm run docker:health` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: SweetAlert lazy para reducir chunks funcionales
+
+Objetivo: reducir peso de pantallas funcionales que no necesitan cargar `sweetalert2` hasta que el usuario abra una confirmacion real.
+
+Cambios:
+- `Dashboard/src/app/shared/ui/sweet-alert/sweet-alert.service.ts` deja de importar `sweetalert2` de forma estatica.
+- El servicio ahora carga `sweetalert2/dist/sweetalert2.esm.all.js` por `dynamic import` con cache en memoria, manteniendo la misma API `fire(...)`.
+
+Evidencia de performance:
+- Antes, `products-list.component.ts` cargaba un chunk lazy aprox. de `118.4 kB`, dominado por `sweetalert2` (~`79.7 kB`).
+- Despues del cambio, `products-list.component.ts` baja a aprox. `39.1 kB`.
+- `sweetalert2` queda aislado en un chunk lazy propio aprox. de `79.1 kB`, cargado solo cuando se usa el dialogo.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include products-list.component.spec.ts` y `npm run build` OK en `Dashboard`.
+- `npm run bundle:hotspots -- --chunk=products-list.component.ts --top=10` confirma el nuevo reparto de peso.
+
+### 2026-06-24 - Dashboard QA: delegacion de rutas legacy del panel a features dedicadas
+
+Objetivo: seguir reduciendo la dependencia del `paramascotas-panel` monolitico para que rutas legacy con feature ya existente no sigan cargando el chunk completo del panel.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora delega tambien `paramascotas-panel/catalog/products` a `ProductsListComponent`.
+- La misma capa de rutas ahora delega `paramascotas-panel/operations/billing-rides` a `InvoiceListComponent`.
+- `dashboard.routes.spec.ts` se amplio para exigir que esas rutas legacy existan antes de la ruta generica `paramascotas-panel/:group/:view` y carguen el componente dedicado correcto.
+
+Evidencia de performance:
+- El panel legacy sigue pesando aprox. `1.12 MB` en produccion (`paramascotas-panel-component`).
+- `products-list.component.ts` carga un chunk lazy aprox. de `118.4 kB`.
+- `invoice-list.component.ts` carga un chunk lazy aprox. de `49.1 kB`.
+- Con esta delegacion, abrir esas dos rutas legacy deja de pagar el costo del panel monolitico y usa el chunk especifico del dominio correspondiente.
+
+Operacion y verificacion:
+- `npm run type:check`, `npm test -- --watch=false --include dashboard.routes.spec.ts --include products-list.component.spec.ts --include invoice-list.component.spec.ts`, `npm run arch:check` y `npm run build` OK en `Dashboard`.
+- `git -C Dashboard diff --check` OK.
+
+### 2026-06-24 - Dashboard QA: topologia modular con entradas standalone y orquestadas verificables
+
+Objetivo: dejar explicitamente visible, y no solo documentado en abstracto, por donde opera cada runtime cuando corre solo y por que contratos entra al ecosistema cuando el Dashboard lo orquesta.
+
+Cambios:
+- `Dashboard/public/system-runtime-topology.json` ahora publica por runtime `runtimeBaseUrlExample`, `healthEndpoint`, `manifestEndpoint` y `orchestratedEntryPoints`, ademas del ownership y la topologia ya existente.
+- `Dashboard/tools/check-module-manifests.mjs` cruza esos campos contra `module.json` para romper si la vista runtime publicada deja de coincidir con el contrato real del modulo.
+- La vista privada `/module-topology` ahora muestra `Entradas individuales reales` y `Entradas orquestadas reales` dentro de cada runtime, con sus URLs/path de referencia y notas de uso.
+- `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/MODULE-OPERATING-MODEL.md` se endurecieron para exigir que el mapa runtime visible publique tambien las superficies reales de operacion, no solo ownership abstracto.
+
+Decisiones:
+- La forma correcta de integrar o migrar un modulo no se deduce de nombres de menu ni de rutas Angular: se lee desde `module.json` y `system-runtime-topology.json`.
+- Si cambia un endpoint de health, manifest o entrada orquestada, el contrato modular debe cambiar primero y la UI debe reflejarlo despues.
+
+Operacion y verificacion:
+- `npm run module:check`, `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run build` OK en `Dashboard`.
+- Paso unit focal `module-topology.component.spec.ts`.
+- `npm run docker:up` y `npm run docker:health` OK en `Dashboard`.
+
+### 2026-06-24 - Dashboard QA: limites tenant vs plataforma visibles en usuarios y roles
+
+Objetivo: hacer coherente la administracion de usuarios y roles con el modelo modular del sistema, dejando claro que el Dashboard orquesta accesos tenantizados y que los accesos globales de plataforma siguen otra frontera.
+
+Cambios:
+- `users-list`, `users-grid`, `roles` y `add-user` ahora muestran el `tenant` activo, el alcance real de la pantalla y la separacion explicita entre usuarios/roles del tenant y superadmins de plataforma.
+- `users-list` y `users-grid` etiquetan cada usuario visible como `Usuario del tenant`, `Admin del tenant`, `Operacion del tenant` o `Superadmin TECNOLTS` segun heuristica local de roles/cargo.
+- `roles` pasa a presentarse como `Roles del tenant`, resume roles base/personalizados y deja visible que los permisos globales no se asignan desde esa vista.
+- `add-user` deja explicito que solo crea cuentas operativas del tenant actual y que no debe usarse para accesos globales ni asignacion de tenants.
+- El ajuste evita mezclar en la UI el plano del orquestador (`Dashboard`) con el ownership de identidades globales, alineando la experiencia con `module-topology` y la documentacion modular publicada.
+
+Operacion y verificacion:
+- `npm run module:check`, `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run build` OK en `Dashboard`.
+- Pasaron unit focales `users-list.component.spec.ts`, `users-grid.component.spec.ts`, `roles.component.spec.ts` y `add-user.component.spec.ts`: 4 archivos / 17 pruebas OK.
+- `git -C Dashboard diff --check` OK.
+
+### 2026-06-24 - Mapa modular visible y chequeado desde el Dashboard
+
+Objetivo: hacer visible y verificable, desde la propia UI de plataforma, que modulos corren como runtimes reales, cuales son solo features proyectadas por el Dashboard y que reglas mandan al integrar, extraer o migrar dominios.
+
+Cambios:
+- `Dashboard/public/system-runtime-topology.json` se consolido como mapa runtime completo: manifiestos fuente, topologia actual/objetivo, ownership de datos, stores, contratos publicos, flujos de comunicacion y checklists de alta/extraccion.
+- `Dashboard/tools/check-module-manifests.mjs` ahora valida tambien `system-runtime-topology.json` contra `module-registry.json`, `tenant-module-topology.json` y los `module.json` reales, de modo que el mapa visible no pueda divergir del contrato modular.
+- Se agrego la vista privada `/module-topology` en el Dashboard (`tenant-admin`) con resumen de runtimes, features proyectadas, ownership de escrituras, stores, contratos APISIX y flujos entre modulos.
+- La vista `/module-topology` ahora incluye glosario operativo (`modulo runtime`, `modulo contratado`, `source of truth`, `write flow`, `store`), enlaces directos a `module-registry.json`, `system-runtime-topology.json` y `tenant-module-topology.json`, y panel de `Fuentes canonicas` con los archivos que mandan para integrar o migrar.
+- La misma vista agrega `Playbooks para cambiar el ecosistema` con pasos concretos para `Agregar API consumida por el Dashboard`, `Agregar modulo runtime nuevo` y `Extraer un dominio del platform-core`, incluyendo archivos a tocar y checks minimos.
+- La seccion `Plataforma` del menu ahora expone `Topologia modular`, y `tenant-admin`/`api-catalog` se enlazan entre si para navegar entre tenants, topologia y APIs sin adivinar rutas.
+- `README.md`, `MapaCompleto.md`, `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/MODULE-OPERATING-MODEL.md` ahora apuntan explicitamente a `system-runtime-topology.json` y a la ruta `/module-topology` como lectura operativa humana del contrato modular.
+
+Decisiones:
+- El mapa visual del Dashboard no inventa ownership; solo proyecta lo que ya declaran los manifests y la topologia tenantizada.
+- El Dashboard sigue sin ser fuente de verdad de negocio; la nueva pantalla existe para explicar y vigilar fronteras, no para absorber datos del core o del Facturador.
+- Para publicar nuevos modulos o extraer dominios del `platform-core`, primero debe actualizarse el contrato (`module.json`, `tenant-module-topology.json`, `system-runtime-topology.json`) y pasar `check-module-manifests.mjs`.
+
+Operacion y verificacion:
+- `node Dashboard/tools/check-module-manifests.mjs` OK.
+- `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run build` OK en `Dashboard`.
+- Pasaron unit focales `module-topology.component.spec.ts` y `api-catalog.component.spec.ts` (`npm test -- --watch=false --include ...`).
+- `git -C Dashboard diff --check` OK.
+- `npm run docker:up` y `npm run docker:health` OK en `Dashboard` (`http://127.0.0.1:8081/health -> ok`).
+- Por APISIX, `https://paramascotasec.com/dashboard/system-runtime-topology.json` responde el nuevo contrato y `https://paramascotasec.com/dashboard/module-topology?tenant=paramascotasec` responde `200`.
+
+### 2026-06-23 - Contrato modular orquestado verificable
+
+Objetivo: dejar explicito y verificable como deben convivir los modulos individuales y los modulos orquestados por el Dashboard, sin volver a mezclar ownership, datos o despliegues al integrar o migrar.
+
+Cambios:
+- Se definio la guia canonica `Dashboard/docs/MODULAR-ORCHESTRATION.md` con reglas de orquestacion, modo individual, fronteras de datos, checklist de integracion y estrategia de extraccion desde el backend compartido.
+- Se agregaron esquemas `Dashboard/docs/module-manifest.schema.json` y `Dashboard/docs/module-registry.schema.json`.
+- El Dashboard publica `Dashboard/public/module-registry.json` como registro canonico del orquestador y `Dashboard/public/module.json` como manifiesto del propio orquestador.
+- `paramascotasec-backend/module.json` declara el estado real actual del core API: activo, multi-tenant, con DB compartida temporal y dominios pendientes de extraccion.
+- `Facturador/module.json` declara el modulo fiscal aislado, su DB propia, sus fronteras fiscales y su contrato orquestado.
+- `paramascotasec-backend/public/index.php` expone `GET /module.json` sin depender de tenant ni login.
+- `Facturador/public/index.php` expone `GET /module.json`.
+- Se agrego el validador `Dashboard/tools/check-module-manifests.mjs`, el script `npm run module:check` en Dashboard y la ejecucion del check en `scripts/check-paramascotas.sh`.
+- `README.md`, `Dashboard/docs/ARCHITECTURE.md` y `Dashboard/docs/API-FIRST-MODULES.md` quedaron enlazados a la nueva frontera modular para que la documentacion no vuelva a separarse de la implementacion.
+
+Decisiones:
+- El Dashboard sigue siendo orquestador y registro, no backend de negocio.
+- El backend principal no se presenta como modularidad terminada; se documenta como frontera temporal hasta extraer servicios con DB propia.
+- El criterio minimo para un modulo integrable pasa a ser verificable por archivos y checks, no solo por convencion verbal.
+
+### 2026-06-24 - Topologia modular runtime vs features del Dashboard
+
+Objetivo: dejar inequívoco que una cosa es el modulo runtime desplegable y otra la feature/modulo contratado que el Dashboard proyecta al tenant, para evitar que futuras integraciones, extracciones o migraciones mezclen ownership.
+
+Cambios:
+- Se agrego `Dashboard/public/tenant-module-topology.json` como mapa canonico entre `TENANT_MODULE_CATALOG` y los owners runtime reales.
+- La topologia clasifica cada modulo contratado como `implemented` o `planned`, declara `ownerModuleKey`, `routeSources`, area de dominio y el comportamiento `standalone`/`orchestrated`.
+- `Dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora incluyen `dashboardProjection`, declarando que features del Dashboard y que `routeSources` proyecta cada modulo runtime.
+- El validador `Dashboard/tools/check-module-manifests.mjs` ahora cruza cuatro fuentes: `module-registry.json`, `module.json`, `tenant-module-topology.json` y `tenant-module-catalog.ts`.
+- El check falla si una feature del Dashboard cambia de owner sin declararlo, si un modulo planned expone rutas, si una `routeSource` no coincide con el catalogo tenant o si dos manifests reclaman la misma feature.
+- Se extendieron `Dashboard/docs/MODULAR-ORCHESTRATION.md`, `Dashboard/docs/API-FIRST-MODULES.md`, `Dashboard/docs/ARCHITECTURE.md` y `README.md` para distinguir modulos runtime de features proyectadas.
+
+Decisiones:
+- `module-registry.json` sigue describiendo modulos runtime desplegables.
+- `tenant-module-topology.json` describe modulos contratados/visibles del Dashboard y no reemplaza al registry runtime.
+- Los modulos reservados (`email-service`, `medical-office`) quedan explicitamente `planned`: sin owner runtime, sin `routeSources` y sin permiso de exponerse como operativos hasta tener contrato modular completo.
+
+Pendientes:
+- Consumir esta topologia desde una pantalla tecnica del Dashboard para que plataforma/soporte vea ownership y estado sin leer archivos.
+- Cuando se extraigan dominios del `platform-core`, mover su ownership en topologia y `dashboardProjection` sin cambiar las claves contratadas del tenant.
+
+### 2026-06-24 - Documentacion operativa real y paginacion coherente
+
+Objetivo: dejar documentado con claridad extrema como se comunica el ecosistema real hoy y corregir incoherencias visibles de UX entre listas del Dashboard.
+
+Cambios:
+- `MapaCompleto.md` se rehizo como mapa tecnico actual: modulos, contenedores, bases reales, redes, flujos HTTP, ownership, despliegue y pasos concretos para agregar APIs o modulos.
+- La documentacion canonica deja explicito que hoy hay 2 bases de negocio (`next-test-db` PostgreSQL 18.4 y `billing-postgres` PostgreSQL 16.14) y 1 store de infraestructura (`apisix-etcd` 3.5.31).
+- `AGENTS.md` y `paramascotasec/docs/AI_CONTEXT.md` corrigen el estado operativo de persistencia: la DB principal corre en PostgreSQL 18, pero el Facturador sigue en PostgreSQL 16 en runtime actual; no debe asumirse migrado a 18 hasta que runtime y compose coincidan.
+- `README.md` ahora apunta a `MapaCompleto.md` como mapa tecnico amplio del ecosistema.
+- `Dashboard/src/app/shared/models/pagination.ts` centraliza presets de paginacion para tablas, cards y monitoreo.
+- Se normalizaron listas del Dashboard a presets coherentes:
+  - tablas operativas (`invoice-list`, `users-list`): `10, 25, 50, 100`
+  - vistas tipo cards (`users-grid`, `products-list`, `inventory-list`): `8, 12, 24`
+  - monitoreo: `10, 25, 50`
+- `InvoicesFacade`, `InvoicesApiService` y `MonitoringFacade` dejan defaults de `pageSize` consistentes con esos presets.
+
+Operacion y verificacion:
+- `node Dashboard/tools/check-module-manifests.mjs` OK.
+- `npm run type:check` en Dashboard OK.
+- `npm test -- --watch=false --include ...invoice-list... --include ...invoices.facade... --include ...monitoring-list... --include ...monitoring.facade...` OK: 4 archivos / 19 pruebas.
+- `npm run lint` en Dashboard OK.
+- `git diff --check` del alcance tocado OK.
+- `npm run docker:up` y `npm run docker:health` en Dashboard OK.
+- `https://paramascotasec.com/dashboard/tenant-module-topology.json` responde JSON actualizado por APISIX.
+
+Hallazgos:
+- El runtime real y algunas notas historicas sobre PostgreSQL del Facturador no coincidian; desde ahora la documentacion operativa superior refleja el runtime verificado.
+- El bundle del Dashboard sigue teniendo un hotspot fuerte: `paramascotas-panel-component` permanece en ~2.83 MB lazy. Sigue siendo el siguiente frente prioritario de performance.
+
+### 2026-06-24 - Contrato operativo de modulos standalone vs orquestados
+
+Objetivo: dejar inequívoco como debe comportarse cada modulo cuando corre solo y cuando el Dashboard lo orquesta, para que integrar, ampliar o migrar dominios no dependa de interpretaciones informales.
+
+Cambios:
+- Se agrego `Dashboard/docs/MODULE-OPERATING-MODEL.md` como guia canonica de `standalone`, `orquestado`, `sourceOfTruth`, `writePolicy`, `integrationStyle`, `compositionRole`, `writeFlow` y `scope`.
+- `Dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora declaran en ambos modos quien conserva la verdad del dato, por donde se permite escribir y como se integra el runtime al Dashboard.
+- `Dashboard/public/tenant-module-topology.json` ahora clasifica cada feature visible con `compositionRole`, `sourceOfTruth`, `writeFlow` y `scope`, distinguiendo nativo del orquestador, proyeccion de servicio real o modulo planned.
+- `Dashboard/docs/module-manifest.schema.json` y `Dashboard/docs/tenant-module-topology.schema.json` se endurecieron para exigir esos campos.
+- `Dashboard/tools/check-module-manifests.mjs` ahora falla si un owner `service` se presenta como si fuera nativo del Dashboard, si una feature implementada declara `sourceOfTruth`/`writeFlow` incompatibles, o si falta la referencia al modelo operativo canonico.
+- `Dashboard/docs/MODULAR-ORCHESTRATION.md`, `Dashboard/docs/API-FIRST-MODULES.md`, `Dashboard/docs/ARCHITECTURE.md`, `README.md` y `MapaCompleto.md` quedaron enlazados al nuevo modelo operativo.
+
+Operacion y verificacion:
+- `node Dashboard/tools/check-module-manifests.mjs` OK.
+- Parseo JSON local de manifests, topologia y schemas OK.
+- `git -C Dashboard diff --check` del alcance tocado OK.
+- `git -C paramascotasec-backend diff --check -- module.json` OK.
+- `git -C Facturador diff --check -- module.json` OK.
+
+Decisiones:
+- Toda feature visible del Dashboard debe explicitar si es `orchestrator-native`, `service-projection` o `planned`.
+- Ninguna `service-projection` puede mutar datos por fuera del owner runtime.
+- La topologia tenant deja de ser solo descriptiva: pasa a ser contrato de gobierno modular para integracion y migracion.
+
+### 2026-06-24 - Secuencia operativa por runtime publicada y validada
+
+Objetivo: dejar explicito, por runtime, como opera solo y como entra al Dashboard para que integrar, ampliar o migrar el sistema no dependa de interpretaciones humanas ni de recordar el flujo correcto.
+
+Cambios:
+- `Dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora publican `modes.standalone.operationFlow` y `modes.orchestrated.operationFlow`.
+- `Dashboard/public/system-runtime-topology.json` refleja esas secuencias para los tres runtimes reales del workspace.
+- La vista privada `/module-topology` ahora muestra `Secuencia operativa` dentro de cada modo (`Ejecucion individual` y `Operacion orquestada`) para que plataforma vea el flujo real sin abrir JSONs a mano.
+- `Dashboard/tools/check-module-manifests.mjs`, `Dashboard/docs/module-manifest.schema.json` y `Dashboard/docs/system-runtime-topology.schema.json` exigen y validan ese campo nuevo, evitando que la lectura visual diverja del contrato publicado.
+- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` quedaron alineados con el nuevo contrato.
+- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/MODULAR-ORCHESTRATION.md`, `Dashboard/docs/ARCHITECTURE.md`, `Dashboard/docs/API-FIRST-MODULES.md` y `Dashboard/README.md` ahora apuntan explicitamente a `operationFlow` como parte canonica del modelo modular.
+
+Decisiones:
+- Si cambia la forma de operar un modulo, el primer cambio debe ocurrir en `module.json`; la vista del Dashboard solo refleja ese contrato.
+- `operationFlow` pasa a ser parte obligatoria del gobierno modular, no texto auxiliar de documentacion.
+
+Operacion y verificacion:
+- `npm run module:check`, `npm run type:check`, `npm run lint` y `npm run arch:check` OK en `Dashboard`.
+- Paso unit focal `src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`.
+- `git -C Dashboard diff --check` OK.
+- `git -C paramascotasec-backend diff --check -- module.json` OK.
+- `git -C Facturador diff --check -- module.json` OK.
+
+### 2026-06-24 - Dashboard QA: puerta de decision obligatoria para modularidad futura
+
+Objetivo: dejar explicito y verificable como opera cada modulo por su cuenta y como entra orquestado por Dashboard, para que integrar, ampliar o migrar no vuelva a depender de criterio informal.
+
+Cambios:
+- `Dashboard/public/system-runtime-topology.json` agrega `decisionGate` con las preguntas minimas que toda integracion modular debe responder: owner real, write path, store real, operacion individual, operacion orquestada y primer cambio contractual.
+- `Dashboard/docs/system-runtime-topology.schema.json` ahora exige `decisionGate`.
+- `Dashboard/tools/check-module-manifests.mjs` valida la presencia del gate y falla si no publica al menos cinco preguntas de decision.
+- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` tipa `decisionGate` como parte del contrato runtime publicado.
+- `Dashboard/src/app/features/tenant-admin/pages/module-topology/module-topology.component.{ts,html,css}` muestra la `Puerta de decision obligatoria` dentro de `/module-topology`, antes de los playbooks y matrices detalladas.
+- `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` incorporan el gate como regla operativa corta para integracion, ampliacion y migracion.
+
+Operacion y verificacion:
+- `cd Dashboard && npm run type:check` OK.
+- `cd Dashboard && npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` OK.
+- `cd Dashboard && npm run lint` OK.
+- `cd Dashboard && npm run arch:check` OK.
+- `cd Dashboard && npm run module:check` OK.
+- `cd Dashboard && npm run build` OK.
+- `cd Dashboard && git diff --check` OK.
+
+### 2026-06-24 - Dashboard QA: estado comercial fuera del panel legacy
+
+Objetivo: seguir reduciendo el `paramascotas-panel` catch-all, dejando `operations/store-status` como vista dedicada con copy operativo claro sobre owner real, write path y modo orquestado.
+
+Cambios:
+- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/operations/store-status` antes de `paramascotas-panel/:group/:view`.
+- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-store-status/` con `ParamascotasStoreStatusComponent` como workspace dedicado para pausar ventas, comunicar al cliente y revisar el impacto comercial.
+- La nueva vista carga `storeStatus`, pedidos y metricas del mes con degradacion parcial: si fallan pedidos o stats, la pagina sigue operativa y publica avisos de alcance parcial.
+- `ParamascotasStoreStatusComponent` deja explicito en UI que el owner real es `platform-core`, que la escritura valida entra por `Dashboard -> /dashboard/api -> Core API` y que la pagina ya no depende del panel monolitico.
+- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{html,ts}` retira el bloque `store-status` y sus helpers/charts asociados del catch-all legacy.
+- `Dashboard/src/app/features/dashboard/dashboard.routes.spec.ts` y `paramascotas-store-status.component.spec.ts` protegen la delegacion por ruta exacta y el copy de orquestacion.
+- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/MODULE-OPERATING-MODEL.md` ahora incluyen `operations/store-status` entre las vistas que deben resolverse por ruta exacta.
+
+Operacion y verificacion:
+- `cd Dashboard && npm run type:check` OK.
+- `cd Dashboard && npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-store-status/paramascotas-store-status.component.spec.ts --include src/app/features/dashboard/dashboard.routes.spec.ts` OK.
+- `cd Dashboard && npm run lint` OK.
+- `cd Dashboard && npm run arch:check` OK.
+- `cd Dashboard && npm run build` OK.
+- `cd Dashboard && npm run bundle:hotspots -- --chunk=paramascotas-panel --top=15` OK.
+- `cd Dashboard && git diff --check` OK.
+
+Hallazgos:
+- El reporte de hotspots en produccion deja `paramascotas-panel-component` en `839.0 kB`, frente a ~`854.7 kB` antes de extraer esta vista.
+- La contribucion directa de `src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` baja a `727.8 kB`, confirmando que la extraccion reduce peso real del catch-all.
+
+### 2026-06-24 - Dashboard performance: hotspot real de `paramascotas-panel`
+
+Objetivo: atacar el principal hotspot de performance del Dashboard con evidencia real, no por intuicion.
+
+Cambios:
+- Se agrego `Dashboard/src/app/shared/ui/charts/deferred-apex-chart.component.ts` para diferir el render de ApexCharts y sacar `ng-apexcharts` del chunk base de `paramascotas-panel`.
+- `paramascotas-panel.component.ts/html/css` migraron sus charts a `app-deferred-apex-chart`; el panel ya no importa `NgApexchartsModule` directamente.
+- Se agrego `Dashboard/tools/report-bundle-hotspots.mjs` y el script `npm run bundle:hotspots` para inspeccionar `stats.json` y ver que archivos explican el peso real de cada chunk.
+- `Dashboard/docs/ARCHITECTURE.md` documenta el uso de `bundle:check` y `bundle:hotspots` como criterio operativo de performance.
+
+Operacion y verificacion:
+- `npm run type:check` OK.
+- `npm run lint` OK.
+- `npm run build` OK.
+- `npm run bundle:hotspots -- --chunk=paramascotas-panel --top=8` confirma que el lazy chunk `paramascotas-panel-component` pesa `2.84 MB` y que `2.30 MB` vienen del propio `paramascotas-panel.component.ts`.
+- El reporte confirma tambien que `ng-apexcharts` ya no vive dentro del chunk del panel: quedo en un chunk aparte (`chunk-P4JR4K24.js`, ~24.5 kB de wrapper Angular; la libreria `apexcharts-*` sigue lazy separada).
+- `npm run docker:up` y `npm run docker:health` en Dashboard OK tras el cambio.
+
+Hallazgos:
+- El cuello principal ya no es la libreria de charts; es la concentracion de vistas, template, estilos y logica dentro del propio `paramascotas-panel.component.ts`.
+- El siguiente refactor de performance con retorno real debe partir el panel por vistas/dominios, no solo seguir moviendo dependencias de terceros.
+
+### 2026-06-24 - Dashboard QA: preview de producto diferido fuera de `paramascotas-panel`
+
+Objetivo: seguir reduciendo el hotspot real de `paramascotas-panel` sacando otra vista modal grande del componente padre sin tocar la logica de negocio del flujo de productos.
+
+Cambios:
+- Se agrego `src/app/features/dashboard/pages/paramascotas-panel/components/paramascotas-product-preview-modal/` como componente standalone para el resumen de producto.
+- El modal ahora consume una vista tipada `ParamascotasProductPreviewModalView` con badges, metricas, tags, thumbnails y secciones operativas/SEO ya calculadas por el padre.
+- `paramascotas-panel.component.ts` agrega `selectedCatalogProductPreviewModal` y mueve al padre solo el armado del view model y las acciones (`editar`, `duplicar`, `publicar/ocultar`, seleccionar imagen, `cerrar`).
+- `paramascotas-panel.component.html` reemplaza el bloque inline del preview por `@defer (when selectedCatalogProduct())` con `app-paramascotas-product-preview-modal`.
+- `paramascotas-panel.component.css` deja de cargar los estilos especificos del preview dentro del chunk del padre; esos estilos pasan al nuevo componente.
+- Se agrego `paramascotas-product-preview-modal.component.spec.ts` y se mantuvo verde el modal ya extraido de detalle de pedido.
+
+Operacion y verificacion:
+- `npm run type:check` OK.
+- `npm run lint` OK.
+- Pasaron unit focales `paramascotas-product-preview-modal.component.spec.ts` y `paramascotas-order-detail-modal.component.spec.ts`: 2 archivos / 4 pruebas OK.
+- `npm run bundle:hotspots -- --chunk=src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts --top=25 --rebuild` confirma mejora:
+  - chunk lazy `paramascotas-panel-component`: `1.11 MB -> 1.10 MB`
+  - contribucion del padre `paramascotas-panel.component.ts`: `831.5 kB -> 821.6 kB`
+- `git -C Dashboard diff --check` OK.
+
+### 2026-06-23 - Dashboard QA: menu SRI separado por permisos
+
+Objetivo: corregir la mezcla de funciones fiscales bajo un solo menu, para que la asignacion de roles no muestre opciones no relacionadas o no permitidas.
+
+Cambios:
+- `Facturacion electronica` deja de fusionar `invoicing` con `billing-sri` en el menu lateral.
+- `invoicing` queda como `Empresa y cobros` con rutas de empresa, monedas y pasarelas; las pantallas SRI salen del modulo SRI.
+- `billing-sri` se separa en entradas laterales por proposito: `Documentos SRI`, `Emitir factura SRI`, `Catalogo fiscal SRI` y `Configuracion SRI`.
+- La antigua seccion lateral generica `Servicios adicionales` se elimino: el menu queda agrupado por dominios reales (`Administracion`, `Empresa y cobros`, `SRI Ecuador`, `Operacion e inventario`, `Workspace`) para que las opciones visibles correspondan mejor a roles y permisos.
+- `invoice-list` pasa al route source `billing-services` y usa permisos `billing-sri.read`; emision usa `billing-sri.create`; productos, clientes y configuracion usan `billing-sri.update`.
+- La barra interna del Facturador SRI filtra secciones por permisos reales, evitando enlaces visibles a rutas que el rol no puede abrir.
+- La bandeja `Facturas SRI` usa permisos `billing-sri` para abrir emision y oculta ese acceso a usuarios de solo consulta.
+- La bandeja `Facturas SRI` agrega navegacion contextual SRI (`Documentos`, `Emision`, `Productos`, `Clientes`, `Configuracion`) filtrada por permisos.
+- Las etiquetas de permisos de roles dejan de ser genericas (`Crear/Editar SRI`) y pasan a `Consultar documentos SRI`, `Emitir facturas SRI` y `Administrar SRI`, con descripciones alineadas a cada menu.
+- La pantalla `Roles y permisos` muestra grupos con nombre completo y descripcion operativa (`Empresa y cobros`, `Facturador SRI`) para que la asignacion de roles no dependa de abreviaturas como `SRI`.
+- Los accesos directos de tenant-admin ya no mandan `invoicing` a facturas SRI: `invoicing` abre `Empresa y cobros`, y `billing-sri` abre `Documentos SRI`.
+- Registrar productos fiscales dentro del selector/modal requiere `billing-sri.update` (`Administrar SRI`), no solo permiso de emision.
+- El encabezado del modulo SRI cambia por ruta: `Emitir factura SRI`, `Productos para facturar`, `Clientes de factura` o `Configuracion SRI`.
+- El catalogo central de modulos renombra `invoicing` a `Empresa y cobros`/`Cobros` y elimina descripciones que prometian RIDE/XML/SRI desde ese modulo.
+- El registro de APIs deja `invoicing` sin endpoints SRI; los contratos de comprobantes, RIDE, XML, emision, catalogo fiscal y configuracion quedan solo en `billing-sri`.
+- Los endpoints de alta de productos fiscales y carga de imagen usan permiso `billing-sri.update`, alineados con `Administrar SRI`.
+- El detalle de productos cargados en emision muestra encabezados de producto/cantidad/total para evitar montos flotando sin contexto.
+- El selector `Agregar productos` mantiene el boton cerrar dentro del header en mobile, muestra busqueda antes del resumen, compacta el resumen vacio y conserva el footer dentro del viewport.
+- La vista de productos usa copy fiscal especifico (`Catalogo fiscal SRI`, `Productos fiscales SRI`) para no volver a mezclar SRI con cobros genericos.
+- Los errores visibles del flujo SRI sanitizan codigos/URLs internas del Facturador; un XML autorizado aun no disponible se explica como pendiente de descarga y sugiere consultar estado o reintentar, sin mostrar `BILLING_*` ni `http://facturador:8080`.
+- `InvoicesFacade` usa permisos `billing-sri.create/update` y ya no depende de `invoicing`; no expone eliminacion fiscal porque `billing-sri` no tiene accion `delete`.
+- Los componentes heredados `invoice-add`, `invoice-edit` e `invoice-preview` dejan de renderizar formularios manuales con calculos en cliente; quedan como puentes de compatibilidad hacia `Emitir factura SRI` o `Documentos SRI` y usan permisos `billing-sri`.
+- El contexto backend para `platform-admin` agrega modulos minimos de recuperacion (`tenant-admin`, `users`) aunque el tenant activo ya no los tenga contratados, para que un superadmin no quede bloqueado al quitarse servicios del tenant que esta administrando.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focales de navegacion/modulos/lista/facturador SRI, y `git diff --check`.
+- Pasaron unit focales de roles (`roles.component.spec.ts` y `roles.facade.spec.ts`) validando nombres completos, descripciones y permisos SRI separados.
+- Paso unit focal `billing-services.component.spec.ts` y Playwright real por APISIX `legacy invoice editor routes`, incluyendo validacion responsive del modal de productos en 390x844.
+- Pasaron unit focales `billing-services.component.spec.ts` e `invoices.facade.spec.ts` para mensajes SRI limpios y permisos `billing-sri`.
+- Pasaron pruebas focales de navegacion/registro (`navigation.service`, `dashboard-module-registry`, `dashboard-modules`) validando la separacion por secciones y que `Servicios adicionales` no vuelva como contenedor fiscal.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"` validando menu SRI separado tras guardar modulos.
+- Pasaron smoke e2e de sidebar para demo y monitoring con las nuevas secciones `Workspace` y `Operacion e inventario`.
+- Paso Playwright `invoice-workspace.spec.ts` actualizado para la tabla vigente y datos reales/fixture sin fijar totales obsoletos.
+- Paso smoke `tenant admin exposes quick presets` con el detalle de paquetes actualizado (`Empresa y cobros`, `Documentos SRI`, `Emision SRI`).
+- Pasaron unit focales de rutas fiscales legacy, `billing-services`, `invoice-list` e `invoices.facade`: 6 archivos / 30 pruebas OK; tambien pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y `git diff --check` tras retirar los formularios heredados.
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin keeps tenant recovery routes after removing tenant-admin and users from the active tenant"`: el tenant puede quedar sin `tenant-admin`/`users` en su contrato, pero el `platform-admin` mantiene `Tenants` y `APIs`, recarga `tenant-admin` y puede restaurar los modulos.
+
+### 2026-06-23 - Dashboard/Facturador QA: sucursales fiscales coherentes
+
+Objetivo: corregir la incoherencia del modulo SRI donde se podia seleccionar sucursal para emitir, pero no registrar ni editar sucursales fiscales desde el Dashboard.
+
+Cambios:
+- Facturador agrega endpoints autenticados `POST /api/{test|production}/v1/configuration/branches` y `POST /api/{test|production}/v1/configuration/branches/{branchId}` para crear/editar sucursales del cliente fiscal.
+- Al crear sucursal se heredan certificado, logo y configuracion de correo de la sucursal base; el usuario define establecimiento, punto de emision, nombre, direccion, ambientes, reintentos, default y estado activo.
+- Se impide dejar al cliente sin sucursal activa/default, desactivar la sucursal default o marcar como default una sucursal inactiva.
+- La API key del Facturador usa `branch_id` solo como sucursal base para configuracion inicial; la autorizacion operativa queda por cliente fiscal y sucursales activas del mismo cliente. Esto permite facturar por sucursal sin crear una API key por cada punto de emision.
+- El worker y las consultas de comprobantes usan alcance de cliente fiscal para no perder XML/RIDE de facturas emitidas por otra sucursal activa.
+- Backend proxy expone `admin/billing/configuration/branches` POST y `admin/billing/configuration/branches/{branchId}` PATCH para el Dashboard.
+- Dashboard agrega panel `Sucursales fiscales`, boton `Nueva sucursal`, modal de alta/edicion, validaciones locales, seleccion automatica de la sucursal creada y ajustes responsive para que badges/botones no se corten.
+- Fixtures y pruebas del Dashboard cubren alta/edicion de sucursales, selector de productos, configuracion SRI y modal sin overflow.
+
+Operacion y verificacion:
+- Facturador redesplegado con `./scripts/deploy-development.sh facturador`.
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `php -l` en Facturador/backend tocados, `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focal `billing-services.component.spec.ts`, `npm run capabilities:generate`, `npm run capabilities:check` y `git diff --check`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, Facturador y SRI pruebas.
+- Runtime Facturador confirmo configuracion con `branches=1`, sucursal base `001-001` y `retry_test_delay=3600`.
+- Prueba runtime creo una sucursal temporal `998-001`, la respuesta la devolvio visible, y luego se elimino de la DB; la configuracion quedo nuevamente sin esa sucursal temporal.
+- Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "legacy invoice editor routes"` paso y verifico selector de productos, panel de sucursales y modal `Nueva sucursal` sin botones cortados.
+
+### 2026-06-23 - Facturador QA: reintentos por hora y emision por sucursal
+
+Objetivo: evitar reintentos SRI demasiado agresivos y dejar preparada la emision por sucursal/punto de emision cuando exista mas de una sucursal fiscal.
+
+Cambios:
+- `invoice_retry_settings.delay_seconds` queda con minimo real de 3600 segundos, default 3600 y constraint DB `chk_invoice_retry_settings_delay_seconds_minimum`.
+- Se agrego migracion `009_invoice_retry_minimum_delay.sql`; en QA actual actualizo `pruebas` y `produccion` de 5 a 3600 segundos.
+- El worker usa `GREATEST(delay_seconds, min_age_seconds)`, por lo que datos antiguos no pueden disparar recuperaciones antes de una hora.
+- El retry interno de conexion SOAP queda separado como `SRI_CONNECTION_RETRY_DELAY_SECONDS` y acotado para no dejar una peticion HTTP durmiendo una hora.
+- Facturador permite resolver sucursal por `branch_id` o por `branch_code`/`emission_point` en el payload de emision; la sucursal debe estar activa y pertenecer al mismo cliente fiscal.
+- La sucursal asociada a la API key se usa como sucursal base; el Dashboard puede elegir cualquier sucursal activa del mismo cliente fiscal.
+- La configuracion SRI devuelve la lista de sucursales activas y Dashboard muestra selector de sucursal en `Emitir factura`; el payload manual envia `branch_id`.
+- La emision desde pedidos acepta `billing_branch_id`/`branch_id` o metadata fiscal de sucursal si el pedido ya la trae; sin ese dato usa la sucursal default del Facturador.
+
+Operacion y verificacion:
+- Facturador redesplegado con `RUN_DB_MIGRATIONS=1 ./scripts/deploy-development.sh facturador`.
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `php -l` en Facturador/backend tocados, unit focal `billing-services.component.spec.ts`, `npm run type:check`, `npm run lint` y `git diff --check` del alcance.
+- Runtime confirma `invoice_retry_settings`: `produccion|3|3600|5|t` y `pruebas|3|3600|5|t`.
+- Runtime backend confirma configuracion con `delay_test=3600`, `delay_prod=3600`, `branches=1`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, Facturador, SRI pruebas y rutas legacy bloqueadas.
+
+### 2026-06-23 - Dashboard/Facturador QA: Configuracion SRI editable
+
+Objetivo: hacer que `Estado y configuracion SRI` sea realmente configurable desde el Dashboard, incluyendo identidad fiscal, certificado `.p12`, ambientes QA/produccion y politica de reintentos.
+
+Cambios:
+- Facturador agrega endpoints autenticados `GET/POST /api/{test|production}/v1/configuration` y `POST /configuration/certificate`.
+- Se puede editar RUC, razon social, nombre comercial, correo fiscal, direccion matriz, establecimiento, punto de emision, nombre/direccion de sucursal, activacion por ambiente y reintentos por ambiente.
+- La carga de certificado acepta `.p12`, valida la clave con OpenSSL, guarda el archivo en storage persistente writable y no expone passwords ni API keys completas en la respuesta.
+- `invoice_retry_settings` agrega `max_attempts` y `delay_seconds`; el worker y la seleccion de pendientes usan esos valores por ambiente junto con la ventana configurada.
+- Backend proxy expone `admin/billing/configuration`, `admin/billing/configuration` PATCH y `admin/billing/configuration/certificate` para el Dashboard.
+- Dashboard agrega panel de configuracion SRI con identidad, certificado, metadatos de credencial, toggles QA/produccion, reintentos automaticos, cantidad de intentos, intervalo y ventana de recuperacion.
+- Se registraron las nuevas rutas en el catalogo de capacidades backend/Facturador y se regenero el manifiesto.
+
+Operacion y verificacion:
+- Facturador redesplegado con `RUN_DB_MIGRATIONS=1 ./scripts/deploy-development.sh facturador`.
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `php -l` en archivos Facturador/backend tocados, unit focal `billing-services.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run capabilities:generate`, `npm run capabilities:check` y `git diff --check` del alcance tocado.
+- Consulta runtime desde backend confirma configuracion SRI disponible, certificado valido y reintentos `pruebas/produccion` persistidos.
+- Paso Playwright real por APISIX para rutas fiscales heredadas y persistencia de modulos.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, catalogo publico, Facturador, SRI pruebas y rutas legacy bloqueadas.
+- En QA se mantiene el bloqueo operativo: no consultar SRI produccion desde el entorno `development`, aunque la UI muestre configuracion del ambiente produccion.
+
+### 2026-06-23 - Facturador QA: auditoria completa de facturas actuales y blindaje futuro
+
+Objetivo: revisar todas las facturas actuales del Facturador y dejar protegido el flujo futuro de XML/RIDE/estado para que no dependa fragilmente de archivos fisicos cuando la DB conserva el XML autorizado.
+
+Cambios:
+- Se auditaron las 127 facturas actuales: 125 `AUTORIZADO`, 1 `NO AUTORIZADO` QA y 1 `ANULADA_LOCAL`.
+- Se restauraron 80 XML autorizados recuperables desde `raw_response.comprobante` hacia `/app/storage/xml/autorizados`.
+- Tras la reparacion quedan 87 XML autorizados fisicos y 0 XML recuperables pendientes.
+- Se generaron/actualizaron los RIDE posibles: quedaron 125 PDFs fisicos para los comprobantes vigentes generables; el comprobante no autorizado no queda como RIDE vigente.
+- `public/index.php` restaura XML autorizado desde `raw_response.comprobante` tambien al preparar RIDE, de modo que pedir PDF antes de pedir XML tambien autocorrige el storage local.
+- `CheckInvoiceStatus` mantiene el comportamiento seguro: en QA `pruebas` no consulta SRI produccion para comprobantes restaurados de ambiente `produccion`; preserva estado local y usa cache/DB.
+
+Hallazgos:
+- No hay claves de acceso duplicadas.
+- Existe el secuencial `001-001-000000118` duplicado solo en ambiente `pruebas`: uno `NO AUTORIZADO` y otro `AUTORIZADO`; no afecta claves de acceso ni produccion, pero debe tratarse como historial QA no vigente si aparece en consultas.
+- Quedan 38 facturas autorizadas antiguas de produccion sin XML local ni `raw_response.comprobante`; QA no puede reconstruir su XML autorizado sin importar una fuente externa previa o consultar SRI produccion, lo cual no debe hacerse desde este entorno.
+
+Operacion y verificacion:
+- Facturador redesplegado con `./scripts/deploy-development.sh facturador`.
+- Paso `php -l` en runtime para `public/index.php` y `CheckInvoiceStatus.php`.
+- XML de factura restaurada responde `200` por APISIX Facturador y por backend interno.
+- RIDE de factura restaurada responde `200` por APISIX Facturador.
+- Prueba de blindaje futuro: se elimino temporalmente un XML autorizado restaurado, se solicito RIDE y el servicio reconstruyo el XML desde `raw_response` (`restored_xml=yes`) devolviendo PDF `200`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, Facturador, SRI pruebas, SMTP y rutas legacy bloqueadas.
+- PHPUnit host no corrio porque el host tiene PHP 8.3.6 y el proyecto exige PHP >= 8.4.1; la imagen runtime no incluye tests/dev dependencies.
+
+### 2026-06-23 - Facturador QA: XML autorizado restaurable desde DB
+
+Objetivo: corregir descargas XML que fallaban con `BILLING_XML_UPSTREAM_FAILED` cuando una factura restaurada conservaba autorizacion local y `raw_response.comprobante`, pero el archivo fisico en `/app/storage/xml/autorizados` ya no existia.
+
+Cambios:
+- `CheckInvoiceStatus` ahora restaura el XML autorizado desde `raw_response.comprobante` antes de consultar SRI o responder estado.
+- La restauracion escribe el XML en el storage autorizado, actualiza `authorized_xml_path`, mantiene `authorized_xml_received = true` y apaga `reintento`.
+- Para comprobantes de ambiente `produccion` consultados desde QA `pruebas`, se sigue preservando el estado local y no se consulta SRI produccion.
+- Se agrego test unitario para restaurar XML desde `raw_response` sin llamar al SRI.
+
+Operacion y verificacion:
+- Facturador redesplegado con `./scripts/deploy-development.sh facturador`.
+- Paso `php -l` en `CheckInvoiceStatus.php` y `CheckInvoiceStatusTest.php`; en runtime tambien paso `php -l` del caso de uso.
+- PHPUnit host no corrio porque el host tiene PHP 8.3.6 y el proyecto exige PHP >= 8.4.1; la imagen runtime no incluye tests/dev dependencies.
+- La clave `1506202601175968768200120010010000001176639548314` respondio XML `200` por llamada interna Facturador, por backend y por el contrato publico APISIX `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/test/v1/invoices/{accessKey}/xml`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, facturador, SRI pruebas, SMTP y rutas legacy bloqueadas.
+
+### 2026-06-23 - Dashboard QA: modales y consistencia de asignacion SRI
+
+Objetivo: corregir inconsistencias reportadas en el flujo de `Emitir factura` y en el modal de asignacion de modulos del administrador de tenant.
+
+Cambios:
+- En `Emitir factura`, el catalogo lateral se reemplazo por el modal `Agregar productos a la factura`; el detalle de la factura queda en la pantalla principal y el modal muestra busqueda, resultados y resumen de productos cargados.
+- El modal de productos busca por nombre, codigo, categoria, marca o precio; al agregar un producto, se actualiza inmediatamente el detalle visible de la factura y el resumen dentro del modal.
+- El modal de productos queda limitado al alto del viewport, conserva el footer visible, usa columnas compactas para no recortar `Agregar`, muestra unidades y total en una tarjeta de resumen y usa scroll interno en resultados/lista cargada.
+- La ruta `Productos para facturar` conserva el catalogo amplio para administracion; la emision queda enfocada en cliente, detalle, totales y boton de emitir.
+- En `tenant-admin`, el paquete abierto para ver detalle ya no se pinta como asignado si todos sus modulos fueron quitados en el modal; las clases visuales `active/selected` dependen del conteo seleccionado real.
+- La prueba real por APISIX valida que al desmarcar `Facturacion` en el modal de tenant deja de verse activo/seleccionado antes de guardar.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`.
+- Pasaron unit focales `billing-services.component.spec.ts` y `tenant-admin.component.spec.ts`: 27 pruebas OK.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`: valida menu, desmarcado visual de `Facturacion`, rutas SRI y modal `Agregar productos a la factura`, incluyendo agregar un producto, verlo en el detalle de emision, mantener el modal dentro del viewport, dejar visibles los botones del footer y no recortar el control `Agregar`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, catalogo publico, Facturador y rutas legacy bloqueadas.
+- No se emitieron facturas SRI reales ni se consumieron secuenciales.
+
+### 2026-06-23 - Dashboard QA: reorganizacion funcional del modulo SRI
+
+Objetivo: convertir el modulo `Facturador SRI` en una experiencia mas clara para usuarios reales, separando emision, consultas/documentos, productos, clientes y estado/configuracion SRI.
+
+Cambios:
+- El menu de facturacion electronica queda separado en `Consultar facturas`, `Emitir factura`, `Productos para facturar`, `Clientes de factura` y `Estado y configuracion SRI`.
+- `Facturador SRI` lee la ruta activa y muestra secciones internas dedicadas; la emision ya no mezcla comprobantes recientes, configuracion e integraciones en una sola vista.
+- El estado SRI queda visible arriba como `SRI en linea`, `SRI fuera de linea` o `Verificando estado...`; si no hay disponibilidad, se bloquean emision, consulta directa y reemision, manteniendo RIDE/XML locales.
+- El flujo de emision usa textos operativos (`Totales automaticos`, `Verifica los datos antes de emitir`) y elimina copy tecnico como `Calcula backend`.
+- Productos facturables muestran imagen cuando existe, soportan codigo auxiliar, unidad de medida, estado activo/inactivo, carga JPG/PNG/WebP por `/dashboard/api/uploads/images`, URL editable con preview y busqueda tambien por precio en backend.
+- La vista de clientes permite preparar datos fiscales y reutilizar clientes desde comprobantes recientes; no inventa una persistencia de clientes porque no hay API dedicada en el contrato actual.
+- `Facturas SRI` muestra mejor numero de factura, cliente, RUC/cedula cuando el Facturador lo entrega, fecha, total, estado, clave de acceso y acciones RIDE/XML.
+- `Facturas SRI` permite filtrar por numero/cliente/RUC/cedula desde busqueda, estado, fecha desde/hasta y rango de total, manteniendo paginacion y chips de filtros.
+
+Operacion y verificacion:
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, prueba focal Angular de `billing-services`, `invoice-list`, `invoices-api`, `invoices.facade`, navegacion y registro de modulos: 38 tests OK.
+- Pasaron `php -l` en `BillingDocumentController.php` y `ProductRepository.php`.
+- Pasaron `git diff --check` en Dashboard y en los archivos backend tocados.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, catalogo publico, Facturador y rutas legacy bloqueadas.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`: valida menu `Facturacion`, `/invoice-list`, `/billing-services`, `/billing-products`, `/billing-clients` y `/billing-status` con sesion real.
+- No se emitieron facturas SRI reales ni se consumieron secuenciales.
+
+### 2026-06-22 - Dashboard QA: Facturador SRI con productos e inventario
+
+Objetivo: convertir `Facturador SRI` en un modulo operativo de facturacion, no solo una pantalla de consulta, permitiendo facturar desde productos registrados y manejar inventario segun los modulos contratados por el tenant.
+
+Cambios:
+- Backend expone rutas tenantizadas `admin/billing/products`, `admin/billing/products` POST y `admin/billing/invoices/from-products` para listar/registrar productos facturables y emitir facturas SRI desde productos.
+- Si el tenant tiene ecommerce activo, el modulo usa el catalogo e inventario ecommerce; si no lo tiene, los productos se marcan como propios de facturacion.
+- El selector de productos del Facturador no renderiza el catalogo completo: usa busqueda SQL acotada, limite corto de resultados y filas compactas. Esto es obligatorio para tenants con miles de SKUs.
+- La emision desde productos arma el payload fiscal en backend, recalcula base/IVA/total server-side y descuenta inventario solo despues de aceptar la emision del Facturador.
+- `Facturador SRI` agrega area de nueva factura, cliente, forma de pago, carrito, totales, catalogo de productos, modal de registro de producto, comprobantes recientes y acciones RIDE/XML/consulta SRI.
+- Se registraron los nuevos endpoints en el catalogo de APIs del dashboard y en fixtures para pruebas sin backend real.
+
+Operacion y verificacion:
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Pasaron `php -l` en rutas/controlador backend, unit focal de `billing-services` y catalogo de modulos, `npm run type:check`, `npm run lint`, `npm run arch:check` y `git diff --check`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, catalogo publico y Facturador SRI por SRI pruebas.
+- Paso Playwright real por APISIX en rutas legacy de facturas: abre `Facturador SRI`, consulta `/dashboard/api/admin/billing/products`, recibe productos reales del tenant, confirma origen ecommerce/billing y valida que el selector no renderiza mas de 12 filas sin emitir una factura de prueba automatica.
+
+Decision:
+- Las pruebas automaticas no emiten comprobantes SRI reales para no consumir secuenciales ni inventario. La emision queda cubierta por unit tests y por contrato backend; una prueba fiscal completa debe ejecutarse manualmente cuando se quiera consumir un secuencial QA.
+
+### 2026-06-22 - Facturador QA: sincronizacion real de autorizaciones SRI
+
+Objetivo: asegurar que cuando una factura queda registrada/autorizada en el SRI, el Facturador baje estado, numero de autorizacion, fecha y XML autorizado al sistema, tanto por consulta manual como por worker.
+
+Cambios:
+- `CheckInvoiceStatus` ahora consulta SRI cuando el comprobante pertenece al mismo ambiente y le faltan datos locales, aunque exista autorizacion parcial.
+- Si SRI responde `AUTORIZADO`, se guarda XML autorizado, `authorization_number`, `authorization_date`, `raw_response`, `sri_messages`, `authorized_xml_path`, `authorized_xml_received` y se apaga `reintento` cuando el XML ya esta disponible.
+- Si el comprobante pertenece a otro ambiente, se conserva el estado local y no se mezcla SRI pruebas con facturas restauradas de produccion.
+- `process_pending_invoices.php` pasa la configuracion resuelta a `CheckInvoiceStatus`, evitando que el worker compare contra el ambiente por defecto incorrecto.
+- La sucursal `Matriz` del Facturador quedo con `reintentos_test = true` y `reintentos_produccion = true` para permitir sincronizacion automatica en QA y produccion.
+- Se agrego test unitario para bajar autorizacion SRI cuando falta XML autorizado local.
+
+Operacion y verificacion:
+- Facturador reconstruido con `./scripts/deploy-development.sh facturador`.
+- Paso `php -l` en host y contenedores para `CheckInvoiceStatus`, `process_pending_invoices.php` y el test nuevo.
+- Prueba transaccional contra SRI QA con clave autorizada: la fila temporal paso a `AUTORIZADO`, guardo numero/fecha/ruta XML, marco `authorized_xml_received = true` y `reintento = false`; luego se hizo rollback.
+- Prueba del worker con fila temporal QA reintentable: el worker sincronizo desde SRI QA a `AUTORIZADO`, descargo XML y apago reintento; luego se elimino la fila de prueba y se restauro correo.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, Facturador y conectividad a `celcer.sri.gob.ec`.
+
+Importacion posterior:
+- Se consultaron contra SRI QA las 12 claves de acceso de ambiente pruebas encontradas en `/app/storage/xml` y `/app/storage/pdf/rides`.
+- Se importaron/actualizaron 6 comprobantes que SRI QA reconoce: 5 `AUTORIZADO` y 1 `NO AUTORIZADO`, con cabecera, detalle, estado SRI, mensajes, autorizacion, XML autorizado cuando aplica y trazabilidad `SRI-QA-IMPORT-*`.
+- Se omitieron 6 claves con `numeroComprobantes=0` porque SRI QA no las reconoce.
+- `branch_sequences` para sucursal `Matriz` y ambiente `pruebas` quedo en `124` para evitar reutilizar secuenciales ya emitidos.
+- El servicio backend `listRidePdfs` confirma que el panel ve las 6 facturas QA importadas.
+- Limitacion operativa: el webservice de autorizacion SRI consulta por clave de acceso, no por secuencial. Para reconstruir facturas "desde la 1 hasta la actual" se requiere tener las claves/XML de esas facturas o una base previa que las contenga.
+
+### 2026-06-22 - Facturador QA: consulta de estado no degrada autorizados
+
+Objetivo: corregir que el boton `Consultar SRI` degradara comprobantes antiguos de `AUTORIZADO` a `EN PROCESAMIENTO` al consultar su estado.
+
+Cambios:
+- `CheckInvoiceStatus` preserva comprobantes con autorizacion local (`authorization_number`, `authorization_date` o XML autorizado) y no consulta SRI para no degradar el estado.
+- Si el comprobante pertenece a un ambiente distinto al endpoint configurado, la consulta devuelve el estado local y no llama al SRI.
+- `public/index.php` pasa la configuracion resuelta al caso de uso para distinguir `pruebas` y `produccion`.
+- Se agregaron unit tests para autorizacion local y mezcla de ambientes.
+- Se restauraron 2 comprobantes con autorizacion local que habian quedado como `EN PROCESAMIENTO`; el inventario de estados quedo en 120 `AUTORIZADO` y 1 `ANULADA_LOCAL`.
+
+Operacion y verificacion:
+- Ambiente QA confirmado con `APP_ENV=development`, `SRI_ENVIRONMENT=pruebas` y WSDL de `celcer.sri.gob.ec`.
+- Consulta del comprobante `000000122` via backend devuelve `AUTORIZADO` con mensaje de cache local y no modifica la fila.
+- Paso `php -l` en el contenedor `billing-service`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, Facturador y conectividad a SRI pruebas.
+- PHPUnit local no corrio porque el host tiene PHP 8.3.6 y el proyecto exige PHP >= 8.4.1; el runtime no incluye dependencias dev.
+
+### 2026-06-22 - Dashboard QA: estado SRI legible en Facturador
+
+Objetivo: evitar que el boton `Estado` en `Facturador SRI` se interprete como una accion de procesamiento o emision cuando solo consulta el estado fiscal.
+
+Cambios:
+- El boton pasa a mostrarse como `Consultar SRI`.
+- Los estados crudos como `EN PROCESAMIENTO` se presentan como `Pendiente de autorizacion SRI`.
+- La ficha del comprobante explica que consultar SRI no cambia inventario, ventas ni emite otra factura.
+- Al consultar estado, la ficha seleccionada se sincroniza con la respuesta del Facturador y el mensaje superior distingue autorizado, pendiente y otros estados.
+
+Operacion y verificacion:
+- Paso unit focal `billing-services.component.spec.ts`: 7 pruebas OK, incluyendo estado pendiente SRI.
+- Pasaron `npm run type:check` y `npm run lint`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Paso Playwright focal de `billing-services` desktop/mobile y paginas fiscales: 3 pruebas OK.
+
+### 2026-06-22 - Dashboard QA: cierre visual de modulos, facturacion y fixtures
+
+Objetivo: cerrar la confusion post-F5 de modulos fiscales y limpiar residuos de plantilla en datos demo que todavia podian aparecer en pantallas de usuarios/facturas.
+
+Cambios:
+- `users.fixtures.ts` deja nombres/correos heredados del template y usa usuarios operativos de Paramascotas con roles de tenant.
+- `invoices.fixtures.ts` deja clientes/items SaaS demo y usa facturas SRI de Paramascotas con IVA Ecuador 15%, clientes locales y datos de Ecuador.
+- El mensaje de mutaciones no soportadas en `Facturas SRI` habla de `Facturador SRI` y validacion fiscal del tenant.
+- `view-profile` reemplaza el correo local generico por la cuenta operativa del admin tenant.
+
+Operacion y verificacion:
+- Paso unit focal de usuarios/facturas/perfil: 3 archivos, 11 pruebas OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y `git diff --check`.
+- Dashboard reconstruido con `npm run docker:up`; `npm run docker:health` OK.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists|legacy invoice editor routes"`: 2 pruebas OK.
+- Paso Playwright completo `tests/e2e/layout-density.spec.ts`: 49 pruebas OK, incluyendo Facturas SRI, Facturador SRI, tenant-admin, roles, usuarios, APIs, productos e inventario en desktop/mobile sin scroll traps ni copy de plantilla.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, catalogo publico, facturador autenticado, redes internas y rutas legacy bloqueadas.
+
+### 2026-06-22 - Dashboard QA: auditoria visual de APIs/Facturador y cuentas de acceso
+
+Objetivo: continuar la simplificacion de tenants, roles, APIs y facturacion, verificando que las pantallas clave no tengan textos demo, scroll interno ni overflow despues del rebuild.
+
+Cambios:
+- `api-catalog` ajusta anchos minimos de filtros, paneles y rail de modulos para evitar overflow horizontal en el layout de contratos registrados.
+- `billing-services` ajusta `min-width`, `box-sizing`, truncado y corte de texto para claves SRI, rutas, correos y datos largos dentro de cards y formularios.
+- Las cuentas QA persistentes `evasquez@tecnolts.com` y `evasquez@paramascotasec.com` se dejaron verificadas, sin bloqueo ni OTP pendiente; las claves fueron rotadas para entrega directa al usuario, sin registrarlas en documentacion.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up` y health OK con `npm run docker:health`.
+- Auditoria Playwright real por APISIX en `tenant-admin`, `roles`, `api-catalog`, `invoice-list`, `billing-services` y modal de rutas APISIX: sin textos demo heredados, sin scroll interno operativo, sin overflow horizontal y sin bloqueo de modulo.
+- Paso unit focal de `api-catalog`, `billing-services`, `invoice-list`, `navigation.service` y `dashboard-module-registry`: 25 pruebas OK.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists|legacy invoice editor routes"`: 2 pruebas OK.
+- Pasaron `npm run lint`, `npm run type:check`, `npm run arch:check` y `git diff --check`.
+- Login real por APISIX: superadmin `@tecnolts.com` entra a plataforma y Facturador SRI; admin tenant `@paramascotasec.com` entra a Facturador SRI y queda bloqueado de tenant-admin/plataforma con mensaje correcto.
+
+### 2026-06-22 - Dashboard QA: Facturacion SRI post-rebuild y copy operativo
+
+Objetivo: confirmar en QA por APISIX que Facturacion/Facturador SRI quedan visibles despues de F5 y limpiar textos genericos de emision/facturas para que no parezcan modulos demo.
+
+Cambios:
+- `Facturador SRI` reemplaza el bloque de "herramientas avanzadas" por `Prueba tecnica` y `Emision controlada por API`; se aclara que la venta normal emite desde pedidos/POS y que ese acceso es solo para integraciones autorizadas del tenant.
+- Los payloads de prueba dejan datos genericos como `cliente@example.com`, `ORD-DEMO` y `Servicio facturable`; ahora usan consumidor final y referencias de integracion controlada.
+- `Facturas SRI` ajusta etiquetas de busqueda, estado y detalle para hablar de envio/autorizacion SRI y referencia de origen, no de documentos locales o vencimientos genericos.
+- La prueba E2E real de rutas legacy queda alineada al nuevo copy y mantiene redireccion de `/invoice-add` y `/invoice-edit` hacia `Facturador SRI`, y `/invoice-preview` hacia `Facturas SRI`.
+
+Operacion y verificacion:
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists|legacy invoice editor routes"`: 2 pruebas OK.
+- Capturas QA por APISIX confirmaron tenant-admin con 6 modulos, chips `Facturacion` y `Facturador SRI`, menu lateral con `Facturas SRI` y `Facturador SRI`, y rutas abiertas sin bloqueo de modulo.
+- Paso `npm run docker:health`, `npm run type:check`, `npm run lint` y `git diff --check`.
+- Se confirmo que `/dashboard/` e `/dashboard/index.html` salen por APISIX con `Cache-Control: no-store/no-cache`; no hay service worker registrado en el codigo.
+
+### 2026-06-22 - Dashboard QA: Facturacion visible despues de F5 y modales de accesos
+
+Objetivo: corregir el caso donde el superadmin guardaba Facturacion/Facturador SRI, refrescaba la pantalla y no veia el modulo en el menu ni en la ficha del tenant.
+
+Cambios:
+- `paramascotasec-backend/entorno/.env` y el fallback de `config/tenants.php` dejan Paramascotas con `dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri` como contrato base del QA.
+- Se redeployo solo el backend con `./scripts/deploy-development.sh backend`; el contenedor quedo con `DASHBOARD_ENABLED_MODULES=dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri`.
+- Se confirmo en DB que `Setting.paramascotasec:dashboard_tenant_admin_overrides` queda con `invoicing` y `billing-sri`; asi el estado sobrevive F5 y no depende de un toast en memoria.
+- Se validaron las cuentas reales de plataforma y tenant en QA por APISIX; quedan como admins verificados, sin bloqueo ni OTP pendiente. No guardar claves en documentacion.
+- `users-list` deja de abrir automaticamente el primer usuario y mueve detalle/edicion a modal con bloqueo de scroll de fondo.
+- `tenant-admin` deja la pantalla principal como resumen de contrato y mueve la asignacion real de paquetes/presets/modulos al modal; ahi quedan visibles `Descartar`, `Guardar y actualizar menu` y `Cerrar`.
+- El modal de modulos muestra todos los modulos guardados sin recorte, elimina scroll interno en desktop y marca paquetes planificados como informativos (`No contratable`) sin `role=button`.
+- La auditoria visual de accesos abre los modales reales de `tenant-admin` y `api-catalog`; el modal de endpoint API evita scroll interno en desktop y la prueba usa selectores actuales.
+
+Operacion y verificacion:
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`: guarda, recarga y verifica menu con `Facturacion`, `Facturas SRI` y `Facturador SRI`.
+- Paso smoke real por APISIX con las cuentas existentes: superadmin `@tecnolts.com` ve tenant-admin, Facturacion y Facturador SRI; admin `@paramascotasec.com` ve facturacion del tenant y queda bloqueado de la plataforma.
+- Paso Playwright `layout-density.spec.ts -g "access management screens"` para tenants, roles, usuarios y APIs sin scroll traps ni acciones sin cursor.
+- Medicion Playwright del modal de asignacion: 828 px de alto en viewport 900, `bodyScrolls=false`, chips guardados completos (`Dashboard`, `Ecommerce`, `Usuarios y roles`, `Tenant admin`, `Facturacion`, `Facturador SRI`) y paquete planificado sin rol accionable.
+- Pasaron unit focales `users-list` + `tenant-admin` (21 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `php -l` en backend y `scripts/check-container-connectivity.sh development`.
+
+### 2026-06-22 - Dashboard QA: post-F5 real de Facturacion y rate limit UI
+
+Objetivo: resolver la confusion donde la UI decia que guardo modulos, pero tras F5 el usuario no veia Facturacion/Facturador SRI o veia tenants demo, y evitar que el shell del dashboard quede bloqueado por rate limit durante recargas normales.
+
+Cambios:
+- Se confirmo en backend real que `paramascotasec:dashboard_tenant_admin_overrides` guarda `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing` y `billing-sri` para el tenant Paramascotas.
+- `tenant-admin` muestra accesos persistentes a Facturas SRI y Facturador SRI cuando esos modulos ya vienen desde backend, no solo inmediatamente despues del guardado en memoria.
+- El bloque de asignacion aclara que esos accesos salen de configuracion persistida, quedan visibles en el menu lateral y tambien se pueden abrir desde la ficha del tenant.
+- Al guardar modulos del tenant activo, `tenant-admin` refresca `/tenant/context` para recalcular el menu; si ese refresco falla, muestra una advertencia clara sin ocultar que el backend ya guardo.
+- `roles` corrige conteos compactos para que no se rendericen textos pegados como `1permiso` o `1rol`; usa etiquetas separadas y singular/plural correcto en alta y listado de roles.
+- `api-catalog` ya no carga el detalle del endpoint al fondo de una pagina larga: al seleccionar un contrato abre un modal con modulo, backend, permisos, parametros, URLs internas/APISIX, bloqueo por modulo y acciones de prueba/propuesta.
+- `invoice-list` se identifica como `Facturas SRI`, enlaza a `Facturador SRI` en vez de sugerir creacion generica y el modal de detalle bloquea el scroll de fondo para evitar doble scroll.
+- Se restauro/verifico la jerarquia operativa: superadmin plataforma por dominio `@tecnolts.com` y admin tenant `@paramascotasec.com`; no registrar passwords en contexto.
+- APISIX sube el perfil `dashboard-ui` a 20000 requests/min para HTML/assets del dashboard; los perfiles de API/admin/facturacion mantienen limites separados y mas estrictos.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up` y health OK con `npm run docker:health`.
+- Gateway development redeployado con `./scripts/deploy-development.sh gateway`; `https://paramascotasec.com/dashboard/sign-in` devuelve `x-ratelimit-limit: 20000`.
+- Paso unit focal `tenant-admin.component.spec.ts`: 19 pruebas OK.
+- Paso unit focal `roles.component.spec.ts`: 8 pruebas OK.
+- Paso unit focal `api-catalog.component.spec.ts`: 8 pruebas OK.
+- Paso unit focal `invoice-list.component.spec.ts`: 4 pruebas OK, incluyendo modal de detalle y bloqueo/restauracion de scroll.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`.
+- Paso Playwright focal `tests/e2e/layout-density.spec.ts -g "business configuration pages"`, cubriendo Facturas SRI y Facturador SRI sin scroll interno de tabla ni copy de plantilla.
+- Paso Playwright real por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`: guarda, recarga y valida Facturacion/Facturador SRI, accesos persistidos y menu lateral.
+- Paso Playwright real por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin role deletion"`: valida Roles, conteos legibles, creacion/eliminacion por modal y persistencia por backend.
+- Paso Playwright real por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "API catalog probes products"`: valida modal de contrato API, firma APISIX, prueba GET controlada y respuesta legible.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo catalogo publico, facturador por APISIX, seguridad gateway y rutas legacy bloqueadas.
+
+Decision:
+- Si el backend ya confirma el modulo, la pantalla debe mostrarlo como activo despues de F5 aunque no exista el estado temporal de "ultimo guardado". La UI puede tener fixtures para pruebas locales, pero el host real debe validarse contra backend/APISIX.
+
+### 2026-06-22 - Dashboard QA: modulos fiscales persistidos y menu despues de F5
+
+Objetivo: corregir el caso donde el usuario guardaba Facturacion/Facturador SRI, refrescaba la pantalla y no veia el nuevo modulo en el menu aunque el backend ya lo tuviera persistido.
+
+Cambios:
+- `tenant-admin` ya no muestra exito si la respuesta del backend no confirma exactamente los modulos solicitados; si falta algun modulo, muestra error accionable y no emite confirmacion falsa.
+- La navegacion consolida `invoicing` y `billing-sri` bajo una sola entrada raiz `Facturacion`, con hijos `Facturas SRI` y `Facturador SRI`.
+- Los hijos heredan el modulo/permisos correctos al fusionar menus, para que un tenant con uno o ambos modulos vea solo las rutas habilitadas y no se pierda acceso tras F5.
+- La prueba real por APISIX ahora cuenta que exista una sola entrada raiz `Facturacion` y que `Facturador SRI` quede dentro de esa agrupacion.
+
+Operacion y verificacion:
+- Backend confirmado con `dashboard_tenant_admin_overrides`: `paramascotasec` tiene `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing` y `billing-sri` persistidos.
+- Pasaron unit focales de registro de modulos, navegacion y tenant-admin: 5 archivos / 42 pruebas.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright real por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`, removiendo temporalmente los modulos fiscales, refrescando, reasignando, refrescando y validando menu/rutas.
+
+Decision:
+- La persistencia de modulos se valida contra el backend, no contra el estado optimista de la UI. El menu fiscal debe ser una agrupacion unica para evitar duplicados y accesos ocultos.
+
+### 2026-06-22 - Dashboard QA: Facturacion visible y pantallas fiscales refinadas
+
+Objetivo: cerrar la confusion posterior a guardar modulos, confirmar que Facturacion queda visible tras F5 y pulir las pantallas fiscales para que no parezcan componentes genericos ni tengan controles mudos.
+
+Cambios:
+- `tenant-admin` mantiene la asignacion persistente de `invoicing` y `billing-sri` para `paramascotasec`; tras guardar muestra accesos directos a Facturas SRI y Facturador SRI.
+- La bandeja `invoice-list` queda como lista fiscal operativa de ancho completo, sin panel lateral estrecho, con cabecera coherente, acciones RIDE/XML y detalle en modal.
+- `billing-services` usa copy operativo: Facturador SRI, conexion fiscal, rutas protegidas por APISIX y herramientas avanzadas; se retiro copy tecnico visible como "Servicio tecnico" y "Contratos APISIX del Facturador".
+- Los cierres de modales fiscales usan una `X` visible, no iconos que puedan renderizar vacios.
+- Los overlays fiscales evitan scroll vertical interno en escritorio; en movil conservan scroll solo si el alto de pantalla lo exige.
+
+Operacion y verificacion:
+- Pasaron unit focales de `billing-services` e `invoice-list` (10 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`, confirmando que la asignacion de facturacion persiste despues de recargar y desbloquea menus.
+- Paso validacion visual autenticada por `https://paramascotasec.com/dashboard` con usuario QA temporal y MFA real: `invoice-list`, modal de detalle y `billing-services` cargan, el tenant expone `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing` y `billing-sri`.
+- Capturas finales: `/tmp/qa-invoice-list-final.png`, `/tmp/qa-invoice-detail-modal-final.png` y `/tmp/qa-billing-services-final.png`.
+
+Decisiones:
+- La asignacion de modulos sigue siendo responsabilidad de plataforma; la gestion fina de permisos queda en roles.
+- Facturas SRI no reintroduce CRUD local falso: consulta comprobantes reales del Facturador y deriva acciones fiscales hacia Servicios SRI.
+- No se registran credenciales ni secretos en contexto IA.
+
+### 2026-06-22 - Dashboard QA: asignacion de facturacion con confirmacion accionable
+
+Objetivo: eliminar la confusion donde el tenant mostraba modulos guardados pero el usuario no tenia una salida clara para confirmar o abrir Facturacion/Facturador despues de guardar.
+
+Cambios:
+- `tenant-admin` mantiene la asignacion de modulos en borrador hasta pulsar `Guardar y actualizar menu`.
+- Al guardar modulos para el tenant activo se refresca el contexto del dashboard y se cierra el modal de asignacion.
+- Se agrego un bloque de confirmacion `Disponible en este tenant` con accesos directos a los modulos recien guardados, incluyendo `Abrir Facturas SRI` y `Abrir Facturador SRI`.
+- Se agregaron pruebas unitarias para validar que los accesos directos aparecen solo para el tenant guardado y para los modulos persistidos.
+
+Operacion y verificacion:
+- Pasaron unit focal de `tenant-admin.component.spec.ts` (17 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`.
+- Paso prueba focal real por APISIX con clicks de UI: se removio temporalmente Facturacion de Paramascotas, se reactivaron `invoicing` y `billing-sri` desde el modal, se verificaron persistencia en backend y accesos `Abrir Facturas SRI` / `Abrir Facturador SRI`, y se restauro el estado original.
+
+Decision:
+- La asignacion de modulos debe cerrar con confirmacion accionable y rutas directas; no basta mostrar un mensaje generico de guardado.
+- Las credenciales QA solicitadas se entregan solo por respuesta al usuario y no se documentan en contexto versionado.
+
+### 2026-06-22 - Dashboard QA: APIs bloqueadas explican modulo faltante
+
+Objetivo: evitar que el catalogo de APIs deje botones deshabilitados sin salida cuando un contrato existe pero el tenant actual no tiene el modulo asignado.
+
+Cambios:
+- `api-catalog` ahora muestra un aviso `Modulo no asignado al tenant actual` en el detalle de endpoints bloqueados.
+- El aviso explica que el contrato pertenece a un modulo especifico y que debe asignarse al tenant antes de probarlo o consumirlo.
+- Se agrego accion `Abrir asignacion` con link a `/tenant-admin?tenant=<tenant-actual>` para continuar el flujo de activacion sin perder contexto.
+- La prueba real por APISIX cubre dos casos: `ecommerce.products` como contrato operativo habilitado de Paramascotas y `products.catalog` como contrato generico bloqueado por modulo no asignado.
+
+Operacion y verificacion:
+- Pasaron unit focal de `api-catalog.component.spec.ts` (7 pruebas), `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Paso Playwright local `tests/e2e/smoke.spec.ts -g "api catalog"`.
+- Paso Playwright por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "API catalog probes products"` validando prueba de producto y aviso de modulo faltante.
+
+Decision:
+- Toda API registrada pero bloqueada por modulo debe explicar la causa y ofrecer camino de asignacion. No se deben dejar acciones deshabilitadas sin contexto operativo.
+
+### 2026-06-22 - Dashboard QA: pruebas API legibles y contrato de productos validado
+
+Objetivo: corregir la experiencia del catalogo de APIs porque el resultado crudo hacia parecer que productos devolvia un solo registro o que la prueba era defectuosa.
+
+Cambios:
+- `api-catalog` mueve el resultado de `Probar GET` a un modal de prueba con resumen: estado, tiempo, tamano, tipo, registros recibidos y muestra visible.
+- La ficha del endpoint ya no se estira con JSON largo; queda como contrato y accion. El modal explica que la muestra visible no limita la respuesta completa.
+- El modal bloquea scroll de fondo mediante `DomService.lockPageScroll()` y recorta la muestra tecnica para mantener la pantalla usable.
+- La prueba local de `smoke.spec.ts` busca el endpoint antes de probarlo y valida el modal de resultado.
+- La prueba real por APISIX valida `ecommerce.products`, que es el contrato de productos habilitado para Paramascotas; `products.catalog` pertenece al modulo generico Productos y puede aparecer bloqueado si ese modulo no esta asignado.
+
+Operacion y verificacion:
+- Pasaron unit focal de `api-catalog.component.spec.ts` (6 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Paso Playwright local `tests/e2e/smoke.spec.ts -g "api catalog"`.
+- Paso Playwright por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "API catalog probes products"` con usuario temporal `@tecnolts.com`.
+- `check-container-connectivity.sh development` confirmo que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelve 127 productos publicos y que rutas legacy/no permitidas quedan bloqueadas.
+
+Decision:
+- Para Paramascotas, las pruebas operativas de productos deben usar `ecommerce.products` en el Dashboard y el contrato publico APISIX `/paramascotasec/api/products`. Los contratos del modulo generico `products` solo deben probarse cuando el tenant tenga ese modulo asignado.
+
+### 2026-06-22 - Dashboard QA: roles con confirmacion real y sin acciones directas
+
+Objetivo: cerrar acciones criticas de RBAC que todavia se ejecutaban demasiado directo o solo quedaban cubiertas por fixtures, especialmente eliminacion de roles personalizados.
+
+Cambios:
+- `roles` ahora elimina roles personalizados mediante modal de confirmacion con resumen del rol, permisos activos y tipo; el registro no se borra hasta confirmar `Eliminar rol`.
+- La edicion de permisos queda concentrada en el modal de permisos/draft; se retiraron toggles directos no usados que podian confundir el flujo.
+- `RolesFacade.deleteRole()` acepta callback de exito para cerrar el modal solo despues de respuesta correcta.
+- Se reutiliza `DomService.lockPageScroll()` mientras hay modal abierto para evitar scroll de fondo.
+- `smoke.spec.ts` y `paramascotas-real-auth.spec.ts` validan que la eliminacion no sea inmediata y que el flujo funcione tambien contra backend real por APISIX.
+
+Operacion y verificacion:
+- Pasaron unit focales de `roles.component.spec.ts` y `roles.facade.spec.ts` (14 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Paso Playwright local `tests/e2e/smoke.spec.ts -g "custom roles"`.
+- Paso Playwright por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "role deletion requires confirmation"` creando y eliminando un rol temporal con usuario `@tecnolts.com`.
+
+Decision:
+- En RBAC no deben existir acciones destructivas directas ni formularios que parezcan guardar mientras operan solo localmente. Crear, editar permisos y eliminar roles deben tener feedback visual claro y persistencia verificable.
+
+### 2026-06-22 - Dashboard QA: rutas fiscales heredadas redirigen al flujo real
+
+Objetivo: eliminar pantallas fiscales directas que parecian funcionales pero ya no coincidian con el backend real, donde la emision, reemision y consulta fiscal viven en Facturador SRI.
+
+Cambios:
+- `invoice-add` y `invoice-edit` dejan de cargar formularios manuales heredados y redirigen a `/billing-services`, donde esta la mesa operativa del Facturador SRI.
+- `invoice-preview` redirige a `/invoice-list`; el detalle operativo se abre desde la bandeja mediante modal con acciones RIDE/XML.
+- Las pruebas E2E dejan de validar un CRUD de facturas que el servicio rechaza por diseno y ahora verifican que las rutas heredadas lleven al flujo real.
+
+Operacion y verificacion:
+- Pasaron unit focales de `billing-services` e `invoice-list` (10 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Paso Playwright local `tests/e2e/smoke.spec.ts -g "legacy invoice editor routes"` despues del rebuild Docker.
+- Paso Playwright por APISIX `tests/e2e/paramascotas-real-auth.spec.ts -g "legacy invoice editor routes"` con usuario temporal `@tecnolts.com`.
+- Paso `tests/e2e/layout-density.spec.ts -g "business configuration pages"` con `/invoice-list` y `/billing-services` como rutas fiscales auditadas.
+
+Decision:
+- No deben existir pantallas fiscales independientes que permitan aparentar crear, editar o eliminar comprobantes SRI si el backend no lo soporta. La accion fiscal va en Servicios SRI y la consulta en la bandeja de Facturas SRI.
+
+### 2026-06-22 - Dashboard QA: Servicios SRI como mesa operativa
+
+Objetivo: corregir la pantalla del Facturador SRI para que no parezca una coleccion de tarjetas genericas ni esconda acciones criticas; las operaciones de factura, contratos APISIX y reemision deben estar donde corresponden y sin dobles scrolls.
+
+Cambios:
+- `billing-services` reemplaza el bloque superior por una mesa de comprobante: referencia, clave de acceso, comprobante seleccionado y acciones compactas (`Estado`, `RIDE PDF`, `XML`, `Correo prueba`, `Revisar reemision`) en el mismo contexto.
+- El estado del servicio y los contratos APISIX quedan en un panel lateral de control; el detalle de contratos se abre en modal dedicado para no estirar la pagina.
+- Emision manual, contratos API y reemision usan modales con `DomService.lockPageScroll()` para bloquear `body/html` y evitar scroll de fondo mientras el modal esta abierto.
+- Se elimino copy confuso como `backend` en mensajes visibles; la interfaz dice `sistema` y mantiene permisos por accion segun `billing-sri.read/create/update`.
+
+Operacion y verificacion:
+- Pasaron unit focales de `billing-services.component.spec.ts` (6 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Playwright por APISIX en `/dashboard/billing-services` confirmo `Mesa de comprobante`, salud SRI, acciones visibles, sin overflow horizontal ni scrolls internos de contenido, y modal de contratos con `body/html` bloqueados.
+- Capturas finales: `/tmp/pm-ui-audit/billing-services-workbench-final.png` y `/tmp/pm-ui-audit/billing-services-contracts-modal-final.png`.
+
+Decision:
+- Las acciones fiscales deben mostrarse dentro del comprobante seleccionado, no repetidas como metricas o tarjetas sueltas. Los contratos API son administracion tecnica y van en modal/contexto propio.
+
+### 2026-06-22 - Dashboard QA: tenant-admin conserva tenant y modal sin doble scroll
+
+Objetivo: corregir el caso reportado donde el usuario guardaba modulos, presionaba F5 y la pantalla parecia volver a mostrar un tenant sin Facturacion, ademas de eliminar el scroll atrapado del modal de asignacion.
+
+Cambios:
+- `tenant-admin` actualiza la URL con `?tenant=<slug>` al seleccionar un tenant, abrir el modal de modulos y confirmar el guardado, para que F5 conserve el mismo cliente visible.
+- El modal de asignacion de modulos queda compacto en escritorio: cabecera y acciones siempre visibles, paquetes mas densos, sin `overflow` en backdrop ni scroll interno detectado.
+- Se agrego `DomService.lockPageScroll()` como adaptador compartido para bloquear `body/html` mientras un modal esta abierto, evitando DOM global directo en el componente.
+- La lista de facturas SRI mantiene acciones compactas por fila (`Ver`, `RIDE`, `XML`) para no estirar la tabla.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, unit focal de `tenant-admin.component.spec.ts` (15 pruebas), `npm run arch:check`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Paso Playwright real `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"` despues del build final.
+- Paso prueba Playwright con click real en el modal: se retiro Facturacion temporalmente, se reasigno desde `Guardar y actualizar menu`, F5 conservo `?tenant=paramascotasec`, `tenant/context` devolvio `invoicing` y `billing-sri`, y el menu mostro `Facturacion` y `Facturador SRI`.
+- Prueba visual por APISIX con usuario temporal `@tecnolts.com`: `/dashboard/tenant-admin?tenant=paramascotasec` conserva URL tras reload, `admin/tenants` y `tenant/context` devuelven `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing`, `billing-sri`, y el modal reporta `scrollables: []`.
+- Capturas finales: `/tmp/pm-ui-audit/tenant-admin-module-modal-final.png` y `/tmp/pm-ui-audit/tenant-admin-save-f5-billing.png`.
+
+Decision:
+- Si se administra un tenant distinto al activo, la seleccion debe quedar reflejada en la URL. El backend persistente de QA mantiene Paramascotas con Facturacion y Facturador SRI asignados; ver 3 modulos despues de F5 indica que se estaba mirando otro tenant o una sesion/cache anterior.
+
+### 2026-06-22 - Dashboard QA: jerarquia platform-admin por dominio TecnoLTS
+
+Objetivo: corregir la jerarquia pedida por el usuario para que los admins con correo `@tecnolts.com` sean superadmins de plataforma, mientras los demas admins sigan siendo admins de tenant o usuarios tenant.
+
+Cambios:
+- `TenantController::isPlatformAdmin()` deja de tratar `DASHBOARD_PLATFORM_ADMIN_EMAILS` como allowlist cerrada; ahora cualquier usuario `admin` cuyo correo coincida con `DASHBOARD_PLATFORM_ADMIN_DOMAINS` obtiene `platform-admin`, y la lista de correos queda como excepcion adicional.
+- `paramascotas-real-auth.spec.ts` vuelve a usar una cuenta temporal `qa.platform.modules.*@tecnolts.com` para probar la jerarquia por dominio sin tocar credenciales reales.
+- Se prepararon en QA las cuentas solicitadas `evasquez@tecnolts.com` y `evasquez@paramascotasec.com` con claves nuevas, rol `admin`, email verificado y sin bloqueo. Las claves no se registran en contexto ni repos.
+
+Operacion y verificacion:
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Paso Playwright real `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`: una cuenta temporal `@tecnolts.com` administra modulos, recarga y abre Facturas/SRI.
+- Validacion directa por APISIX: `evasquez@tecnolts.com` entra a `/dashboard/tenant-admin` con `platform-admin`, ve `Tenants`, `APIs`, `Facturacion` y `Facturador SRI`; `evasquez@paramascotasec.com` entra al POS como admin tenant, ve Facturacion/SRI y recibe `permission-denied` al intentar administrar tenants.
+- Pasaron `php -l paramascotasec-backend/src/Controllers/TenantController.php`, `npm run type:check`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+
+Decision:
+- La autoridad de plataforma es el dominio configurado (`DASHBOARD_PLATFORM_ADMIN_DOMAINS`, actual `tecnolts.com`). `DASHBOARD_PLATFORM_ADMIN_EMAILS` ya no debe bloquear a otros admins del dominio; solo suma correos explicitos si se requiere una excepcion.
+
+### 2026-06-22 - Dashboard QA: verificacion post-F5 de modulos y acciones de usuarios
+
+Objetivo: responder la falla reportada donde el superadmin guardaba Facturacion/Facturador SRI, presionaba F5 y no veia el modulo nuevo en el menu.
+
+Cambios:
+- Se ajusto `users-list` para que la tabla use ancho fijo sin overflow horizontal y la columna Acciones reserve espacio real para tres botones de 34px, evitando iconos comprimidos o recortados.
+- `paramascotas-real-auth.spec.ts` ahora cubre el caso real de plataforma: prepara temporalmente la cuenta `DASHBOARD_PLATFORM_ADMIN_EMAILS`, guarda/restaura credenciales, desasigna y reasigna `invoicing`/`billing-sri`, recarga y valida que las rutas protegidas queden habilitadas.
+- No se dejaron cambios contractuales nuevos en Paramascotas; el tenant queda restaurado con `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing` y `billing-sri`.
+
+Operacion y verificacion:
+- Por APISIX se hizo una prueba controlada con superadmin: quitar temporalmente `invoicing`/`billing-sri`, recargar, volver a guardarlos, recargar y confirmar que `admin/tenants`, `tenant/context` y el menu devuelven los modulos asignados.
+- Paso Playwright real `tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists"`; la prueba abre `/dashboard/invoice-list` y `/dashboard/billing-services` despues del F5 y restaura el estado original.
+- Capturas de evidencia: `/tmp/tenant-admin-module-reload-proof.png`, `/tmp/tenant-admin-after-f5-final.png` y `/tmp/users-list-actions-fit-after-rebuild.png`.
+- `/dashboard/invoice-list`, `/dashboard/billing-services` y `/dashboard/tenant-admin` respondieron 200 por APISIX, sin `Permiso denegado` ni `Modulo no contratado`.
+- Pasaron `npm run lint`, `npm run type:check`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+
+Decision:
+- Si despues de F5 el usuario ve 3 modulos, el backend actual no esta devolviendo ese estado para `paramascotasec`; se debe revisar sesion/cache del navegador o que no este mirando otro tenant seleccionado. El contrato persistido del QA actual devuelve 6 modulos.
+
+### 2026-06-22 - Dashboard QA: catalogo API compacto y navegable
+
+Objetivo: corregir la pantalla de administracion de APIs porque listaba todos los endpoints en una pagina excesivamente larga y dificil de operar.
+
+Cambios:
+- `api-catalog` agrega selector rapido por modulo con conteos de endpoints disponibles/bloqueados.
+- La lista de contratos registrados queda paginada visualmente en bloques de 24 endpoints, con acciones `Mostrar mas` y `Mostrar todos`.
+- El conteo principal cambia de `endpoints visibles` a `endpoints filtrados` para no confundir la cantidad total filtrada con las filas actualmente renderizadas.
+- Se mantiene el detalle del endpoint seleccionado y la prueba controlada GET sin introducir scroll interno.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focal de `api-catalog` (6 pruebas), `scripts/check-container-connectivity.sh development` y `git diff --check` focal.
+- Playwright por APISIX en `/dashboard/api-catalog` confirmo 24 filas iniciales, paginador funcional, selector por modulo, ausencia de errores HTTP/console y cero scrolls internos.
+
+Decisiones:
+- El catalogo API debe priorizar navegacion por modulo y detalle bajo demanda; no debe renderizar todos los contratos de golpe como una lista interminable.
+- La prueba controlada sigue limitada a GET disponibles y sin parametros; APISIX/backend siguen siendo la autoridad para seguridad.
+
+### 2026-06-22 - Dashboard QA: Servicios SRI con acciones en modales
+
+Objetivo: corregir la pantalla del Facturador SRI para que no mezcle acciones fiscales, contratos API y emision tecnica en una vista larga y confusa.
+
+Cambios:
+- `billing-services` deja de mostrar la grilla completa de contratos APISIX como contenido permanente; ahora la pantalla muestra un resumen compacto y abre el detalle en el modal `Contratos APISIX del Facturador`.
+- La accion `Anular y reemitir` ya no queda expuesta como formulario fijo; se abre desde `Revisar reemision` en un modal de confirmacion fiscal con motivo de auditoria.
+- Al cargar RIDEs recientes, el primer comprobante seleccionado tambien sincroniza `accessKey` y `sourceReference`, evitando que una accion fiscal falle aunque haya una ficha seleccionada.
+- Se retiro copy tecnico en ingles (`server-side`) de la vista y se reemplazo por textos de validacion backend.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focal de `billing-services` (6 pruebas), `scripts/check-container-connectivity.sh development` y `git diff --check` por repo.
+- Playwright por APISIX en `/dashboard/billing-services` confirmo sin errores HTTP/console, sin scroll vertical interno en contenido, contratos API solo en modal, reemision solo en modal y ausencia de copy `server-side`.
+
+Decisiones:
+- Los contratos API son detalle administrativo bajo demanda; no deben dominar el flujo diario del operador fiscal.
+- Las acciones fiscales destructivas deben abrir confirmacion contextual y no permanecer como formulario visible todo el tiempo.
+
+### 2026-06-22 - Dashboard QA: modulos visibles tras F5 y roles de usuario efectivos
+
+Objetivo: cerrar la falla donde el usuario guardaba modulos, recargaba la pagina y no veia el modulo nuevo, y asegurar que la asignacion de roles de usuarios afecte permisos reales del menu.
+
+Cambios:
+- `TenantController` ahora resuelve roles personalizados guardados en `dashboard_roles` para usuarios no admin y devuelve en `tenant/context` los `roleIds` y permisos efectivos, no solo el rol lector por defecto.
+- `UserRepository::getById()` vuelve a traer `profile`, `email_verified` y estado de bloqueo para que el contexto pueda leer `profile.roleIds` despues de cada login o F5.
+- `UserController` normaliza booleanos de DB (`t/f`, `1/0`, boolean) para que `Activo`, `Inactivo` y `Bloqueado` no dependan del formato devuelto por PostgreSQL.
+- La API de usuarios expone el contrato real que consume Dashboard: listado paginado, detalle y PATCH con datos normalizados (`status`, `roles`, `department`, `position`, fechas y avatar).
+- En usuarios, la accion con icono de eliminar deja de ocultar filas solo en memoria; ahora inactiva la cuenta por PATCH y el texto visible/ARIA refleja `Inactivar usuario`.
+- El estado colapsado de alta de tenant se compacto para mantener el layout dentro del estandar E2E.
+- Se regenero el registro de capacidades: 28 capacidades, 121 rutas backend y 17 rutas Facturador.
+
+Operacion y verificacion:
+- Backend redesplegado con `./scripts/deploy-development.sh backend`.
+- Dashboard reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Prueba APISIX controlada: se creo rol temporal con `dashboard.read`, `invoicing.read` y `billing-sri.read`; se creo usuario temporal con ese rol; login real devolvio `tenant/context` con ese `roleId` y solo esos permisos; luego se limpio el rol y usuario temporal.
+- Playwright por APISIX con superadmin confirmo que despues de F5 en `/dashboard/tenant-admin` se ven `Facturacion`, `Facturador SRI`, `Tenants` y `APIs`, que la asignacion de modulos aparece como `Asignado`, y que usuarios/roles cargan sin errores API.
+- Playwright por APISIX con admin tenant confirmo que `Facturacion` y `Facturador SRI` aparecen tras F5 y que `Tenants/APIs` no aparecen.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focales de usuarios/roles/tenant-admin (37 pruebas), smoke Playwright focal (7 pruebas), `npm run capabilities:generate`, `npm run capabilities:check`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh` y `git diff --check` por repo.
+
+Decisiones:
+- La asignacion de modulos es tenant-level y debe refrescar el contexto/menu; la asignacion fina de permisos es user-level por roles.
+- Ninguna accion visible en usuarios debe ser solo cosmetica/local; si se muestra como operativa, debe llamar a API real o retirarse.
+- Los roles de sistema siguen inmutables; los permisos operativos para usuarios se modelan con roles personalizados tenantizados.
+
+### 2026-06-22 - Dashboard QA: roles y permisos con backend real
+
+Objetivo: corregir la administracion de roles para que no dependa de fixtures ni de una pantalla bonita sin persistencia real.
+
+Cambios:
+- Se agrego `RoleController` en el backend con endpoints reales tenantizados: listar, crear, consultar, actualizar y eliminar roles bajo `/api/roles`.
+- Los roles de sistema (`Administrador tenant`, `Consulta`) se calculan desde los modulos realmente asignados al tenant; los roles personalizados se guardan en `Setting` con clave tenantizada.
+- Los permisos enviados por la UI se normalizan contra los modulos contratados, incluyendo overrides guardados desde `tenant-admin`; permisos de modulos no contratados se descartan.
+- `config/routes.php` registra las rutas de roles con capability `users.admin` y se regenero el registro de capacidades del sitio publico.
+
+Operacion y verificacion:
+- Pasaron `php -l` para `RoleController.php` y `config/routes.php`.
+- Backend se redesplego con `./scripts/deploy-development.sh backend`.
+- Por APISIX, `GET /dashboard/api/roles` devuelve roles reales del tenant; se creo, edito, consulto y elimino un rol temporal con CSRF, y se confirmo que borrar `paramascotasec_admin` queda bloqueado con `ROLE_SYSTEM_IMMUTABLE`.
+- Playwright por APISIX en `/dashboard/roles` confirmo que no hay `Route not found`, que se cargan `Administrador tenant` y `Consulta`, y que el menu muestra `Facturacion` y `Facturador SRI`.
+- Pasaron `npm run capabilities:generate`, `npm run capabilities:check`, `scripts/check-container-connectivity.sh development` y `scripts/check-paramascotas.sh`.
+
+Decisiones:
+- Las pantallas de RBAC no pueden quedarse en fixtures en QA real; si una ruta se muestra en el catalogo API o en la UI, debe existir y persistir en backend tenantizado.
+- Los roles de sistema siguen siendo inmutables; los cambios operativos se hacen sobre roles personalizados.
+
+### 2026-06-22 - Dashboard QA: asignacion de modulos solo desde modal claro
+
+Objetivo: reducir la confusion del superadmin al asignar modulos a tenants, evitando que la pagina principal repita controles de edicion y que parezca guardado algo que sigue pendiente.
+
+Cambios:
+- `tenant-admin` separa visualmente los modulos guardados en backend de la seleccion pendiente antes de guardar.
+- El texto de accion pasa a `Guardar y actualizar menu`, para dejar claro que el cambio persiste y refresca el contexto del tenant activo.
+- La pagina principal de `Contrato y modulos` deja de mostrar checkboxes y botones de guardado duplicados; ahora muestra un resumen de paquetes con acciones `Gestionar paquete`.
+- El editor real de activacion/desactivacion de paquetes y modulos queda concentrado en el modal `Asignacion de modulos`, con estado `Sin cambios pendientes`/`Cambios pendientes` y resumen `Actualmente guardado`.
+
+Operacion y verificacion:
+- Pasaron unit focales de `TenantAdminComponent`: 14 pruebas OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `scripts/check-container-connectivity.sh development`.
+- Playwright por APISIX valido que antes de abrir el modal ya no existe `Activar paquete completo` en la pagina principal, que hay acciones `Gestionar paquete`, y que el modal tiene un unico boton `Guardar y actualizar menu`.
+- Se hizo una mutacion real controlada por APISIX activando temporalmente el paquete de inventario, se verifico respuesta `PATCH 200` y luego se revirtio el tenant a los modulos esperados: `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing`, `billing-sri`.
+- Captura de evidencia local: `/tmp/tenant-admin-modules-summary-modal-qa.png`.
+
+Decisiones:
+- La pantalla principal debe servir para lectura y seleccion de area; cualquier cambio contractual de modulos debe ocurrir en un modal con guardado explicito.
+- No se dejan modulos extra en Paramascotas durante pruebas; Facturacion y Facturador SRI quedan asignados.
+
+### 2026-06-22 - Dashboard QA: jerarquia real de superadmin y admin tenant
+
+Objetivo: dejar comprobadas las credenciales y la jerarquia solicitada: usuarios `@tecnolts.com` administran plataforma/tenants como superadmin; usuarios del tenant operan modulos contratados sin acceso a administracion de plataforma.
+
+Cambios:
+- Se confirmo que `evasquez@tecnolts.com` y `evasquez@paramascotasec.com` existen en el tenant `paramascotasec`, con rol DB `admin`, correo verificado, sin bloqueo ni intentos fallidos.
+- Se resetearon las claves QA de ambas cuentas, limpiando OTP, bloqueos y `active_token_id`; las claves se comunicaron al usuario en la conversacion y no se documentan en archivos.
+- Se mantuvo la regla backend vigente: `TenantController` considera superadmin solo a admins cuyo email pertenece a dominios de plataforma, por defecto `tecnolts.com`; admins fuera de ese dominio quedan como administradores del tenant.
+
+Operacion y verificacion:
+- Login por APISIX con MFA email OTP exitoso para `evasquez@tecnolts.com`; `tenant/context` devuelve `roleIds: ["platform_admin"]`, permiso `platform-admin` y modulos `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing`, `billing-sri`.
+- Login por APISIX con MFA email OTP exitoso para `evasquez@paramascotasec.com`; `tenant/context` devuelve `roleIds: ["paramascotasec_admin"]`, permisos tenant incluyendo `invoicing.*`, `billing-sri.*` y `roles.*`, sin `platform-admin`.
+- Playwright por APISIX confirmo que el superadmin abre `/dashboard/tenant-admin`, no ve tenants demo y ve `Facturacion`/`Facturador SRI`.
+- Playwright por APISIX confirmo que el admin tenant queda en `permission-denied` al intentar `/dashboard/tenant-admin`, no ve seccion `Plataforma`, pero abre `/dashboard/invoice-list` y ve `Facturas SRI`, `Facturacion` y `Facturador SRI`.
+
+Decisiones:
+- No se guardan passwords, hashes, OTPs ni cookies en `AGENTS.md` ni en la copia versionada.
+- La administracion de tenants queda reservada a superadmins de plataforma; la asignacion/uso de modulos del tenant se valida por `tenant/context` y permisos derivados de modulos contratados.
+
+### 2026-06-22 - Dashboard QA: Facturas SRI sin CRUD ficticio
+
+Objetivo: corregir la pantalla de Facturas para que no use el CRUD generico `/invoices` de fixture ni muestre acciones falsas como eliminar, editar o marcar pagada.
+
+Cambios:
+- `InvoicesApiService` deja de extender el CRUD generico y ahora arma la bandeja desde `GET /dashboard/api/admin/billing/rides`, usando el proxy real del Facturador tenantizado.
+- `invoice-list` muestra estados fiscales entendibles (`Autorizada`, `En proceso`, `Incidencia`, `Local`), referencias de origen, RIDE PDF y XML; el detalle se abre en modal y no en una columna lateral.
+- El menu de `Facturacion` queda reducido a `Facturas SRI`; la emision y acciones fiscales avanzadas se administran desde `Facturador SRI > Servicios SRI`.
+- El registro de APIs de `invoicing` apunta a contratos reales `admin/billing/*` y deja de documentar `/invoices` como si existiera en QA.
+
+Operacion y verificacion:
+- Pasaron unit focales de `InvoicesApiService`, `InvoicesFacade`, `InvoiceListComponent` y catalogo API: 22 pruebas OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Por APISIX, `GET /dashboard/api/admin/billing/rides?limit=3&include_cancelled=1` devuelve comprobantes reales del tenant.
+- Playwright por APISIX en `/dashboard/invoice-list` confirmo 6 filas reales, llamada a `admin/billing/rides`, ausencia de llamada a `/dashboard/api/invoices`, sin acciones viejas, sin overflow horizontal ni scroll interno en contenido, y modal con botones `Abrir RIDE PDF` y `Abrir XML`.
+
+Decisiones:
+- Las facturas fiscales no se editan ni eliminan desde la bandeja; cualquier accion fiscal debe pasar por el Facturador/SRI mediante endpoints especificos y permisos del tenant.
+
+### 2026-06-22 - Dashboard QA: tenant-admin sin fixtures en host real
+
+Objetivo: corregir el caso donde la asignacion de modulos parecia guardar, pero tras F5 volvia a mostrar tenants demo y el modulo de Facturacion no aparecia en el menu.
+
+Cambios:
+- El interceptor de fixtures ya no puede responder ninguna ruta cuando el Dashboard corre en un host real como `paramascotasec.com`; todo pasa al backend real.
+- Se mantiene el uso de fixtures en `localhost`, `*.localhost` y `*.test` para pruebas unitarias y desarrollo aislado.
+- Se agrego cobertura en `tenant-admin-api.service.spec.ts` y `tenant.fixtures.spec.ts` para asegurar que, aun con fixtures activos, `https://paramascotasec.com/dashboard/tenant-admin` emite peticiones HTTP reales para tenants y contexto.
+
+Operacion y verificacion:
+- Pasaron unit focales de tenant-admin API/componente, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `scripts/check-container-connectivity.sh development`.
+- Por APISIX, `GET /dashboard/api/admin/tenants` devuelve solo `paramascotasec` con `dashboard`, `ecommerce`, `users`, `tenant-admin`, `invoicing` y `billing-sri`.
+- Playwright por APISIX con superadmin confirmo que despues de recargar `/dashboard/tenant-admin` no aparecen tenants demo y el menu muestra `Facturacion` y `Facturador SRI`.
+- Playwright por APISIX con admin tenant confirmo que despues de recargar `/dashboard/invoice-list` el contexto conserva los 6 modulos, el menu muestra `Facturacion` y `Facturador SRI`, y la bandeja consume `/dashboard/api/admin/billing/rides`.
+
+Decisiones:
+- Las pantallas QA en hosts reales no pueden caer a fixtures; si el backend falla, debe verse el error real y no datos demo que simulen guardado.
+
+### 2026-06-22 - Dashboard QA: Servicios SRI sin fixture y emision manual en modal
+
+Objetivo: limpiar los elementos graficos nuevos de Facturador SRI para que no muestren datos `Fixture`, no carguen payload JSON permanente en la pantalla y consuman backend real del tenant.
+
+Cambios:
+- `BillingServicesApiService` usa `backendApiRequestContext()` en health, RIDEs, estado, emision, correo de prueba y reemision; la pantalla ya no queda interceptada por fixtures frontend en QA.
+- `BillingServicesComponent` mueve la emision manual controlada a un modal dedicado `Preparar emision manual`; la pagina principal queda con resumen de cliente, lineas e IVA y un solo boton de apertura.
+- La bandeja de comprobantes recientes consulta 12 RIDEs (`limit=12`) para evitar una pantalla excesivamente larga y mantener la vista como consola operativa.
+- El textarea JSON autoajustable vive solo dentro del modal; no hay editor tecnico visible al cargar la pantalla.
+
+Operacion y verificacion:
+- Pasaron unit focal de `billing-services.component`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Por APISIX, `/dashboard/billing-services` llama backend real: `GET /dashboard/api/admin/billing/health` y `GET /dashboard/api/admin/billing/rides?limit=12&include_cancelled=0` responden 200.
+- Playwright por APISIX confirmo que no aparece texto `Fixture`, que el editor `#billing-services-emit-payload` no esta en la pantalla principal, que el modal abre/cierra correctamente y que no hay overflow horizontal.
+
+Decisiones:
+- Las pruebas tecnicas de emision SRI son acciones avanzadas; deben abrirse en modal y no mezclarse con la lectura operativa de estado, APIs y RIDEs recientes.
+- En QA, las pantallas de integraciones reales no deben depender de fixture handlers cuando existe backend real para el tenant.
+
+### 2026-06-22 - Dashboard QA: alta de roles en modal
+
+Objetivo: evitar que la creacion de roles quede incrustada junto a la administracion de permisos existentes, porque eso mezclaba alta y edicion en la misma pantalla y hacia mas confusa la gestion RBAC.
+
+Cambios:
+- `RolesComponent` cambia el alta de rol a un modal dedicado con nombre, descripcion y permisos iniciales por modulo/accion.
+- La tarjeta superior queda como entrada compacta `Crear rol`; el formulario ya no se renderiza embebido al cargar la pagina.
+- El icono del boton principal del modal queda marcado como decorativo para que el nombre accesible sea exactamente `Crear rol`, sin caracteres raros del icon font.
+- `smoke.spec.ts` valida que el formulario no este embebido, que el modal abra, cree un rol fixture y lo elimine.
+
+Operacion y verificacion:
+- Pasaron unit focal de `roles.component`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright focal de roles, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Por APISIX, `/dashboard/roles` abre el modal con boton accesible `Crear rol`, no deja formulario fuera del modal, no tiene overflow horizontal ni scroll vertical interno en el contenido principal.
+- Por APISIX, `/dashboard/tenant-admin` con superadmin despues de `page.reload()` conserva `Ecommerce + Facturacion + Plataforma`, muestra `Facturacion`, `Facturador SRI` y `Guardar modulos`, con `1/1 tenants visibles`.
+
+Decisiones:
+- Las altas administrativas deben abrirse cerca de la accion que las dispara, preferiblemente en modal cuando el formulario es puntual y no debe empujar al usuario a otra zona de la pantalla.
+
+### 2026-06-22 - Dashboard QA: F5 no conserva menu o tenants viejos
+
+Objetivo: corregir el caso donde un usuario guardaba modulos del tenant, recargaba con F5 y podia seguir viendo una version vieja del Dashboard con tenants demo o sin los modulos recien asignados.
+
+Cambios:
+- `Dashboard/nginx.conf` ahora sirve `index.html`, fallback SPA, `/dashboard/*` y assets JS/CSS con `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`.
+- Al agregar headers de cache por location se duplicaron tambien los headers de seguridad (`nosniff`, `DENY`, CSP, Referrer Policy, Permissions Policy, COOP y CORP) para no perderlos por herencia de Nginx.
+- `smoke.spec.ts` valida que el runtime Docker entregue `no-store` en el shell del Dashboard.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focal de `tenant-admin.component`, `npm run docker:up`, `npm run docker:health`, Playwright focal de headers, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Por APISIX, despues de `page.reload()` en `/dashboard/tenant-admin`, el contexto y la lista de tenants devuelven `dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri`; el menu muestra `Facturacion` y `Facturador SRI`; no aparecen tenants demo y no hay scroll interno en el contenido.
+
+Decisiones:
+- En QA el shell del Dashboard no debe cachearse entre despliegues. Los assets versionados tambien quedan sin store para evitar bundles obsoletos durante iteracion rapida.
+
+### 2026-06-22 - Dashboard QA: catalogo API con edicion modal
+
+Objetivo: continuar la simplificacion de administracion de APIs, evitando que al hacer clic en editar una API los datos se carguen lejos o en una columna lateral poco clara.
+
+Cambios:
+- `api-catalog` deja de mostrar el formulario de registro/propuesta siempre embebido en la columna lateral.
+- La columna lateral queda como panel compacto de backends y propuestas API pendientes.
+- `Nueva propuesta API`, `Editar como propuesta` y `Editar` en propuestas abren un modal dedicado con datos del contrato, snippet de versionado, alias, consumo en servicio y checklist.
+- El modal usa el patron manual del dashboard (`backdrop` + `role=dialog`) y no introduce scroll interno en el contenido operativo.
+
+Operacion y verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Playwright por APISIX confirmo que `/dashboard/api-catalog` no muestra editor embebido al cargar, abre modal para nueva propuesta, abre modal al editar `ecommerce.products`, no tiene overflow horizontal ni scroll vertical interno dentro del modal.
+- La prueba por APISIX confirmo que `ecommerce.products` sigue respondiendo 200 con 127 registros y `billing-sri.facturador-health` sigue respondiendo 200 con `Facturador SRI` en estado `healthy`.
+
+Decisiones:
+- La administracion de APIs debe separar lectura/prueba de contratos reales de la preparacion de propuestas; la edicion va en modal para evitar cambios cargados en otra zona de la pantalla.
+
+### 2026-06-22 - Dashboard QA: pruebas API reales y health del Facturador
+
+Objetivo: cerrar la validacion posterior al guardado de modulos, asegurando que `tenant-admin` persista Facturacion/Facturador SRI tras F5 y que el catalogo de APIs pruebe endpoints reales sin respuestas falsas ni mensajes confusos.
+
+Cambios:
+- `billing-services` elimina el scroll interno del editor JSON de emision manual: el textarea autoajusta altura y la pantalla muestra resumen previo de cliente, lineas e impuesto antes del payload.
+- El catalogo de APIs deja el copy visible de `draft/local` y usa lenguaje de `Propuestas de APIs`, diferenciando preparacion de contratos de endpoints versionados reales.
+- `FacturadorApiService::health()` acepta el contrato real de `/health` del Facturador (`healthy` en texto plano) y lo normaliza a JSON seguro para el Dashboard, sin exponer host interno del contenedor.
+
+Operacion y verificacion:
+- Dashboard reconstruido con `npm run docker:up`; backend reconstruido con `./scripts/deploy-development.sh backend`.
+- Playwright por APISIX confirmo: `/dashboard/tenant-admin` tras F5 mantiene `6 modulos`, menu con `Facturacion` y `Facturador SRI`, sin tenants demo ni overflow horizontal.
+- Catalogo de APIs por APISIX: `ecommerce.products` devuelve 200 con 127 registros reales y vista previa limitada a 3; `billing-sri.facturador-health` devuelve 200 con `Facturador SRI` en estado `healthy`.
+- `billing-services` no presenta scroll vertical interno en contenido operativo.
+- Pasaron unit focales de API catalog/probe/servicios SRI (11 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `php -l src/Services/FacturadorApiService.php`, `git diff --check` en Dashboard/backend y `scripts/check-container-connectivity.sh development`.
+
+Decisiones:
+- La consola API puede mostrar una muestra de respuestas grandes, pero debe indicar el total real recibido para evitar la falsa lectura de que la API trae un solo producto.
+- El health administrativo del Facturador debe tolerar el contrato interno existente y entregar un contrato JSON estable al Dashboard.
+
+### 2026-06-22 - Dashboard QA: jerarquia superadmin y Facturacion asignada
+
+Objetivo: ordenar la jerarquia de acceso para que los superadmins de plataforma sean administradores con dominio `tecnolts.com`, separar admin tenant de superadmin, y dejar Facturacion/Facturador SRI asignados y visibles para Paramascotas sin depender de fixtures ni cache local.
+
+Cambios:
+- Backend limita `platform-admin` a usuarios admin cuyo correo pertenezca a dominios permitidos (`DASHBOARD_PLATFORM_ADMIN_DOMAINS`, default `tecnolts.com`); un admin tenant fuera de ese dominio ya no puede administrar contratos globales.
+- QA queda con usuarios separados para validar jerarquia: `evasquez@tecnolts.com` como superadmin plataforma y `evasquez@paramascotasec.com` como admin tenant de Paramascotas. No registrar claves en este contexto.
+- Paramascotas tiene persistidos `invoicing` y `billing-sri` en `dashboard_tenant_admin_overrides`; `/dashboard/api/tenant/context` devuelve ambos modulos para superadmin y admin tenant.
+- `TenantAdminApiService` usa `backendApiRequestContext()` desde core para que `tenant-admin` consuma backend real y respete las reglas de arquitectura.
+- `APP_FIXTURE_HANDLERS` ya no registra `tenantAdminFixtureHandlers` en runtime; esos fixtures quedan solo para specs explicitas, evitando que QA muestre tenants demo al refrescar.
+- `TenantAdminComponent` agrega modal de asignacion de modulos con paquetes asignados primero, texto `Disponible` para lo no contratado y cierre/refresco de contexto al guardar.
+- `TenantAdminComponent` prioriza el tenant solicitado por URL o el tenant activo del contexto al recargar, para no seleccionar un tenant distinto por orden de lista.
+- La bandeja de facturas usa ancho completo en escritorios medianos, acciones estables sin solapes y fallback de iniciales en vez de imagenes placeholder del template.
+- La vista previa de factura elimina el logo fijo `TECNOLTS` dentro del comprobante y usa marca textual del tenant.
+
+Operacion y verificacion:
+- Se desplego backend con `./scripts/deploy-development.sh backend` y Dashboard con `npm run docker:up`.
+- Verificacion APISIX: superadmin `evasquez@tecnolts.com` recibe `platform-admin`; admin tenant `evasquez@paramascotasec.com` recibe `invoicing.read` y `billing-sri.read` pero `GET /dashboard/api/admin/tenants` le devuelve 403.
+- `GET /dashboard/api/admin/tenants` con superadmin devuelve Paramascotas con `dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri`.
+- Playwright por APISIX confirmo que tras F5 el menu muestra `Facturacion` y `Facturador SRI`, `tenant-admin` no muestra tenants demo, queda `1/1 tenants visibles`, Paramascotas conserva `6 modulos`, el modal abre Facturacion/SRI asignados y `Guardar modulos` queda deshabilitado sin cambios pendientes.
+- Playwright confirmo en facturas: 6 filas visibles, sin `40x40`, sin overflow horizontal; vista previa sin `TECNOLTS` fijo, sin `table-responsive` interno y con nombre del tenant.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focales tenant-admin/invoice-list/invoice-preview (21 pruebas OK en tenant-admin focal reciente; 20 en la corrida previa de facturas), `npm run docker:health`, `php -l` en `TenantController.php` y `scripts/check-container-connectivity.sh development`.
+
+Decisiones:
+- Un admin tenant puede operar modulos del tenant contratado, pero no asignar contratos globales ni modificar otros tenants.
+- La asignacion contractual de modulos siempre debe ir a backend real y refrescar el contexto activo para que el menu sea la fuente visible inmediata.
+- Pantallas fiscales no deben mostrar branding fijo de la plantilla; deben derivar marca y permisos del contexto tenant.
+
+### 2026-06-22 - Dashboard QA: tenant-admin deja de guardar en fixtures
+
+Objetivo: corregir que al guardar Facturacion/Facturador SRI en `tenant-admin` la pantalla mostrara `Modulos guardados`, pero al hacer F5 desapareciera el modulo del tenant y del menu.
+
+Hallazgo:
+- El Dashboard en build `development` mantiene `fixtureBackendEnabled=true` para pantallas demo.
+- `tenantAdminFixtureHandlers` interceptaba `/admin/tenants` y `PATCH /admin/tenants/:id/modules`, por lo que el guardado ocurria en memoria del navegador y no en el backend real.
+- La DB confirmo que `Setting.paramascotasec:dashboard_tenant_admin_overrides` seguia con `["dashboard","ecommerce","users","tenant-admin"]` aunque la UI habia mostrado Facturacion asignado.
+
+Cambios:
+- `TenantAdminApiService` marca sus requests con `backendApiRequestContext()` por defecto para que tenant-admin use siempre backend real en la app QA sin importar los fixtures habilitados del build development.
+- Se agrego el token `TENANT_ADMIN_REAL_BACKEND_REQUESTS` para que las pruebas unitarias de fixtures puedan desactivar ese bypass explicitamente.
+- La prueba fixture de `TenantAdminApiService` inyecta `TENANT_ADMIN_REAL_BACKEND_REQUESTS=false`.
+- El smoke E2E acepta el nombre real `Para Mascotas EC` ademas del fixture historico `ParaMascotasEC`.
+- Se aplico la asignacion real de `invoicing` y `billing-sri` al tenant `paramascotasec` por backend interno; DB y `/api/tenant/context` ya devuelven ambos modulos.
+
+Operacion y verificacion:
+- Mutacion real interna `PATCH /api/admin/tenants/paramascotasec/modules` devolvio 200 con `enabledModules` incluyendo `invoicing` y `billing-sri`.
+- DB verificada: `dashboard_tenant_admin_overrides` quedo persistido con `dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri`.
+- Contexto efectivo verificado: `/api/tenant/context` devuelve `invoicing` y `billing-sri`.
+- `https://paramascotasec.com/dashboard/api/admin/tenants` sin sesion devuelve 401, confirmando que ya no responde desde fixture.
+- Pasaron `npm run type:check`, `npm run lint`, unit focales de tenant-admin (27 pruebas), `npm run docker:up`, `npm run docker:health`, Playwright focal `tenant module assignment|tenant admin` (7 pruebas OK) y `scripts/check-container-connectivity.sh development`.
+
+Decision:
+- Las pantallas de administracion contractual de tenants no deben usar fixtures en runtime QA. Los fixtures quedan para specs y pantallas demo, pero asignacion de modulos, roles contractuales y permisos de tenant deben persistir en backend real.
+
+### 2026-06-22 - Gateway QA: rate limit separado para Dashboard
+
+Objetivo: corregir el bloqueo de `/dashboard/sign-in` por APISIX con `{"error_msg":"Rate limit exceeded"}`, causado por aplicar el perfil `frontend-public` de 300 req/min al Dashboard completo, incluyendo HTML, JS, CSS, preload chunks y navegacion de la SPA.
+
+Cambios:
+- `Gateway/scripts/sync-apisix.sh` agrega el perfil `dashboard-ui` con CORS y `limit-count` de 5000 req/min para la UI del Dashboard.
+- Las rutas `dashboard-root` y `dashboard` usan ahora `dashboard-ui` en lugar de `frontend-public`.
+- `frontend-public` sube de 300 a 1200 req/min para evitar saturar assets del sitio publico sin relajar los perfiles API.
+- `Gateway/scripts/check-apisix-security.sh` exige que `dashboard-ui` exista y mantenga `limit-count` + CORS.
+
+Operacion y verificacion:
+- Se valido sintaxis con `bash -n` en `sync-apisix.sh` y `check-apisix-security.sh`.
+- Se desplego Gateway con `./scripts/deploy-development.sh gateway`.
+- `curl` por APISIX a `https://paramascotasec.com/dashboard/sign-in` devuelve HTML 200 y `X-RateLimit-Limit: 5000`.
+- Paso `Gateway/scripts/check-apisix-security.sh development`: 130 rutas administradas, 9 plugin configs y 1 consumer administrado OK.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo catalogo publico, rutas legacy bloqueadas y facturador protegido.
+
+Decisiones:
+- El Dashboard como SPA debe tener un perfil de rate limit distinto al de API; las APIs conservan limites mas estrictos y reglas de autenticacion por perfil.
+- La proteccion del login no debe depender de limitar la entrega de assets; la seguridad real sigue en las APIs, CSRF, session/backend y APISIX para rutas externas.
+
+### 2026-06-22 - Dashboard QA: refresco de menu tras asignar modulos
+
+Objetivo: corregir la confusion al guardar Facturacion/Facturador SRI en `tenant-admin`, porque el cambio podia persistir pero el menu lateral seguia mostrando el contexto anterior o el tenant activo era distinto al tenant editado.
+
+Cambios:
+- `TenantContextService` agrega `refreshContext()` para limpiar cache de contexto, permisos y acceso por modulo antes de recargar `/tenant/context`.
+- `TenantAdminComponent` refresca el contexto activo cuando se guardan modulos del tenant actualmente abierto en el dashboard, por lo que el menu lateral incorpora `Facturador SRI` sin exigir recarga manual.
+- Si se edita un tenant distinto al tenant activo del menu, la pantalla muestra un aviso claro indicando que el menu pertenece a otro tenant y ofrece abrir el tenant editado.
+- La UI mantiene el guardado explicito de modulos con estados `Asignado`, `No asignado` y `Pendiente de guardar`; `Facturacion` agrupa `Facturacion` y `Facturador SRI`.
+- Se ajusto la tarjeta colapsada de creacion de tenant para conservar densidad visual sin romper la prueba de layout.
+
+Operacion y verificacion:
+- Pasaron unit focales de `tenant-context`, `tenant-admin`, facade y API fixture: 4 archivos, 31 pruebas OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `git diff --check`, `npm run docker:up` y `npm run docker:health`.
+- Paso Playwright focal `tests/e2e/smoke.spec.ts -g "tenant module assignment|tenant admin"`: 7 pruebas OK.
+- Prueba manual Playwright: al guardar Facturacion en el tenant activo, el menu lateral muestra `Facturador SRI`; al seleccionar `TECNOLTS Demo` desde un contexto de ParaMascotasEC, aparece el aviso de tenant distinto y el enlace para abrir ese tenant.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, catalogo publico, facturador protegido y rutas legacy bloqueadas.
+
+Decisiones:
+- Guardar modulos de un tenant no cambia implicitamente el tenant activo del dashboard; si el usuario edita otro tenant, la pantalla debe decirlo en el mismo lugar de la accion.
+- El menu lateral debe reconstruirse desde el contexto backend despues de cambiar modulos del tenant activo, no desde supuestos locales del componente.
+
+### 2026-06-22 - Dashboard QA: guardado explicito de modulos por tenant
+
+Objetivo: corregir la asignacion de Facturacion y otros paquetes en `tenant-admin`, porque el guardado silencioso al marcar casillas no era claro y hacia parecer que no existia accion para asignar modulos al tenant.
+
+Cambios:
+- `TenantAdminComponent` deja de enviar cambios de modulos al backend al marcar casillas; ahora mantiene un borrador por tenant y muestra `Cambios pendientes`.
+- La pantalla agrega botones visibles `Guardar modulos` y `Descartar cambios` tanto en la barra de paquetes como en el detalle del paquete abierto.
+- Cada paquete muestra estado de asignacion real: `No asignado`, `Asignado parcial`, `Asignado` o `Pendiente de guardar`; el chip `Operativo` queda solo como disponibilidad tecnica del paquete.
+- Los presets de tenant ahora preparan el borrador de modulos y exigen guardar explicitamente para persistir.
+- `TenantAdminFacade.updateModules` acepta callback de exito para limpiar el borrador solo despues de confirmacion backend.
+
+Operacion y verificacion:
+- Pasaron unit focales de tenant admin/facade/API fixture: 3 archivos, 26 pruebas OK.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `git diff --check`, `npm run docker:up` y `npm run docker:health`.
+- Paso Playwright focal `tests/e2e/smoke.spec.ts -g "tenant module assignment|tenant admin"`: 7 pruebas OK.
+- Prueba manual Playwright en `http://127.0.0.1:8081/tenant-admin?tenant=demo`: al marcar Facturacion en `Read Only Demo` aparecen `Pendiente de guardar`, `Facturador SRI` y `Guardar modulos`; al guardar, desaparecen pendientes y el paquete queda `Asignado`.
+
+Decisiones:
+- La contratacion/asignacion de modulos no debe usar autosave silencioso. Los cambios de contrato requieren accion explicita de guardado y feedback visible.
+
+### 2026-06-22 - Dashboard QA: asignacion persistente de modulos por tenant
+
+Objetivo: cerrar la brecha entre el catalogo visual de modulos y la gestion real de contratos por tenant, permitiendo asignar/desasignar modulos nuevos y verlos reflejados en el contexto efectivo del tenant.
+
+Cambios:
+- Backend agrega endpoints reales `GET/POST /api/admin/tenants`, `PATCH /api/admin/tenants/{tenantId}/modules` y `PATCH /api/admin/tenants/{tenantId}/configuration`.
+- La asignacion se persiste en `Setting` bajo la clave tenant-scoped `dashboard_tenant_admin_overrides`, sin depender solo de `DASHBOARD_ENABLED_MODULES`.
+- `/api/tenant/context` ahora lee la configuracion guardada y genera permisos desde los modulos efectivos del tenant.
+- `billing-sri` queda registrado en el backend como modulo con permisos `read`, `create` y `update`, por lo que ya no se descarta al calcular permisos.
+- `admin.tenants` se agrego al registro maestro de capacidades y se regeneraron manifiestos: 28 capacidades, 114 rutas backend y 17 rutas Facturador.
+- Tenant Admin muestra feedback visible de persistencia en la zona de paquetes/modulos: guardando, guardado y descripcion de guardado backend.
+- Se corrigio el guardado de `enabled_modules` para reemplazar arreglos completos; no usar `array_replace_recursive` porque mezcla indices numericos y puede dejar modulos sobrantes al desasignar.
+
+Operacion y verificacion:
+- Pasaron `php -l` en `TenantController.php` y `config/routes.php`.
+- Pasaron `npm run type:check`, unit focales de Tenant Admin (24 pruebas), `npm run lint`, `npm run arch:check`, `npm run capabilities:generate` y `npm run capabilities:check`.
+- Se desplegaron backend, Dashboard y Gateway con wrappers permitidos.
+- APISIX paso de `GATEWAY_API_ROUTE_NOT_REGISTERED` a ruta protegida correctamente; luego se valido roundtrip autenticado por el contrato publico `https://paramascotasec.com/paramascotasec/api`.
+- Roundtrip real por APISIX: quitar `billing-sri`, verificar ausencia en `/tenant/context`, asignarlo, verificar presencia en lista de tenants y contexto, restaurar sin `billing-sri` y comprobar equivalencia.
+- Paso `scripts/check-container-connectivity.sh development`.
+- Paso Playwright focal `tests/e2e/smoke.spec.ts -g "tenant module assignment|tenant admin"`: 7 pruebas OK.
+- Paso `npm run docker:health` para Dashboard.
+
+Decisiones:
+- La fuente runtime de modulos contratados por tenant queda en backend/DB; el `.env` mantiene defaults de arranque.
+- Nuevos modulos no quedan completamente listos hasta cumplir tres capas: catalogo Dashboard, rutas/permisos backend y sincronizacion APISIX.
+- Las APIs de tenant admin requieren `platform-admin`; tenant-admin comun no puede modificar contratos globales.
+
+### 2026-06-21 - Dashboard QA: Servicios SRI y registro API tenantizado
+
+Objetivo: continuar la revision de performance, usabilidad y administracion de APIs creando una vista operativa para servicios de Facturador SRI y dejando sus rutas registradas por modulo/tenant en backend, Dashboard y APISIX.
+
+Cambios:
+- Backend expone endpoints admin para Facturador: salud, emision controlada, busqueda por `sourceReference`, estado SRI, XML, RIDE PDF, correo de prueba y anulacion/reemision.
+- `FacturadorApiService` agrega cliente JSON para salud, estado, XML y correo de prueba, reutilizando la normalizacion de claves de acceso.
+- Dashboard agrega la ruta privada `/billing-services` bajo el modulo asignable `billing-sri` / Facturador SRI, con facade propia, fixtures, pantalla sin alerts, contratos API visibles, acciones por clave de acceso y lista de comprobantes sin scroll vertical interno.
+- La pantalla respeta permisos finos del tenant: lectura permite salud, busqueda, estado, RIDE y XML; `billing-sri.update` habilita correo de prueba/anulacion/reemision; `billing-sri.create` habilita emision manual controlada.
+- El registro `dashboard-api.config.ts` incluye servicios `billing-sri.facturador-*` con permisos diferenciados de lectura, creacion y actualizacion.
+- El catalogo de modulos de tenant separa `invoicing` (facturas, pagos, empresa, monedas y configuracion fiscal) de `billing-sri` (emision electronica SRI, RIDE/PDF, XML, correo y reemision). Los presets `Retail operativo` e `Inventario + facturacion` habilitan ambos cuando corresponde.
+- Se regenero el manifiesto versionado de capacidades: 27 capacidades, 110 rutas backend y 17 rutas Facturador.
+- APISIX se resincronizo con el wrapper de gateway; la ruta nueva paso de `GATEWAY_API_ROUTE_NOT_REGISTERED` a `401 AUTH_REQUIRED` sin sesion, confirmando registro y proteccion.
+
+Operacion y verificacion:
+- Pasaron `php -l` en rutas/controlador/servicio backend tocados.
+- Pasaron `npm run type:check`, unit focales de Servicios SRI/API catalog/modulos/Tenant Admin, `npm run lint`, `npm run arch:check`, `npm run type:any-check`, `npm run docker:health` y Playwright focal de `billing-services`, smoke y densidad visual.
+- Paso Playwright focal de `/api-catalog?tenant=demo`, validando auditoria del registro y feedback de prueba GET controlada.
+- Las unit focales cubren que roles sin permisos de creacion/actualizacion no vean acciones de escritura ni puedan ejecutarlas desde la pantalla.
+- Playwright valida que Tenant Admin abra el paquete Facturacion y muestre `Facturacion` + `Facturador SRI` como modulos asignables separados.
+- Paso `npm run capabilities:check`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo catalogo publico por APISIX, Facturador autenticado por `X-API-Key` y Bearer, y bloqueo de rutas legacy/no registradas.
+- Paso `Gateway/scripts/check-apisix-security.sh`: 126 rutas gestionadas, 8 plugin configs y 1 consumer gestionado.
+
+Decisiones:
+- Las APIs SRI para uso interno del Dashboard se publican como rutas admin del backend y quedan protegidas por sesion admin/CSRF; las APIs externas directas del Facturador siguen por `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` con credencial APISIX.
+- La pantalla administrativa muestra contratos y acciones operativas, no pruebas sueltas con `alert`.
+- Todo servicio que requiera asignacion/permiso propio debe ser modulo contractual visible; no debe quedar escondido como flujo interno de otro modulo.
+- La administracion de APIs se apoya en registros generados; despues de nuevas rutas backend hay que desplegar gateway para que APISIX deje de responder deny.
+
+Pendientes:
+- `npm run bundle:check` detecta deuda de performance existente: el lazy chunk `paramascotas-panel-component` mide 1.11 MB y supera el presupuesto de 800 kB. Requiere partir el panel monolitico en rutas/componentes lazy mas pequenos antes de considerar cerrado el presupuesto de performance.
+
+### 2026-06-21 - Dashboard QA: auditoria de APIs y performance del panel Paramascotas
+
+Objetivo: continuar la revision de performance, usabilidad y administracion de APIs sin ocultar problemas estructurales del Dashboard.
+
+Cambios:
+- `DashboardApiRegistryService` agrega `audit()` con metricas de claves duplicadas, GET probables, mutaciones no publicas, mutaciones publicas, endpoints bloqueados por modulo y estados de lifecycle.
+- `/api-catalog` muestra dos bloques nuevos: auditoria del registro versionado y control de publicacion de drafts locales.
+- La consola API diferencia con claridad draft local vs contrato versionado, muestra pendientes de versionar y refuerza que APISIX debe publicar solo con tenant, servicio, autenticacion, rate limit y reglas de bloqueo revisadas.
+- El resultado de prueba GET ahora indica explicitamente cuando la respuesta completa llego y cuantos registros se muestran como vista previa, para evitar confundir truncamiento visual con respuesta incompleta.
+- `core/api/README.md` documenta la auditoria, la frontera publica `@core/api` y la responsabilidad de APISIX para exposicion externa.
+- Playwright cubre `/api-catalog?tenant=demo` en smoke y en la auditoria visual de gestion de accesos.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run type:any-check`, `git diff --check`.
+- Pasaron unit focales `api-catalog.component.spec.ts`, `dashboard-api-registry.service.spec.ts` y `dashboard-api-probe.service.spec.ts`: 3 archivos / 10 pruebas.
+- Dashboard fue reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Pasaron Playwright focales: `tests/e2e/smoke.spec.ts -g "api catalog"` y `tests/e2e/layout-density.spec.ts -g "access management screens"`.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, productos publicos, bloqueo de rutas legacy y bloqueo de DELETE no registrado.
+- Validacion APISIX con Chromium y `--host-resolver-rules=MAP paramascotasec.com 192.168.100.229`: `/dashboard/api-catalog?tenant=demo` sin sesion real redirige correctamente a `sign-in`.
+
+Performance:
+- `npm run bundle:check` sigue fallando solo por `paramascotas-panel-component`: 1.11 MB contra limite de 800 kB. Initial, main y styles quedan dentro de presupuesto.
+- Se probo `@defer` sobre la vista de productos y se revirtio porque no redujo el chunk; el siguiente arreglo real debe separar `paramascotas-panel` en rutas/componentes lazy por dominio (`catalog`, `inventory`, `operations`, `reporting`, `finance`) y no subir el presupuesto.
+
+Decisiones:
+- La consola API administra y audita contratos, pero no es fuente de verdad: un draft activo no se consume si no existe en `src/app/core/modules/dashboard-api.config.ts`.
+- Para APIs externas, APISIX sigue siendo frontera obligatoria; las pruebas de consola no reemplazan checks de gateway/backend.
+
+### 2026-06-21 - Dashboard QA: rutas heredadas y cobertura visual completa
+
+Objetivo: cerrar residuos visibles de plantilla que quedaban fuera del menu principal y dejar la gestion de tenants, roles y usuarios protegida por pruebas visuales mas amplias.
+
+Cambios:
+- `coming-soon` y `maintenance` dejan textos en ingles del template y quedan como estados publicos operativos en espanol, con secciones claras, cards de estado y sin degradados.
+- `image-upload`, `star-rating`, `tags` y `rich-text-editor` se convirtieron en recursos UI operativos para ecommerce/tenant: copy claro, ejemplos reales, tarjetas compactas y sin scroll vertical interno.
+- `starred` y `veiw-details` dejan de mostrar correo demo en ingles (`Compose`, `Starred`, nombres de prueba) y quedan como bandeja/detalle de comunicaciones operativas.
+- `layout-density.spec.ts` ahora audita esas rutas privadas y publicas, ademas de mantener la alineacion contra el menu visible y la auditoria especifica de `tenant-admin`, `roles`, `users-list` y `users-grid`.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y unit focales de las 8 rutas tocadas (8 pruebas OK).
+- Dashboard fue reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Paso Playwright completo `tests/e2e/layout-density.spec.ts`: 47 pruebas OK, incluyendo rutas operativas del menu, gestion de accesos, recursos UI, estados publicos y paneles base.
+- Paso Playwright focal `tests/e2e/smoke.spec.ts -g "tenant admin|RBAC|custom roles"`: 6 pruebas OK.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, seguridad gateway, productos publicos y rutas legacy bloqueadas.
+- Paso smoke APISIX QA con `--host-resolver-rules=MAP paramascotasec.com 192.168.100.229`: protegidas sin sesion redirigen a `sign-in`, y `coming-soon`/`maintenance` renderizan el contenido nuevo sin overflow ni scroll interno.
+
+Decisiones:
+- Las rutas privadas no visibles en menu siguen el mismo estandar visual que las pantallas operativas: copy en espanol, superficies separadas, acciones con cursor claro y scroll vertical unico por pagina.
+- La validacion interactiva de tenants/roles/usuarios se mantiene con fixtures locales; por APISIX sin sesion se valida la proteccion y redireccion al login.
+
+### 2026-06-21 - Dashboard QA: cobertura visual de rutas operativas del menu
+
+Objetivo: comprobar que las opciones visibles del menu que no estaban en la prueba de densidad tambien cumplan la regla de secciones claras, sin copy de plantilla, sin degradados y sin scroll vertical interno en contenido.
+
+Cambios:
+- Se comparo el registro central de navegacion contra `layout-density.spec.ts`; quedaron 29 rutas visibles sin cobertura directa, principalmente `Paramascotas Panel` y `users-grid`.
+- Se agrego una prueba E2E versionada en `layout-density.spec.ts` para esas rutas operativas del menu.
+- La prueba valida por ruta: HTTP < 400, ausencia de overflow horizontal, ausencia de clases de gradiente, ausencia de `scroll-sm`, ausencia de copy de template, ausencia de scroll vertical interno en el contenido principal y cursor `pointer` en acciones clicables.
+- Se agrego una prueba de alineacion que lee `dashboard-navigation.config.ts` y `paramascotas-panel-manifest.config.ts`; falla si una ruta visible del menu no aparece en la cobertura visual o no tiene exencion explicita.
+- Se agrego una prueba focal para gestion de acceso (`tenant-admin`, `roles`, `users-list`, `users-grid`) que valida superficies separadas, ausencia de scroll traps/degradados y cursores `pointer` en acciones clicables reales.
+- `api-catalog` queda fuera de esta prueba operativa porque exige permiso de plataforma; se mantiene cubierta por pruebas de plataforma/permisos.
+
+Operacion y verificacion:
+- Auditoria runtime previa de las 29 rutas confirmo que el unico scroll interno detectado era el sidebar; al limitar la medicion al contenido principal no hubo scroll traps, copy de plantilla, degradados, overflow ni cursores incorrectos.
+- Paso Playwright focal `tests/e2e/layout-density.spec.ts -g "layout density coverage stays aligned"`.
+- Paso Playwright focal `tests/e2e/layout-density.spec.ts -g "visible operational menu routes"`.
+- Paso Playwright focal `tests/e2e/layout-density.spec.ts -g "access management screens"`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+
+Decisiones:
+- El sidebar puede desplazarse como area de navegacion cuando el menu es mas alto que el viewport; la regla estricta de no doble scroll aplica al contenido operativo de cada pantalla.
+- La cobertura del menu debe salir del registro central de navegacion para evitar que nuevas opciones queden sin auditoria visual.
+
+### 2026-06-21 - Dashboard QA: paneles base operativos restantes y controles UI
+
+Objetivo: completar el barrido de paneles base que aun conservaban vistas heredadas del template y limpiar controles UI con textos de demo en ingles.
+
+Cambios:
+- `home-11`, `home-13`, `home-14` y `home-15` dejan de usar dashboards largos de banca, tickets, audiencia y proyectos heredados; ahora son paneles operativos de finanzas, mesa de ayuda, contenidos digitales y proyectos.
+- Se agrego `operational-panel-page.css` como estilo compartido para estos paneles: hero compacto, metricas, secciones con fondos planos, bordes laterales y grillas fluidas sin degradados.
+- `switch` corrige breadcrumb/titulos y cambia `Switch Active/Inactive` por etiquetas operativas en espanol.
+- `radio` cambia `Radio Active/Inactive`, `Radio Disable` y `Radio With Button` por copy operativo en espanol.
+- `home-8` y `widgets` eliminan nombres de series heredados `Net Profit`, `Free Cash`, `Active` y `New` en charts.
+- `layout-density.spec.ts` ahora audita tambien `radio` y `switch`, y bloquea copy heredado especifico de los paneles reescritos.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y unit focales de `radio`, `switch`, `home-8` y `widgets` (4 pruebas OK).
+- Dashboard fue reconstruido con `npm run docker:up` y validado con `npm run docker:health`.
+- Paso Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"` cubriendo recursos UI y paneles base.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, rutas publicas, seguridad de gateway y catalogo publico no vacio.
+- Paso `git diff --check`.
+
+Decisiones:
+- Estos paneles siguen siendo rutas privadas/demo, pero no deben mostrar copy de plantilla ni layouts que parezcan ajenos al producto.
+- Se mantiene la politica visual sin degradados y sin scroll vertical interno; la pagina debe ser el unico scroll vertical.
+
+### 2026-06-21 - Dashboard QA: RBAC, tenants y usuarios accionables
+
+Objetivo: corregir la experiencia de asignacion de modulos, permisos, roles y usuarios porque las tarjetas parecian inputs, los permisos no se entendian por accion y los botones de usuarios no abrian una gestion real.
+
+Cambios:
+- `RolesComponent` ahora muestra la asignacion por modulo como matriz de acciones: Lectura, Crear, Editar y Eliminar, tanto al crear roles como al editar un rol existente.
+- Los grupos de permisos mantienen el catalogo central de permisos; no se duplican reglas ni literals fuera del adapter de permisos.
+- `TenantAdminComponent` muestra en paquetes y modulos que permisos genera cada modulo, aisla el click de los checkboxes dentro de tarjetas y usa cursor/foco de boton real.
+- `UsersListComponent` agrega seleccion de filas, panel de detalle, modo edicion rapida y acciones de estado conectadas a `PATCH /users/:id`.
+- `UserStatusBadgeComponent` deja de mostrar estados en ingles y usa etiquetas `Activo`, `Inactivo` y `Bloqueado`.
+- Los fixtures de usuarios cubren actualizacion para que las pruebas E2E validen acciones reales y no solo render.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focales de usuarios/roles/tenants (19 pruebas OK), `npm run docker:up`, `npm run docker:health` y `git diff --check`.
+- Paso Playwright focal `tests/e2e/smoke.spec.ts -g "role permission assignment|tenant module assignment|users list opens|tenant admin and roles"`: 5 pruebas OK.
+- Paso `scripts/check-container-connectivity.sh development`; APISIX confirmo rutas `tenant-admin`, `roles` y `users-list` con HTTP 200 por `https://paramascotasec.com/dashboard/...`.
+
+Decisiones:
+- La asignacion de modulos en tenants sigue siendo contractual; la asignacion fina de lectura/creacion/edicion/eliminacion queda en roles.
+- En pantallas anchas, el editor de tenant vuelve a dos columnas para aprovechar espacio; en tamanos menores conserva una columna para evitar tarjetas estrechas.
+
+### 2026-06-21 - Dashboard QA: servicios SaaS sin plantilla cripto
+
+Objetivo: continuar la mejora global del Dashboard corrigiendo las rutas privadas `marketplace`, `marketplace-details`, `portfolio` y `wallet`, que todavia mostraban copy, graficos y acciones de criptomonedas del template.
+
+Cambios:
+- `marketplace` ahora es un catalogo de servicios e integraciones del tenant, con filtros funcionales por busqueda, area y estado; muestra Ecommerce, Facturacion, Inventario, Pagos, Correo, Reportes, Seguridad y Logistica.
+- `marketplace-details` deja de ser una ficha de mercado y pasa a explicar una integracion operativa Ecommerce + facturacion + inventario, con checklist, rutas/permisos y reglas de operacion.
+- `portfolio` se convierte en portafolio contratado del tenant, con cobertura modular, filtros por area, riesgos abiertos y criterios para replicar el modelo en otros giros ecommerce.
+- `wallet` se reemplaza por conexiones de pago y conciliacion, con seleccion local de metodo, detalle del canal, responsable, controles requeridos y proceso de conciliacion.
+- Se eliminaron `ng-apexcharts`, graficos con degradado, `scroll-sm`, copy en ingles y referencias a Bitcoin/Ethereum/Litecoin/Dogecoin/Wallet de estas rutas.
+
+Operacion y verificacion:
+- Pasaron pruebas unitarias focales de los cuatro componentes: 4 archivos / 11 pruebas.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright focal `tests/e2e/layout-density.spec.ts -g "business configuration"` validando ausencia de copy de template, overflow horizontal y scroll vertical interno.
+- Se tomaron capturas del runtime Docker: `/tmp/dashboard-business-marketplace.png`, `/tmp/dashboard-business-details.png`, `/tmp/dashboard-business-portfolio.png` y `/tmp/dashboard-business-payments.png`.
+
+Decisiones:
+- Estas rutas pertenecen al modulo legacy `business/invoicing`; en el tenant real Paramascotas no estan contratadas y por APISIX autenticado caen correctamente en `module-unavailable`. La validacion visual se hizo sobre el tenant demo del runtime Docker.
+- Las rutas privadas de demo tambien deben mantenerse con copy operativo y secciones claras, porque siguen siendo accesibles por URL cuando el modulo esta contratado.
+
+### 2026-06-21 - Dashboard QA: perfil, notificaciones y paneles base refinados
+
+Objetivo: continuar la mejora global del Dashboard corrigiendo rutas privadas que aun parecian plantilla cruda y reforzar la cobertura contra textos heredados.
+
+Cambios:
+- `notification` deja de mostrar `Settings - Notification`, campos Firebase en ingles y botones `Save Change`; ahora es una configuracion de credenciales de notificaciones con resumen, estado, ambiente y formulario por referencias/llaves publicas.
+- `notification-alert` se convierte en gestion de plantillas por canal: correo, SMS y push, con estados claros, mensajes operativos y acciones en espanol.
+- `view-profile` deja la ficha generica con `Jacob Jones`, `Lorem`, `Personal Info`, `Full Name`, `Change Password` y `Notification Settings`; ahora muestra resumen lateral del usuario, tabs de datos, seguridad y comunicaciones con copy de tenant.
+- Se limpiaron residuos visibles de paneles base: `Overall Revenue`, `Doctors`, `UX/UI Design`, `free trial`, `View All`, `Revenue` y mensajes Lorem en rutas LMS, medico, proyectos, inversiones, widgets y tarjetas.
+- `layout-density.spec.ts` amplia la cobertura de paginas de configuracion de negocio para incluir `notification`, `notification-alert` y `view-profile`, bloqueando copy de plantilla y scroll vertical interno.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y validado con `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false` (216 archivos / 614 pruebas), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright `tests/e2e/layout-density.spec.ts`: 42 pruebas OK, incluyendo configuracion de negocio, workspace, recursos UI y paneles base.
+
+Decisiones:
+- Las rutas privadas aunque no esten visibles en el menu principal deben seguir el mismo estandar visual: secciones con fondos planos, bordes, encabezados utiles y copy operativo en espanol.
+- El Dashboard no debe mostrar ejemplos de plantilla en ingles en rutas accesibles por URL, aunque sean paginas base o recursos internos.
+
+### 2026-06-21 - Dashboard QA: recursos UI y dashboards base sin plantilla
+
+Objetivo: continuar la mejora global del Dashboard corrigiendo rutas de Recursos UI y dashboards base que aun heredaban copy crudo del template y utilidades de scroll interno.
+
+Cambios:
+- Recursos UI reemplaza breadcrumbs, titulos y textos de ejemplo visibles por copy operativo en espanol en Alertas, Tarjetas, Carruseles, Testimonios, Pestanas, FAQ, Tema y componentes relacionados.
+- `alert`, `tabs` y `faq` eliminan frases como `Components /`, `This is a...`, `dummy text`, `free trial` y textos de imprenta del template.
+- Ajuste adicional: `tooltip`, `typography`, `list`, `gallery` y `gallery-grid-desc` dejan de mostrar `This is tooltip text`, `This is title`, `This is text`, `This is list...` y `This is Image title`; ahora usan ejemplos operativos de precios, inventario, permisos, notificaciones, estados y referencias visuales del dashboard.
+- Las galerias traducen pestanas basicas (`Todos`, `Presentaciones`) y usan titulos de elementos relacionados con dashboard, catalogo, permisos, facturacion, reportes e inventario.
+- Ajuste adicional de paneles base: `home-5`, `home-7`, `home-8` y `widgets` dejan de renderizar inversiones genericas, NFT, panel medico y criptomonedas; ahora usan lenguaje de finanzas operativas, recursos digitales del tenant, operacion comercial y widgets ecommerce.
+- La navegacion de `Recursos UI > Paneles base` deja de mostrar `Inversiones`, `NFT y juegos` y `Medico`; las opciones quedan como `Finanzas operativas`, `Experiencias digitales` y `Operacion comercial`.
+- Se limpiaron residuos menores de ingles en dashboards base (`Increase by`, `This Month`, `This Week`, `This Year`) para mantener copy consistente en espanol.
+- Ajuste adicional de `widgets`: se eliminaron clases `bg-gradient-*`, imagenes cripto, texto generico en ingles y el bloque `max-h-266-px overflow-y-auto scroll-sm`; la pantalla queda como biblioteca operativa de widgets ecommerce con tarjetas planas, borde lateral, iconos de negocio y lista de regiones sin scroll vertical interno.
+- Ajuste adicional global de paneles base/Recursos UI: se reemplazaron clases fuente `bg-gradient-*`, `gradient-bg*`, `gradient-deep*`, `border-gradient-tab`, `scroll-sm` y `max-h-266-px` de rutas auditadas por `dashboard-flat-card`, `dashboard-flat-tabs`, `dashboard-list-flow` y `gallery-media-frame`; se tradujo copy residual en paneles base (`Users Overview`, `Top Countries`, `Earning Statistic`, `Client Payment Status`, `Podcast`, `Top Podcaster`, etc.) y se eliminaron restos `Inbox` en recursos UI.
+- Ajuste final de Recursos UI restantes: `colors`, `form-validation`, `table-data`, `gallery-grid`, `gallery-masonry`, `gallery-hover-effect` y `blank-page` dejan de ser paginas de plantilla largas o vacias; ahora usan heroes compactos, tarjetas con bordes/fondos planos, copy operativo en espanol y datos realistas.
+- `colors` pasa de una paleta gigante a familias de uso; `gallery-hover-effect` reemplaza nueve bloques copiados por variantes data-driven; `gallery-masonry` deja de duplicar imagenes; `blank-page` muestra un estado vacio util con criterios de uso.
+- `progress`, `pagination` y `badges` eliminan referencias visibles/clases de gradiente y traducen etiquetas heredadas como `First`, `Previous`, `Primary`, `Success` o `Gradient Badges` a lenguaje de operacion.
+- Auditoria global de copy en `Dashboard/src/app` ya no encuentra residuos visibles como `Lorem`, `This is`, `Read More`, `View All`, `Bitcoin`, `Ethereum`, `NFT`, `Investment`, `Medical`, `Patient`, `Doctor`, `Appointment`, `Campaigns` ni similares; las coincidencias restantes son specs que verifican ausencia de esos textos.
+- `layout-density.spec.ts` espera explicitamente el heading de `/home-4` antes de medir el DOM para evitar lecturas prematuras del shell Angular.
+- `dashboard-overrides.css` agrega politica visual plana para rutas con breadcrumb: tarjetas con borde/sombra leve, headers diferenciados, secciones con borde lateral y bloqueo de scroll vertical interno en `scroll-sm`/`max-h-*`.
+- Las tablas conservan overflow horizontal cuando hace falta, pero no deben recortar verticalmente ni generar una segunda barra vertical.
+- `layout-density.spec.ts` suma cobertura para rutas base y Recursos UI, incluyendo `tooltip`, `typography`, `list`, `gallery` y `gallery-grid-desc`, validando ausencia de copy de template, overflow horizontal y scroll vertical anidado.
+- Ajuste focal de formularios: `form-layout` deja de mostrar `Input Layout`, formularios verticales genericos y campos `First Name`/`Last Name`; ahora presenta patrones operativos en espanol para ficha compacta, captura por columnas y formulario con acciones.
+- Ajuste focal de asistente: `wizard` reemplaza el flujo largo heredado por un asistente compacto, data-driven y basado en signals, con pasos laterales, detalle ancho, resumen y acciones en espanol.
+- `layout-density.spec.ts` ahora audita tambien `/form-layout?tenant=demo` y prohibe el copy heredado de formularios/asistentes (`Input Layout`, `Numbering wizard`, `First Name`, `Next`, `Back`, `Publish`, etc.).
+- Ajuste focal de graficos: `line-chart`, `column-chart` y `pie-chart` dejan de ser demos tecnicas de Apex (`Gradient Charts`, `Column Charts`, `Basic Pie Chart`, `Product 1`, `Team A`) y pasan a biblioteca operativa de tendencias, comparaciones y distribuciones.
+- Las tres rutas de graficos usan hero compacto, tarjetas con borde lateral, notas de uso y copy en espanol; se removieron los rellenos Apex `gradient` de este bloque para mantener una lectura plana y consistente.
+- `layout-density.spec.ts` ahora audita `/line-chart?tenant=demo`, `/column-chart?tenant=demo` y `/pie-chart?tenant=demo`, prohibiendo el copy heredado de graficos y verificando ausencia de scroll vertical anidado.
+- Ajuste focal de componentes visibles: `button`, `dropdown` y `avatar` dejan las galerias largas del template (`Base Buttons`, `Base Action`, `Avatar Sizes`, `Will mart`, `random@gmail.com`) y pasan a patrones operativos de acciones, menus contextuales e identidad de usuarios.
+- `button` queda data-driven con familias de accion principal/secundaria/sensible, herramientas compactas y segmentos; `dropdown` queda como menus de producto, documento, cuenta y exportacion; `avatar` queda como identidad, presencia, escala y equipo asignado.
+- `layout-density.spec.ts` ahora audita `/button?tenant=demo`, `/dropdown?tenant=demo` y `/avatar?tenant=demo`, prohibiendo el copy heredado de esos componentes.
+- Ajuste focal de `home-3` (`Paneles base > eCommerce`): se reemplazo el panel heredado de plantilla por un tablero operativo ecommerce con hero compacto, metricas, venta por periodo, mezcla de canales, pedidos recientes, acciones prioritarias, productos lideres, alertas de stock y clientes recientes.
+- `home-3` deja de mostrar copy y datos genericos como `Total Products`, `Customers Statistics`, `Transactions`, `Top Selling Product`, `Blue t-shirt`, `Nike Air Shoe`, `Dianne Russell`, `Paid`, `Shipped` y `Out of Stock`; la ruta queda con superficies planas, bordes, copy en espanol y sin scroll vertical interno de contenido.
+- Ajuste focal de `home-9` (`Paneles base > Analytics`): se reemplazo la vista de plantilla por un panel de analitica comercial con hero compacto, metricas, tendencia de ingresos/utilidad, origen de demanda, conversion diaria, senales accionables, decisiones prioritarias, campanias, eventos recientes y segmentos de clientes.
+- `home-9` deja de mostrar bloques genericos como `Support Tracker`, `Average Daily Sales`, `Transactions`, `Sales by Countries`, `New Tickets`, `Total Tickets`, `Wallet`, `Payment`, `Credit Card`, `Clicked`, `Subscribe`, `Complaints` y `Unsubscribe`; tambien se removieron rellenos de chart con gradiente en esta ruta.
+- Ajuste focal de `home` (`Paneles base > AI`): se reemplazo la vista larga de plantilla por un panel de asistencia IA supervisada con hero compacto, metricas, actividad, confianza, cola de revision, senales de calidad, acciones prioritarias, flujos conectados y base de conocimiento.
+- `home` deja de mostrar textos y datos genericos como `Total Subscriber`, `Subscribed`, `Per Day`, `Agent ID`, `Dianne Russell`, `Wade Warren`, `Albert Flores`, paises/usuarios falsos y series `Net Profit`; la ruta queda sin charts con gradiente y sin lista de mapa decorativa.
+- Ajuste focal de `home-5` (`Paneles base > Finanzas operativas`): se reemplazo la vista heredada de estadisticas/mapa/portfolio por un panel financiero ecommerce con hero compacto, metricas, venta neta contra costo, origen de venta, saldos, movimientos recientes y acciones conectadas a caja, gastos y catalogo.
+- `home-5` deja de mostrar `Income`, `Expenses`, `Statistic`, `Daily Conversions`, `Visits By Day`, `Most Location`, `My Portfolio`, `this week`, paises falsos y usuarios de plantilla; se eliminaron dependencias de mapa mundial y charts con rellenos de gradiente.
+- Ajuste focal de `home-2` (`Paneles base > CRM`): se reemplazo el dashboard largo de plantilla por un CRM comercial con hero compacto, metricas, pipeline, etapas, seguimientos, retencion, acciones, oportunidades abiertas y segmentos de clientes.
+- `home-2` deja de mostrar textos y datos genericos como `this week`, `Sales`, `Income`, `Profit`, `Customer Overview`, `Customer Report`, `Free Cash`, `Dianne Russell`, `Wade Warren`, `Albert Flores`, `New`, `Active` y series `Net Profit`; se eliminaron dependencias visuales de mapa/listas decorativas en esta ruta.
+- Ajuste focal de `home-6` (`Paneles base > LMS`): se reemplazo el panel de cursos heredado por una vista de capacitacion operativa con hero compacto, metricas, avance aplicado, carga por modulo, rutas de aprendizaje, senales, acciones, cursos prioritarios y grupos de usuarios.
+- `home-6` deja de mostrar textos y datos genericos como `LMS / Learning System`, `Active`, `New`, `Total`, `Net Profit`, `Free Cash`, `Dianne Russell`, `Wade Warren`, `Albert Flores`, `Advanced JavaScript`, `Portrait Drawing`, `Advanced App`, `HTML Fundamental` e `ID instructor`; se elimino la logica decorativa de scroll/radial progress de plantilla.
+- Ajuste focal de `home-12` (`Paneles base > Reservas`): se reemplazo el panel mezclado de banca/hotel/viajes por una vista operativa de agenda y reservas, con hero compacto, metricas, flujo semanal, carga por servicio, agenda, reservas vinculadas a ventas, cola de trabajo y accesos rapidos.
+- `home-12` deja de mostrar `Banking System`, paquetes de viaje, paises falsos, `Income/Expense`, `Transaction History`, `Countries Status`, `Spend Overview`, `Check In/Check Out` y datos de turismo; se eliminaron dependencias de Swiper, mapa mundial y charts con rellenos de gradiente.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y validado con `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false` (216 archivos / 614 pruebas), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright `tests/e2e/layout-density.spec.ts`: 42 pruebas OK, incluyendo la nueva cobertura de Recursos UI y dashboards base.
+- Ajuste adicional validado con `npx playwright test tests/e2e/layout-density.spec.ts -g "ui resources"`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Segundo ajuste adicional validado contra bundle Docker actualizado con `npx playwright test tests/e2e/layout-density.spec.ts -g "ui resources"`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Validacion final del bloque: `npx playwright test tests/e2e/layout-density.spec.ts` paso 43/43 pruebas en desktop/mobile y rutas de negocio, workspace, Recursos UI y paneles base; tambien pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Ajuste focal de `widgets` validado con `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` y `scripts/check-container-connectivity.sh development`; APISIX QA responde `/dashboard/widgets?tenant=demo` con HTTP 200 usando `--resolve`.
+- Ajuste global de paneles base/Recursos UI validado con auditorias `rg` sin coincidencias de degradados ni `scroll-sm`/`overflow-y-auto` en `src/app/features`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright reforzado `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Ajuste final de Recursos UI restantes validado con `npm run type:check`, unit focales de 10 componentes (10 pruebas OK), `npm run lint`, `npm run arch:check`, dos rebuilds `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"` y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime final sobre `colors`, `progress`, `pagination`, `badges`, `form-validation`, `table-data`, `gallery-grid`, `gallery-masonry`, `gallery-hover-effect` y `blank-page`: HTTP 200, `overflowX=0`, `gradientClasses=0`, `nestedVerticalScrolls=[]` y al menos una superficie/tarjeta por ruta.
+- Ajuste focal de `form-layout` y `wizard` validado con `npm run type:check`, unit focales de ambos componentes (2 pruebas OK), `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"` y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/form-layout?tenant=demo` y `/wizard?tenant=demo`: HTTP 200, `overflowX=0`, `nestedVerticalScrolls=[]`, sin copy heredado y sin clases de gradiente visibles en esas rutas.
+- Ajuste focal de graficos validado con `npm run type:check`, unit focales de `line-chart`, `column-chart` y `pie-chart` (3 pruebas OK), `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/line-chart?tenant=demo`, `/column-chart?tenant=demo` y `/pie-chart?tenant=demo`: HTTP 200, `overflowX=0`, `nestedVerticalScrolls=[]`, cero hits de copy heredado, hero presente y 6/4/4 tarjetas operativas respectivamente; APISIX QA responde HTTP 200 en las tres rutas con `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `button`, `dropdown` y `avatar` validado con `npm run type:check`, unit focales de los tres componentes (3 pruebas OK), `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/button?tenant=demo`, `/dropdown?tenant=demo` y `/avatar?tenant=demo`: HTTP 200, `overflowX=0`, `nestedVerticalScrolls=[]`, cero hits de copy heredado, hero presente y 4/4/4 tarjetas operativas respectivamente; APISIX QA responde HTTP 200 en las tres rutas con `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `home-3` validado con `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home-3?tenant=demo`: HTTP 200, `overflowX=0`, 7 paneles operativos, 4 metricas, `forbiddenHits=[]`, sin scroll vertical interno en contenido; APISIX QA responde HTTP 200 con `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `home-9` validado con `npm run type:check`, unit focal `home-9.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home-9?tenant=demo`: HTTP 200, `overflowX=0`, 8 paneles operativos, 4 metricas, `forbiddenHits=[]` y `nested=[]`; por APISIX QA sin sesion redirige correctamente a `sign-in`, conservando la proteccion de rutas privadas.
+- Ajuste focal de `home` validado con `npm run type:check`, unit focal `home.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home?tenant=demo`: HTTP 200, `overflowX=0`, 7 paneles operativos, 4 metricas, `forbiddenHits=[]` y `nested=[]`; APISIX QA responde `/dashboard/home?tenant=demo` con HTTP 200 usando `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `home-5` validado con `npm run type:check`, unit focal `home-5.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home-5?tenant=demo`: HTTP 200, `overflowX=0` en desktop y mobile, 5 paneles operativos, 4 metricas, `forbiddenFound=[]` y `nestedVerticalScrolls=0`; APISIX QA responde `/dashboard/home-5?tenant=demo` con HTTP 200 usando `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `home-2` validado con `npm run type:check`, unit focal `home-2.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home-2?tenant=demo`: HTTP 200, `overflowX=0`, 7 paneles operativos, 4 metricas, `forbiddenHits=[]` y `nested=[]`; APISIX QA responde `/dashboard/home-2?tenant=demo` con HTTP 200 usando `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `home-6` validado con `npm run type:check`, unit focal `home-6.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home-6?tenant=demo`: HTTP 200, `overflowX=0`, 7 paneles operativos, 4 metricas, `forbiddenHits=[]` y `nested=[]`; APISIX QA responde `/dashboard/home-6?tenant=demo` con HTTP 200 usando `--resolve paramascotasec.com:443:192.168.100.229`.
+- Ajuste focal de `home-12` validado con `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright `tests/e2e/layout-density.spec.ts -g "ui resources and base dashboard pages"`, `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime focal en `/home-12?tenant=demo`: HTTP 200, `overflowX=0` en desktop y mobile, 6 paneles operativos, 4 metricas, `forbiddenFound=[]` y `nestedVerticalScrolls=[]`; APISIX QA responde `/dashboard/home-12?tenant=demo` con HTTP 200 usando `--resolve paramascotasec.com:443:192.168.100.229`.
+
+Decisiones:
+- Las rutas de Recursos UI pueden existir como catalogo interno, pero no deben mostrar copy de plantilla ni parecer una demo externa.
+- Se mantiene la regla de scroll unico: vertical por pagina; solo se permite desplazamiento horizontal puntual en tablas o asistentes cuando el contenido lo exige.
+
+### 2026-06-21 - Dashboard QA: asignacion de modulos y permisos refinada
+
+Objetivo: corregir la experiencia de asignacion de modulos a tenants y permisos/roles a usuarios, porque la vista seguia siendo pesada, poco clara y dificil de operar.
+
+Cambios:
+- `TenantAdminComponent` cambia la edicion de modulos del tenant a un workspace de selector + detalle: la izquierda lista paquetes contratables y la derecha edita solo el paquete seleccionado, sin una pared de tarjetas abiertas.
+- El selector de paquetes queda como lista compacta seleccionable: el checkbox contrata/descontrata el paquete y la fila abre el detalle, eliminando botones repetidos de configurar/ver detalle en cada tarjeta.
+- El resumen del tenant queda como franja de contrato con areas, modulos, Ecommerce y bundles; los presets quedan en una barra compacta y la configuracion Ecommerce se mantiene como tab contextual.
+- `RolesComponent` reemplaza la pared completa de permisos por un workbench: lista compacta de grupos y detalle editable del grupo seleccionado, sin botones repetidos de `Ver permisos`; en escritorio los grupos usan grilla para evitar una columna interminable.
+- `UserFormComponent` elimina el select visual duplicado de rol; queda un unico picker de tarjetas con descripcion y cantidad de permisos, respaldado por el formulario reactivo.
+- Se amplio Playwright para validar selector de paquetes, detalle editable, selector de permisos por grupo y densidad de `roles`, `tenant-admin` y `users-list` en desktop/mobile.
+- Ajuste adicional: el alta colapsada de tenant/rol ya no renderiza una segunda caja de preview; queda como fila compacta con accion explicita para abrir solo cuando se va a crear.
+- Ajuste adicional: el editor de tenant elimina tarjetas de resumen duplicadas antes de las opciones; la gestion entra directo a tabs, presets y selector + detalle de paquetes.
+- Ajuste adicional: el editor de rol reemplaza tarjetas de resumen por una franja compacta de datos y corrige el grid de permisos para que el detalle use el ancho disponible, evitando columnas angostas y espacio muerto.
+- Ajuste final: `RolesComponent` mueve el toggle de activar grupo completo al detalle del modulo seleccionado; la lista izquierda queda solo para elegir modulo y ver estado, eliminando acciones repetidas por cada tarjeta.
+- Ajuste final: `TenantAdminComponent` agrega encabezados de decision en el selector de paquetes y en el detalle de modulos incluidos, con layout de dos columnas para separar modulos accionables y flujos/capacidades del paquete.
+- Ajuste final: `UserFormComponent` cambia la asignacion de rol a lista compacta + resumen del rol seleccionado, y reemplaza textos de plantilla como `Staff`, `HR` y `Frontend Developer` por copy operativo en espanol.
+- Ajuste de cierre: `TenantAdminComponent` agrega franja de contrato del tenant seleccionado, renombra tabs a `Contrato y modulos` / `Giro Ecommerce`, elimina el sticky efectivo del selector de paquetes y deja el detalle de modulos en un panel ancho con flujos como chips horizontales.
+- Ajuste de cierre: `RolesComponent` cambia los grupos de permisos a una consola horizontal por modulo con estados `Completo`, `Parcial` o `Sin acceso`, y deja el detalle de permisos en un panel ancho debajo para evitar columnas tecnicas apretadas.
+- Ajuste de cierre: `UserFormComponent` agrega una cabecera de `Alcance asignado` para explicar que el usuario recibe permisos por rol, no permisos sueltos, manteniendo el picker de roles y resumen del rol seleccionado.
+- Ajuste adicional 2026-06-21: `TenantAdminComponent` compacta la asignacion de paquetes en selector lateral + detalle accionable, con checkboxes claros, chips de flujos planos y sin tarjetas altas vacias.
+- Ajuste adicional 2026-06-21: `RolesComponent` evita que el detalle de permisos quede delgado en escritorios medianos; usa una sola columna hasta tener ancho real y cambia a dos paneles solo en escritorio amplio.
+- Ajuste adicional 2026-06-21: `UserFormComponent` refina la asignacion de rol del usuario como picker + resumen, sin select duplicado ni scroll interno.
+- Ajuste final 2026-06-21: `TenantAdminComponent` deja los paquetes contratables como grilla compacta de decision arriba y el detalle editable debajo, con columnas legibles, sin selector sticky y con click funcional sobre la tarjeta/label del paquete.
+- Ajuste final 2026-06-21: `RolesComponent` deja los grupos de permisos como selector modular compacto y `UserFormComponent` afina el picker de roles; las tres superficies evitan scroll interno y usan radios de 8px o menos.
+- Limpieza final 2026-06-21: se reemplazaron los CSS acumulados de `TenantAdminComponent` y `RolesComponent` por hojas compactas y unicas. Tenants queda con roster con borde, editor ancho, paquetes en lista accionable y detalle de modulos claro; Roles queda con consola de permisos a ancho completo, grupos modulares compactos y columnas de Lectura/Crear/Editar/Eliminar sin tarjetas altas ni comportamiento de input.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focales de Tenants/Roles/UserForm (15 pruebas), `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Pasaron smoke focales de tenants/roles: 9 pruebas OK, incluyendo CRUD de rol fixture, selector editable de paquetes, detalle de permisos y ausencia de scroll vertical anidado.
+- Paso `tests/e2e/layout-density.spec.ts` focal: 6 pruebas OK para `tenant-admin`, `roles` y `users-list` en desktop/mobile.
+- Se tomaron capturas runtime de las zonas criticas para verificar visualmente la separacion: `/tmp/tenant-assignment-block.png`, `/tmp/role-permission-block.png` y `/tmp/user-role-assignment.png`.
+- Ajuste adicional validado con capturas runtime Docker `/tmp/dashboard-tenant-admin-modules-1365.png` y `/tmp/dashboard-roles-permissions-final.png`; APISIX QA responde `/dashboard/tenant-admin` con 200 cuando se fuerza el dominio al host LAN (`--resolve paramascotasec.com:443:192.168.100.229`), y sin sesion redirige correctamente a `sign-in`.
+- Ajuste adicional 2026-06-21 validado con `npm run type:check`, `npm run lint`, `npm run arch:check`, dos rebuilds `npm run docker:up`, `npm run docker:health`, Playwright focal `tests/e2e/smoke.spec.ts -g "tenant admin|tenant module assignment|role permission assignment|custom roles"` (8 pruebas OK), `tests/e2e/layout-density.spec.ts -g "roles|tenant-admin|users-list|add-user"` (8 pruebas OK), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Capturas finales del ajuste adicional: `/tmp/tenant-admin-final.png` y `/tmp/roles-final.png`.
+- Ajuste final validado con `npm run type:check`, `npm test -- --watch=false --include ...tenant-admin.component.spec.ts --include ...roles.component.spec.ts --include ...user-form.component.spec.ts` (15 pruebas OK), `npm run lint`, `npm run arch:check`, dos rebuilds `npm run docker:up`, `npm run docker:health`, Playwright focal `tests/e2e/smoke.spec.ts -g "tenant admin|tenant module assignment|role permission|RBAC|custom roles|visual workspaces"` (9 pruebas OK), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime final en `tenant-admin`, `roles` y `add-user`: HTTP 200, `horizontalOverflow=0`, `nestedScroll=false`, workspaces en dos columnas desktop y sin texto `Staff`.
+- Ajuste de cierre validado con `npm run type:check`, unit focales de Tenants/Roles/UserForm (15 pruebas OK), `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `tests/e2e/smoke.spec.ts -g "tenant admin|RBAC|role permission|custom roles"` (7 pruebas OK), `tests/e2e/layout-density.spec.ts -g "compact typography"` (36 pruebas OK), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- APISIX QA sirve la build nueva en `/dashboard/tenant-admin`, `/dashboard/roles` y `/dashboard/add-user` con HTTP 200; sin sesion redirige correctamente a `sign-in`, por lo que la validacion visual interactiva se hizo con fixtures locales autenticadas por tenant.
+- Ajuste adicional 2026-06-21 validado con `npm run type:check`, unit focales de Tenants/Roles/UserForm (15 pruebas OK), `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `tests/e2e/smoke.spec.ts -g "tenant admin|role permission|legacy RBAC|custom roles"` (7 pruebas OK), `tests/e2e/layout-density.spec.ts -g "compact typography"` (36 pruebas OK), `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime adicional: `/tenant-admin?tenant=demo`, `/roles?tenant=demo` y `/add-user?tenant=demo` responden 200 en Docker; `overflowX=0`; contenido sin scroll vertical interno; APISIX QA responde 200 para `/dashboard/tenant-admin?tenant=demo`, `/dashboard/roles?tenant=demo` y `/dashboard/add-user?tenant=demo`.
+- Ajuste final 2026-06-21 validado con `npm run type:check`, `npm run lint`, unit focales Tenants/Roles/UserForm (15 pruebas OK), `npm run arch:check`, tres rebuilds `npm run docker:up`, `npm run docker:health`, smoke focal `tests/e2e/smoke.spec.ts -g "tenant admin|role permission|RBAC|users"` (8 pruebas OK), `tests/e2e/layout-density.spec.ts -g "compact typography|business configuration"` (37 pruebas OK), `git diff --check` focal y `scripts/check-container-connectivity.sh development`.
+- Medicion runtime final en Docker: `tenant-admin` usa selector de paquetes de 4 columnas con tarjetas de 273px, `roles` muestra 11 grupos en 6 columnas, `add-user` mantiene dos opciones de rol; las tres rutas quedaron con `overflowX=0`, `nested=0` y clicks verificados en `Facturacion`, `Ecommerce` y `Consulta`. APISIX devuelve 200 en `/dashboard/tenant-admin`, `/dashboard/roles` y `/dashboard/add-user`; sin sesion redirige a `sign-in`.
+- Limpieza final 2026-06-21 validada con `npm run type:check`, `npm run lint`, `npm run arch:check`, unit focales Tenants/Roles/Usuarios (17 pruebas OK), tres rebuilds `npm run docker:up`, `npm run docker:health`, smoke focal `tests/e2e/smoke.spec.ts -g "role permission assignment|tenant module assignment|users list opens|tenant admin and roles"` (5 pruebas OK), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- La hoja de estilos de Tenants/Roles bajo de 4041 lineas acumuladas a 1374 lineas efectivas, manteniendo los bindings y servicios existentes sin cambiar payloads ni backend.
+
+Decisiones:
+- La asignacion debe mostrar primero decisiones operativas completas por area/grupo y dejar el detalle individual dentro del contexto seleccionado.
+- No se cambiaron payloads ni permisos backend; el catalogo central sigue siendo la fuente para modulos, presets, capacidades y permisos.
+
+### 2026-06-21 - Dashboard QA: colaboracion Workspace operativa
+
+Objetivo: continuar la limpieza global del Dashboard corrigiendo rutas de colaboracion Workspace que aun se veian como plantilla o maqueta: Chat, Calendario, Crear publicacion y Detalle de publicacion.
+
+Cambios:
+- `chat-message` deja el layout heredado de `chat-wrapper` y usa un workspace propio con directorio de conversaciones, cuenta activa, resumen, sala de mensajes y compositor sin scroll vertical interno.
+- Los fixtures de chat eliminan textos visibles de "conversacion demo" y "workspace demo"; `chat-profile` queda alineado con copy operativo en espanol.
+- `calendar-main` cambia de "Calendar" y "Crear evento demo API-ready" a calendario operativo, con cabecera, barra de busqueda, resumen de eventos, agenda lateral y calendario principal.
+- `WorkspaceCalendarFacade` agrega `createOperationalEvent(...)` y conserva `createDemoEvent(...)` solo como alias de compatibilidad interna.
+- `add-blog` se rehace como editor editorial en espanol: datos principales, categoria, portada, editor de contenido, checklist y publicaciones recientes.
+- `blog-details` se rehace como lectura operativa con hero de articulo, contenido, comentarios, formulario y sidebar de busqueda/categorias/etiquetas sin imagen gigante ni sidebar de plantilla.
+- `kanban` corrige el residuo de "Nueva tarea API-ready" para mostrar una tarea operativa.
+- Se agrego cobertura Playwright para Chat, Calendario, Crear publicacion y Detalle de publicacion contra copy de plantilla, overflow horizontal y scroll vertical anidado.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false` (216 archivos / 614 pruebas), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright `tests/e2e/layout-density.spec.ts`: 37 pruebas OK, incluyendo la nueva cobertura de colaboracion Workspace.
+- Pasaron smoke focales de Workspace: Email, Chat, Chat vacio, Perfil de chat, Kanban, Calendario, Calendario legacy, Blog, Detalle de blog y Crear blog: 10 pruebas OK.
+
+Decisiones:
+- Las rutas Workspace deben presentarse como herramientas del tenant; los textos "demo", "template", "fixture" o labels en ingles no deben aparecer en pantallas operativas.
+- FullCalendar y paneles de mensajes/listas se mantienen con altura natural para que la pagina siga siendo el unico scroll vertical.
+
+### 2026-06-21 - Dashboard QA: workspace operativo sin copy de template
+
+Objetivo: continuar la mejora global del Dashboard corrigiendo rutas directas del menu Workspace que aun tenian copy de plantilla, modales duplicados, scroll interno y estructura visual poco operativa.
+
+Cambios:
+- `language` fue rehecho como configuracion de idiomas del tenant: resumen, catalogo normalizado, tabla sin `scroll-sm`, modales unicos en espanol y acciones claras.
+- `email` deja `Components / Email`, `Compose`, carpetas en ingles y boton sin modal; ahora usa bandeja operativa con sidebar, busqueda, acciones, filas responsive y modal real de redaccion.
+- `kanban` elimina `overflow-x-auto scroll-sm`, cambia a columnas responsive con borde lateral plano y retira copy de "demo/template" en UI y fixtures.
+- `blog` reemplaza `Read More`, quita altura fija de imagen y ajusta fixtures con copy administrativo en espanol.
+- Se agrego cobertura Playwright para Email, Kanban, Idiomas y Blog contra copy de template, overflow horizontal y scroll vertical anidado.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false` (216 archivos / 614 pruebas), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright `tests/e2e/layout-density.spec.ts`: 36 pruebas OK, incluyendo la nueva cobertura de workspace operativo.
+- Pasaron unit tests focales de `language`, `email`, `kanban`, `blog` y facades/API de workspace: 7 archivos / 13 pruebas OK.
+
+Decisiones:
+- Las paginas Workspace del menu deben comportarse como herramientas administrativas del tenant, no como paginas de componentes del template.
+- Se permite overflow horizontal natural solo cuando el contenido lo exige, pero no se usan utilidades de scroll vertical interno ni alturas fijas para bloquear la navegacion.
+
+### 2026-06-20 - Dashboard QA: generadores y workspace sin plantilla
+
+Objetivo: continuar la mejora global del Dashboard corrigiendo rutas de Workspace/Generadores que todavia mostraban copy de plantilla, ejemplos en ingles, tarjetas de chat angostas y scroll interno.
+
+Cambios:
+- `text-generator`, `text-generator-new`, `code-generator`, `code-generator-new`, `image-generator`, `voice-generator`, `video-generator` y `videos` reemplazan textos demo por copys operativos en espanol orientados a tenant/ecommerce.
+- `dashboard-overrides.css` agrega una capa comun para generadores: layout de dos columnas fluido, superficies planas, listas de prompts como tarjetas compactas y `chat-message-list`/`ai-chat-list` sin altura fija ni scroll vertical interno.
+- Se quitaron clases heredadas `max-h-612-px`, `min-h-612-px` y `scroll-sm` de los generadores revisados.
+- `videos` deja de ser una pagina "Components / Videos" y pasa a mostrar piezas comerciales con titulos y descripciones utiles.
+- Se agrego una prueba Playwright de regresion para bloquear textos de plantilla y scroll vertical anidado en rutas de workspace/generadores.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false` (216 archivos / 614 pruebas), `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso Playwright `tests/e2e/layout-density.spec.ts`: 35 pruebas OK, incluyendo la nueva cobertura de workspace/generadores.
+- Paso Playwright focal `tests/e2e/smoke.spec.ts -g "tenant admin|RBAC|custom roles|separated visual|users"`: 7 pruebas OK para Tenants, Roles y Usuarios.
+
+Decisiones:
+- Las rutas de generadores deben mostrar ejemplos administrativos del tenant, no contenido de demo externo.
+- Las zonas tipo chat pueden crecer con la pagina; no deben capturar el scroll vertical y bloquear la navegacion general.
+
+### 2026-06-20 - Dashboard QA: facturacion generica y configuracion comercial
+
+Objetivo: continuar la mejora global del Dashboard corrigiendo rutas del menu de Facturacion que todavia venian del template, con textos demo, tarjetas largas y formularios poco operativos.
+
+Cambios:
+- `invoice-add`, `invoice-edit` e `invoice-preview` mantienen la logica API existente, pero ahora usan secciones visuales claras para cliente/fechas, items y resumen financiero; las tablas ya no dependen de `scroll-sm` ni altura limitada.
+- `payment-gateway` deja de mostrarse como plantilla "Languages" y ahora presenta pasarelas de pago en espanol, con resumen, proveedor, ambiente, moneda, credenciales y acciones de prueba/guardado.
+- `pricing` deja el demo de planes con Lorem Ipsum y se convierte en una pantalla de planes y reglas de cobro para tenants, separando paquetes SaaS de precios de productos.
+- `company` reemplaza el formulario generico en ingles por datos comerciales/fiscales del tenant: razon social, RUC/documento, contacto, ubicacion, IVA y moneda.
+- `currencies` queda como catalogo operativo de monedas del tenant, con resumen, busqueda, estado activo/inactivo, acciones y modal simplificado en espanol.
+- Se agrego una prueba Playwright de regresion para que estas rutas no vuelvan a mostrar texto de template ni scroll vertical interno en tablas.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Pasaron Playwright `tests/e2e/layout-density.spec.ts`: 34 pruebas OK, incluyendo la nueva cobertura de facturacion/configuracion.
+- Paso Playwright `tests/e2e/smoke.spec.ts -g "invoice|payment-gateway|pricing|company|currencies|renders"`: 33 pruebas OK, incluyendo crear, editar, previsualizar y eliminar factura con fixtures API.
+
+Decisiones:
+- Las pantallas de configuracion generica deben tener copy administrativo en espanol y contexto de tenant, no contenido decorativo de template.
+- Las tablas pueden tener overflow horizontal para pantallas estrechas, pero no altura limitada ni scroll vertical interno.
+
+### 2026-06-20 - Dashboard QA: asignacion de modulos, permisos y usuarios usable
+
+Objetivo: corregir la experiencia de asignacion de modulos, permisos, tenants y usuarios, que se veia apretada, repetitiva y poco flexible.
+
+Cambios:
+- `TenantAdminComponent` cambia los paquetes/modulos de tarjetas altas a filas de decision con resumen, descripcion, chips y accion en columnas claras; los detalles de modulos quedan cerrados por defecto en alta de tenant y solo se abren cuando el usuario los solicita o aplica un preset.
+- Los chips de modulos, flujos y presets dejan de verse como botones gigantes; ahora usan superficies planas, bordes discretos y radios pequenos para escanear configuraciones sin saturar la pantalla.
+- `RolesComponent` reorganiza permisos por grupos en una grilla estable, con tarjetas compactas y permisos en subgrilla; se elimina el comportamiento tipo masonry que dejaba espacios irregulares y lectura incomoda.
+- `AddUserComponent` separa perfil/rol y formulario en un workspace de dos columnas; el formulario reusable de usuarios recibe estilos propios para campos, roles, notas y acciones.
+- `UsersListComponent` mejora la distribucion de busqueda, filtros y tabla, sin scroll vertical interno en la tabla.
+- Se agregaron pruebas Playwright focales para que la asignacion de modulos y permisos se mantenga compacta, legible y con grillas reales.
+
+Operacion y verificacion:
+- Dashboard reconstruido en QA con `npm run docker:up` y `npm run docker:health`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm test -- --watch=false`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Pasaron Playwright focal `tests/e2e/smoke.spec.ts -g "tenant admin|RBAC|custom roles|module assignment|permission assignment"`: 8 pruebas OK.
+- Paso `tests/e2e/layout-density.spec.ts`: 33 pruebas OK.
+- APISIX QA responde `/dashboard/health` con HTTP 200 usando `paramascotasec.com` resuelto a `192.168.100.229`; las rutas protegidas sin sesion redirigen correctamente a login.
+
+Decisiones:
+- La asignacion de capacidades debe presentarse como decisiones por tenant/rol, no como una matriz gigante ni como tarjetas altas repetidas.
+- Los detalles avanzados quedan bajo demanda; el primer impacto visual debe mostrar resumen operativo y accion clara.
+- Se mantiene la regla global del Dashboard: fondos planos, bordes, estados discretos y sin degradados decorativos.
+
+### 2026-06-20 - Dashboard QA: superficies planas y modales sin scroll de fondo
+
+Objetivo: seguir la mejora global del Dashboard para que las paginas del menu tengan separacion visual clara, sin degradados, y que los modales operativos no generen doble scroll con la pagina de fondo.
+
+Cambios:
+- `paramascotas-panel.component.css` reemplaza los degradados restantes del panel Paramascotas por fondos planos, barras solidas y bordes laterales; el editor de producto usa superficies con borde lateral en lugar de hero degradado.
+- `paramascotas-panel.component.ts` agrega un estado computado de modales abiertos y bloquea `body.overlay-active` cuando hay confirmaciones, editor de producto, preview, detalle de pedido, operacion de inventario o factura de compra abierta; al destruir el componente se limpia la clase.
+- `dashboard-overrides.css` neutraliza utilidades heredadas `bg-gradient*`/`gradient-*` dentro del Dashboard y las convierte en superficies planas o color solido para botones, badges y barras.
+- `products-list`, `inventory-list`, `invoice-list`, `users-grid` y `monitoring-list` dejan placeholders/progresos con degradados y pasan a fondos planos con bordes.
+- La prueba real `paramascotas-product-modal-real.spec.ts` valida que no haya fondos CSS con `gradient`, que los modales activen/desactiven `overlay-active` y que productos, inventario, cotizaciones y productos por compra mantengan flujo usable por APISIX.
+
+Operacion y verificacion:
+- Dashboard fue reconstruido en QA con `npm run docker:up`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Pasaron Playwright: `tests/e2e/layout-density.spec.ts` completo (33 pruebas) y `tests/e2e/paramascotas-product-modal-real.spec.ts` focal por APISIX.
+- Durante el ajuste, APISIX devolvio 429 cuando la prueba monolitica recargaba demasiadas rutas completas; se redujo el golpe al gateway usando menos recargas y navegacion SPA controlada dentro de la prueba.
+
+Decisiones:
+- Se mantiene la regla visual sin degradados para superficies del Dashboard; la diferenciacion se hace con fondos planos, bordes, borde lateral y estados.
+- Los modales pueden tener su propio scroll cuando el contenido lo exige, pero la pagina de fondo queda bloqueada para evitar scroll dentro de scroll.
+
+### 2026-06-20 - Dashboard QA: separacion visual global y altas colapsables
+
+Objetivo: corregir la experiencia larga, monotona y poco clara del Dashboard, especialmente la asignacion de modulos/permisos en Tenants y Roles, sin degradados ni scrolls internos.
+
+Cambios:
+- `dashboard-overrides.css` agrega tokens globales de superficie, fondo, borde, sombra ligera, foco de inputs, headers con borde lateral y tarjetas/tablas con jerarquia visual consistente.
+- `TenantAdminComponent` mantiene el flujo maestro-detalle, pero el alta de tenant queda colapsada por defecto y se abre solo al crear un tenant nuevo; el workspace de tenants existentes queda visible sin atravesar todo el formulario.
+- `RolesComponent` aplica el mismo criterio: alta de rol colapsada por defecto y editor de roles existentes como zona principal.
+- Tenants/Roles reciben bandas de encabezado, listas laterales diferenciadas, editores con superficie propia y estados activos con borde lateral, sin introducir overflow vertical interno.
+- Se agrego una prueba Playwright focal para asegurar superficies separadas y ausencia de nested vertical scroll en Tenants/Roles.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `scripts/check-container-connectivity.sh development`.
+- Pasaron Playwright focal `tests/e2e/smoke.spec.ts -g "tenant admin|RBAC|custom roles|separated visual"`: 6 pruebas OK.
+- Paso `tests/e2e/layout-density.spec.ts`: 33 pruebas OK en desktop/mobile para rutas representativas.
+- Medicion runtime: alta de tenant 207px, alta de rol 207px, overflow horizontal 0 y nested vertical scroll false.
+
+Decisiones:
+- No se cambiaron payloads, permisos backend ni catalogos; el cambio es de experiencia/estructura visual del Dashboard.
+- Se evita usar degradados; las diferencias entre secciones se marcan con fondos planos, bordes, borde lateral y separacion de superficies.
+
+### 2026-06-20 - Dashboard QA: asignacion clara de modulos, tenants y roles
+
+Objetivo: rehacer la experiencia de `Plataforma > Tenants` y `Usuarios > Roles y permisos`, porque la asignacion de modulos/tenants/roles quedaba repetitiva, apretada y poco flexible.
+
+Cambios:
+- `TenantAdminComponent` deja la matriz y las tarjetas gigantes como flujo principal; ahora usa alta rapida arriba y administracion maestro-detalle abajo: lista compacta de tenants a la izquierda y editor del tenant seleccionado a la derecha.
+- La configuracion del tenant se separa por tabs relevantes: `Modulos contratados` para paquetes SaaS y `Ecommerce` solo cuando el tenant tiene ese modulo activo.
+- Los presets, paquetes, modulos internos, capacidades Ecommerce y bundles funcionales siguen usando el catalogo central, sin duplicar reglas ni romper configuraciones por giro de negocio.
+- `RolesComponent` deja de renderizar todos los permisos de todos los roles al mismo tiempo; ahora muestra una lista compacta de roles y un editor unico del rol seleccionado.
+- Se agregan toggles por grupo de permisos para crear roles y para actualizar roles existentes, manteniendo el ajuste individual cuando hace falta.
+- El editor de permisos usa columnas fluidas para tarjetas de altura variable, evitando espacios grandes, tarjetas estiradas y scroll interno.
+- Las pruebas E2E de tenants/roles se actualizaron al nuevo flujo maestro-detalle y se agrego cobertura unitaria para activar grupos completos de permisos.
+
+Operacion y verificacion:
+- Desplegado `Dashboard` en QA development con `npm run docker:up`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Pasaron E2E focales: `npx playwright test tests/e2e/smoke.spec.ts -g "tenant admin|RBAC|custom roles"`.
+- Smoke real por APISIX con usuario temporal `service` marcado como test: `/dashboard/tenant-admin?tenant=paramascotasec` y `/dashboard/roles?tenant=paramascotasec` renderizan workspace, selector lateral y editor, sin matriz vieja, sin overflow horizontal y sin scroll interno operativo. El usuario temporal fue eliminado al final (`DELETE 1`).
+- Capturas QA finales: `/tmp/tenant-admin-platform-ui.png` y `/tmp/roles-platform-ui.png`.
+
+### 2026-06-20 - Docker QA: control de crecimiento de logs y cache
+
+Objetivo: evitar crecimiento indefinido de informacion de contenedores que pueda saturar disco, sin borrar datos de aplicacion, DB ni volumenes de rollback.
+
+Cambios:
+- Se creo `/etc/docker/daemon.json` con driver `json-file` y rotacion global `max-size=10m`, `max-file=3`.
+- Se agrego rotacion por servicio en `paramascotasec-backend/docker-compose.yml`, `Facturador/docker-compose.yml`, `Facturador/docker-compose.development.yml`, `Dashboard/docker-compose.yml` y `paramascotasec/docker-compose.yml`.
+- Se agrego `scripts/docker-maintenance.sh` para auditar uso Docker y limpiar build cache, contenedores detenidos e imagenes antiguas sin ejecutar `docker volume prune`.
+- El script tiene modo conservador y modo agresivo para build cache; los volumenes sin contenedor enlazado solo se reportan y deben borrarse por nombre si son cache clara.
+- Se programo `/etc/cron.d/paramascotasec-docker-maintenance` para ejecutar mantenimiento conservador semanal y `/etc/logrotate.d/paramascotasec-docker-maintenance` para rotar su log.
+- Se eliminaron caches huerfanos no asociados a datos de negocio: `trivy-cache`, `dashboard-node-modules` y `paramascotasec-next-node-modules`.
+
+Operacion y verificacion:
+- Se valido `/etc/docker/daemon.json` con `dockerd --validate --config-file`.
+- Se reinicio Docker, se redeplego QA con `./deploy-development.sh` y se recreo Dashboard con `npm run docker:up`.
+- Todos los contenedores activos quedaron con `json-file` y limites efectivos (`10m/3`, sidecars de diagnostico `5m/2`).
+- `scripts/check-container-connectivity.sh development` paso por APISIX; `Dashboard` paso `npm run docker:health`.
+- Se limpio build cache de Docker hasta `0B`; `/var/lib/docker` bajo de ~6.7G a ~4.1G. Los logs JSON activos quedaron pequenos y rotados.
+
+Pendientes:
+- No borrar volumenes restantes sin revisar: incluyen DB/rollback/monitoring (`facturador_postgres18-data`, `facturador_pg18_probe`, `monitor-infraestructura_postgres-data`).
+- Usar `scripts/docker-maintenance.sh --execute --aggressive` solo en ventanas de mantenimiento cuando se quiera borrar todo el build cache no usado.
+
+### 2026-06-20 - Gateway QA: APISIX como perimetro estricto de APIs
+
+Objetivo: endurecer APISIX para que las APIs externas queden segmentadas por tenant/servicio/ruta registrada, con limites y bloqueo de superficies no deseadas antes del backend.
+
+Cambios:
+- `Gateway/scripts/sync-apisix.sh` deja de publicar el catch-all permisivo `/{tenant}/{api}/*`; ahora genera una ruta APISIX por cada endpoint registrado en `paramascotasec-backend/config/routes.php`, con metodo HTTP explicito, regex de URI, labels de tenant/servicio/modulo/capacidad y perfil de seguridad.
+- Se agregan perfiles APISIX reutilizables: `public-readonly`, `public-mutating`, `session-api`, `session-mutating`, `admin-session`, `billing-api` y `frontend-public`, con CORS allowlist/rate limit donde aplica.
+- Facturacion externa queda protegida en APISIX con `X-API-Key` por `key-auth` y `Authorization: Bearer` por validacion serverless usando `GATEWAY_BILLING_API_KEY` o `FACTURADOR_API_KEY` del backend; `/facturacion/health` se mantiene publico.
+- Se agregan rutas deny para APIs tenantizadas no registradas y se conservan bloqueos legacy `/api/*`, `/facturador/*` y `/uploads-api/*`.
+- Nuevo `Gateway/scripts/check-apisix-security.sh` audita Admin API sin imprimir secretos y falla si reaparece un catch-all permisivo, si falta perfil/rate limit/key-auth o si una ruta backend no inyecta `X-Internal-Proxy-Token`.
+- `scripts/check-container-connectivity.sh development` ahora ejecuta la auditoria APISIX y valida ruta API desconocida bloqueada, metodo no permitido bloqueado, facturacion sin key rechazada y facturacion con key aceptada.
+
+Operacion y verificacion:
+- `./Gateway/scripts/sync-apisix.sh development` aplico 120 rutas administradas, 8 plugin configs y 1 consumer.
+- `./Gateway/scripts/check-apisix-security.sh development` paso.
+- Pruebas por APISIX QA: `/paramascotasec/api/products` 200, `/paramascotasec/api/__not_registered_probe` 404, `/api/products` 404, `DELETE /paramascotasec/api/products` 404, facturacion sin credencial 401 y con `X-API-Key`/`Authorization: Bearer` 200.
+- Prueba real de rate limit: 80 `POST {}` invalidos a `/paramascotasec/api/contact` produjeron 23 respuestas 400 de validacion backend y 57 respuestas 429 desde APISIX.
+- Pasaron `scripts/check-container-connectivity.sh development`, `cd Dashboard && npm run type:check && npm run lint && npm run arch:check`, `cd paramascotasec/app && npm run capabilities:check`, `bash -n` de scripts tocados y `git -C Gateway diff --check`.
+
+Pendientes:
+- Si se quieren APIs partner distintas de facturacion, crear consumers/keys dedicados y mapearlas bajo un prefijo externo versionado antes de exponerlas.
+
+### 2026-06-20 - Dashboard QA: APIs y pruebas endurecidas
+
+Objetivo: dejar bien cubierto el consumo API del Dashboard, especialmente `Plataforma > APIs > ecommerce.products`, donde `Probar GET` podia mostrar `Sin respuesta` con `value.trim is not a function` aunque el endpoint real devolvia productos.
+
+Cambios:
+- `DashboardApiProbeService` usa `realBackendRequestContext(...)` para probar el backend real por `/dashboard/api/*` y acepta cuerpos JSON como objeto o texto.
+- La consola API diferencia respuesta completa y vista previa: detecta colecciones (`data`, `items`, `products`, etc.), muestra conteo real de registros y previsualiza solo una muestra para no renderizar payloads enormes como si fueran un solo registro.
+- `isApiRequest(...)` y los interceptores de tenant, auth, seguridad, XSRF y errores reconocen todos los base paths registrados del Dashboard, incluyendo `/dashboard/api`; ya no tratan esas rutas como no-API.
+- `dashboard-api-base-paths.ts` centraliza los base paths API usando la frontera publica `@core/api`.
+- El contrato `ecommerce.products` queda como lectura (`ecommerce.read`) y las pruebas impiden que endpoints `GET` reciban permisos de mutacion por defecto.
+- `TenantAdminComponent` normaliza listas de negocio/capacidades/modulos para que datos incompletos o estado compartido de pruebas no rompan el render.
+
+Operacion y verificacion:
+- Paso `npm test -- --watch=false`: 216 archivos y 612 pruebas.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `git diff --check`.
+- APISIX QA confirma `GET https://paramascotasec.com/paramascotasec/api/products` con HTTP 200 y 127 productos publicos.
+- APISIX QA confirma `GET https://paramascotasec.com/dashboard/api/products` con HTTP 200 y JSON de productos.
+- Smoke visual por APISIX en `/dashboard/api-catalog` confirma `ecommerce.products`: estado 200, 452093 bytes, `127 en data` y vista previa `3 de 127`.
+- Paso Playwright real por APISIX con admin temporal MFA: login tenant-scoped y `fetch('/dashboard/api/products?scope=admin', { credentials: 'include' })` devuelve 200 con productos.
+- Paso `scripts/check-container-connectivity.sh development`, incluyendo gateway, backend, facturador, rutas legacy bloqueadas y catalogo publico no vacio.
+
+Pendientes:
+- Mantener la consola API como prueba controlada: solo `GET` disponibles y sin parametros de ruta deben ejecutarse desde la UI.
+
+### 2026-06-20 - Dashboard QA: acceso a plataforma, usuarios y roles
+
+Objetivo: corregir el bloqueo donde `evasquez@paramascotasec.com` veia `Modulo no contratado` o `Permiso denegado` al intentar abrir gestion de tenants, APIs, usuarios y roles.
+
+Cambios:
+- En el entorno QA del backend se habilitaron los modulos `dashboard,ecommerce,users,tenant-admin` para el tenant `paramascotasec`.
+- En el entorno QA del backend se marco `evasquez@paramascotasec.com` como `platform-admin` mediante `DASHBOARD_PLATFORM_ADMIN_EMAILS`.
+- `paramascotasec-backend/config/tenants.php` ahora incluye `users` en los modulos dashboard por defecto, para que `Usuarios` y `Roles` no queden ocultos si el env no define una lista explicita.
+
+Operacion y verificacion:
+- Backend desplegado con `./scripts/deploy-development.sh backend`, sin usar `docker compose up` directo.
+- `GET /dashboard/api/tenant/context` por APISIX confirma para `evasquez@paramascotasec.com`: modulos `dashboard`, `ecommerce`, `users`, `tenant-admin` y permiso `platform-admin`.
+- Playwright por APISIX valido acceso a `/dashboard/tenant-admin`, `/dashboard/api-catalog`, `/dashboard/roles` y `/dashboard/users-list` sin `Modulo no contratado` ni `Permiso denegado`.
+- Pasaron `php -l config/tenants.php`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- No se cambiaron passwords ni datos comerciales.
+
+Pendientes:
+- Si se necesitan mas administradores de plataforma, agregarlos de forma explicita en `DASHBOARD_PLATFORM_ADMIN_EMAILS` o mover esa asignacion a una gestion persistente/auditable de plataforma.
+
+### 2026-06-19 - Dashboard QA: Consola y estandar de consumo API
+
+Objetivo: avanzar la estandarizacion del consumo de APIs del Dashboard para que un proyecto duplicado o un tenant nuevo pueda registrar, auditar, probar y consumir endpoints desde una zona conocida.
+
+Cambios:
+- `Dashboard/src/app/core/api/` queda como frontera publica ampliada: exporta `DashboardApiCatalogService`, `DashboardApiRegistryService`, `DashboardApiProbeService`, `DashboardApiDraftStoreService` y `DASHBOARD_API_ENDPOINT_KEYS`.
+- `dashboard-api.config.ts` amplia el contrato de endpoint con metadata administrativa opcional: `authType`, `status`, `requiredHeaders`, `tenantScope`, `owner`, `createdAt` y `updatedAt`, manteniendo compatibilidad con endpoints existentes mediante defaults en el registro.
+- `DashboardApiRegistryService` deriva backends, modulos, endpoints, disponibilidad por tenant y snippets de alta desde el catalogo central; no crea una segunda fuente de verdad.
+- `DashboardApiProbeService` prueba solo endpoints `GET` disponibles y sin parametros de ruta usando `ApiClientService`, interceptores, timeout y manejo de errores estandar; no ejecuta mutaciones desde la consola.
+- `DashboardApiDraftStoreService` agrega administracion local de drafts de APIs sin secretos: guardar, editar, activar, pausar, quitar y detectar si un candidato ya esta versionado en el registro central. Es un adapter reemplazable por backend de plataforma.
+- Nueva ruta protegida de plataforma `Plataforma > APIs` (`/api-catalog`) para listar APIs registradas, filtrar por modulo/backend/metodo/estado, ver URL interna y firma publica APISIX, revisar permisos/metadata, generar snippets para registrar un nuevo consumo y administrar drafts locales.
+- `ApiClientService` agrega `getTextResponse(...)` para pruebas controladas que necesitan status, headers y cuerpo sin usar `HttpClient` directo en features.
+- Documentacion nueva `Dashboard/docs/API-CONSUMPTION-STANDARD.md` define zona de carpetas, orden de registro, patron de consumo y alcance de la consola; `API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `core/api/README.md` enlazan el estandar.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- APISIX responde `https://paramascotasec.com/dashboard/` con HTTP 200 resolviendo a `192.168.100.229`.
+- Smoke real por APISIX: login con usuario temporal de plataforma, apertura de `/dashboard/api-catalog`, 136 endpoints registrados visibles, guardado de draft `dashboard.qa.integration.ping`, activacion local, persistencia en `localStorage` y limpieza posterior. Captura: `/tmp/dashboard-api-catalog-smoke.png`.
+- Las specs nuevas tambien pasaron en la shell local con Node `v22.23.0`: `npm test -- --watch=false --include src/app/core/api/dashboard-api-registry.service.spec.ts --include src/app/core/api/dashboard-api-draft-store.service.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts` ejecuto 3 archivos / 8 tests OK. El build Docker sigue usando Node 26 y paso.
+
+Pendientes:
+- Para administrar APIs de forma persistente, multiusuario y auditable desde el Dashboard hace falta un backend de plataforma que guarde el registro o genere cambios controlados; por ahora la consola administra contratos versionados, drafts locales, snippets y pruebas GET seguras.
+
+### 2026-06-19 - Dashboard QA: Facturas PDF ledger y Productos x Compra usable
+
+Objetivo: corregir las vistas `Operacion > Facturas PDF` y `Reportes > Productos x Compra`, que quedaban estiradas, con columnas estrechas y grandes espacios vacios.
+
+Cambios:
+- `Facturas PDF` deja la lista vertical de tarjetas angostas y usa un ledger operativo con columnas de factura, cliente, fecha, estado, documento, total y acciones; el detalle queda como panel lateral compacto, sin consumir todo el ancho vacio.
+- `Productos x Compra` usa una lista de productos en grilla responsive de ancho completo y mueve el detalle/KPIs a un bloque natural debajo, evitando que las metricas se estiren como columnas altas y vacias.
+- Las tablas y listas nuevas respetan la politica de scroll unico: sin scroll interno vertical en contenedores operativos y con textos quebrados para que la pagina siga navegable.
+- `paramascotas-product-modal-real.spec.ts` agrega validaciones reales por APISIX para `Productos x Compra` y `Facturas PDF`: comprueba grilla multi-columna, KPIs compactos, tabla ledger visible, acciones con ancho usable y ausencia de scroll interno.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso `npx playwright test tests/e2e/paramascotas-product-modal-real.spec.ts` entrando por `https://paramascotasec.com` via APISIX con admin temporal MFA.
+- Dashboard QA sirve el bundle lazy actualizado `chunk-DKGGBEQU.js`.
+
+### 2026-06-19 - Dashboard QA: Scroll unico en tablas y listas operativas
+
+Objetivo: eliminar scrolls internos que bloqueaban la navegacion en reportes, resumen Paramascotas, catalogo, inventario, venta local y cotizaciones.
+
+Cambios:
+- `paramascotas-panel.component.css` elimina topes `max-height` y `overflow-y:auto` en listas operativas de envios, facturacion SRI, facturas de compra y tablas del panel; las tablas Paramascotas ahora ajustan ancho con `table-layout: fixed`, texto partido y sin contenedor vertical desplazable.
+- `paramascotas-backend.component.css` evita el `table-responsive` desplazable del resumen consolidado, haciendo que las tablas compactas de pedidos/ranking quepan en la columna sin scroll interno.
+- `paramascotas-product-modal-real.spec.ts` agrega una auditoria real por APISIX que recorre resumen, reportes general/ventas/balance/trazabilidad/ranking, productos, inventario, venta local y cotizaciones; falla si detecta scroll interno operativo en X o Y.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Paso el smoke real `npx playwright test tests/e2e/paramascotas-product-modal-real.spec.ts`, creando admin temporal MFA, entrando por `https://paramascotasec.com` via APISIX y validando ausencia de scroll interno en las rutas afectadas.
+- APISIX sirve el nuevo CSS `styles-DDQJDFI6.css` en `https://paramascotasec.com/dashboard/`.
+
+### 2026-06-19 - Dashboard QA: Cotizaciones vencidas cerrables y PDF formal
+
+Objetivo: permitir que las cotizaciones vencidas salgan del seguimiento activo sin borrar historial y mejorar el PDF de cotizacion para que tenga una presentacion comercial similar a las facturas/RIDE.
+
+Cambios:
+- Backend agrega estado operativo `closed` para cotizaciones vencidas, con endpoints `POST /api/admin/quotes/close-expired`, `POST /api/admin/quotes/{id}/close` y `GET /api/admin/quotes/{id}/pdf`.
+- Cerrar cotizaciones no elimina registros ni movimientos; solo cambia el estado para que dejen de aparecer como vencidas activas. Cotizaciones `closed`, `cancelled`, `void` o equivalentes quedan bloqueadas para conversion a venta.
+- Dashboard agrega filtro `Cerradas`, resumen de cerradas, accion masiva `Cerrar vencidas N`, accion por fila/detalle para cerrar una vencida y boton `PDF` por cotizacion.
+- Las acciones sensibles del panel ya no usan `alert`, `confirm` ni `prompt` nativos del navegador: cotizaciones, productos, usuarios, finanzas y reemision de RIDE usan modales propios del Dashboard con texto claro y botones consistentes.
+- El seguimiento comercial excluye cotizaciones cerradas/canceladas para que no estorben en acciones pendientes, pero el historial las sigue mostrando cuando se filtra por `Cerradas`.
+- El PDF backend y la impresion frontend de cotizaciones usan plantilla formal tipo RIDE con emisor, cliente, condiciones comerciales, resumen de items/unidades, tabla de detalle, totales y aviso de que no reemplaza factura electronica ni RIDE. El logo del PDF backend se embebe como data URI para evitar fallos de ruta en QA.
+- Se regenero el registro de capacidades del sitio publico para incluir las nuevas rutas backend de cotizaciones.
+
+Operacion y verificacion:
+- Desplegado backend con `./scripts/deploy-development.sh backend` y Dashboard con `npm run docker:up` en QA development.
+- Pasaron `php -l` en controlador/repositorio/rutas de cotizaciones, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `npm run capabilities:check`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
+- Pasaron Playwright focales de cotizaciones: layout sin scroll vertical interno, cierre masivo de vencidas sin borrar historial mediante modal propio, cero dialogos nativos del navegador y bloqueo de envio email invalido.
+- Paso smoke real por APISIX con admin temporal MFA: abre cotizaciones en `https://paramascotasec.com`, valida filtro/accion `Cerradas`, verifica PDF `application/pdf` con firma `%PDF-` y tamano mayor a 1 KB para una cotizacion existente sin modificar datos reales, y mantiene el flujo de productos/inventario.
+- `npx vitest run` para specs de cotizacion sigue bloqueado por la dependencia opcional local faltante `@rollup/rollup-linux-x64-gnu`; las specs compilan por `type:check`.
+
+### 2026-06-19 - Dashboard QA: Inventario operativo real
+
+Objetivo: rehacer `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/inventory` para que sea una seccion de administracion real de inventario, no solo una lectura de inteligencia/reportes.
+
+Cambios:
+- La vista se presenta como `Inventario operativo`, con resumen de SKUs, unidades fisicas, capital en bodega, compra sugerida y riesgo operativo.
+- La tabla conserva producto, stock real, decision, lotes/compra, precios y acciones, pero ahora las acciones de inventario (`Compra`, `Ajustar`) se ejecutan dentro de la misma seccion.
+- Se agrega modal propio de inventario para `Compra / reposicion`: unidades compradas, stock final, costo unitario sin IVA, factura, proveedor, RUC/documento, fecha, IVA y notas.
+- Se agrega modal propio para `Ajuste manual de stock`: stock final, costo de referencia y motivo auditable del ajuste.
+- Guardar compra/ajuste usa `PUT /products/{id}` con payload parcial (`quantity`, `inventoryAction`, `cost`, `purchaseInvoice` o `inventoryAdjustmentReason`), recarga inventario/facturas y mantiene al usuario en `catalog/inventory`.
+- La carga de inventario tambien trae `product-reference-data` para autocompletar proveedor, documento e IVA de compra desde el catalogo operativo.
+- `Ficha` queda como salida explicita hacia Productos cuando se necesita editar la ficha comercial completa; administrar stock no debe obligar a abandonar Inventario.
+- La tabla principal de inventario no debe tener scroll vertical interno: el desplazamiento vertical corresponde a la pagina, y la tabla envuelve contenido dentro del ancho disponible.
+- El modal `Detalle de factura de compra` evita scroll vertical anidado: ni el panel del modal ni la tabla de lineas deben tener scrollbar interno; el unico scroll vertical permitido en ese caso es el overlay del modal.
+
+Operacion y verificacion:
+- Desplegado `Dashboard` por `npm run docker:up` en development QA; APISIX responde `200` en `/dashboard/paramascotas-panel/catalog/inventory`.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run docker:health`.
+- Pasaron Playwright focales de inventario: tabla principal sin scroll vertical interno en desktop y viewport estrecho, detalle de factura de compra sin scroll vertical interno en panel ni lineas, reposicion y ajuste sin salir de inventario, y deduplicacion de facturas.
+- Paso smoke real por APISIX con admin temporal MFA: abre `Inventario operativo`, verifica que la tabla no tenga scrollbar vertical interno, verifica botones `Compra` y `Ajustar`, abre/cierra ambos modales sin guardar movimientos reales, y continua el flujo de Productos.
+
+### 2026-06-19 - Dashboard QA: Cotizaciones con layout comercial claro
+
+Objetivo: mejorar `https://paramascotasec.com/dashboard/paramascotas-panel/operations/quotations`, que reutilizaba demasiados bloques de POS y dejaba metricas, filtros, seguimiento, carrito y acciones apretados.
+
+Cambios:
+- `Cotizaciones` ya no muestra KPIs de caja/POS (`Caja`, `Venta POS`, `Total carrito`) que no pertenecen a esa opcion; conserva resumen propio de cotizaciones.
+- El encabezado usa texto especifico de flujo comercial: crear, enviar, seguir y convertir cotizaciones.
+- Resumen, filtros, graficos, seguimiento, catalogo, productos/cliente, crear cotizacion, convertir e historial usan grids fluidas con mas espacio y anchos minimos estables.
+- `Productos y cliente` ocupa el ancho completo; `Crear cotizacion` y `Convertir en venta` ya no viven como sidebar angosto, sino como dos paneles operativos anchos debajo del formulario principal.
+- `Convertir en venta` usa grilla interna para seleccion, detalle, pago y totales, evitando campos delgados en pantallas de escritorio.
+- Seguimiento y tabla de cotizaciones no deben crear scroll vertical interno; el scroll vertical corresponde a la pagina.
+- La tabla de cotizaciones usa columnas estables, texto envolvente y acciones en grilla para evitar botones apretados.
+
+Operacion y verificacion:
+- Desplegado `Dashboard` por `npm run docker:up` en development QA.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run docker:health`.
+- Paso Playwright focal `paramascotas quotations keep the commercial workspace readable without nested scroll`, validando tambien que el workspace sea de ancho completo, las acciones queden en dos columnas y `Convertir en venta` tenga ancho util.
+- Paso smoke real por APISIX con admin temporal MFA: abre `operations/quotations`, verifica que no haya KPIs POS, que el workspace de cotizaciones renderice, que `Convertir en venta` no quede angosto y que seguimiento/tabla no tengan scroll vertical interno.
+
+### 2026-06-19 - Dashboard QA: Submenus financieros sin bloques repetidos
+
+Objetivo: corregir que `Precios`, `Margenes`, `Calculos` y `Reglas de precio` mostraran los mismos KPIs, simulador, graficos y formularios aunque cada opcion del menu tenga una intencion distinta.
+
+Cambios:
+- `Precios` queda enfocado en auditoria de PVP, brecha entre PVP actual y sugerido, busqueda y productos a revisar.
+- `Margenes` queda enfocado en configuracion de margenes, salud de margen, filtros de riesgo y productos con rentabilidad a revisar.
+- `Calculos` queda enfocado en simulador, estrategia, IVA incluido en PVP, redondeo y buffer de envio.
+- `Reglas de precio` queda enfocado solo en reglas comerciales de volumen y liquidacion.
+- Regla UX vigente para el menu: las acciones, metricas y graficos deben vivir solo donde son relevantes; no repetir un bloque operativo completo en submenus vecinos para rellenar pantalla.
+- Regla UX vigente para tablas largas: no usar scroll vertical anidado dentro de la pagina. `Venta en local > Ventas recientes`, productos e inventario deben dejar que el scroll vertical lo controle la pagina.
+
+Operacion y verificacion:
+- Desplegado `Dashboard` por `npm run docker:up` en development QA.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run docker:health`.
+- Paso Playwright focal `paramascotas finance submenu shows only relevant pricing blocks`.
+- Pasaron las 7 rutas financieras (`prices`, `taxes`, `margins`, `calculations`, `pricing-rules`, `discount-codes`, `expenses`) sin errores operativos.
+- Paso Playwright focal POS en ancho restringido: `Ventas recientes` no tiene `overflow-y: auto/scroll` ni scrollbar vertical interno.
+- Paso smoke real por APISIX con admin temporal MFA: `https://paramascotasec.com/dashboard/paramascotas-panel/operations/local-sales` mide `.paramascotas-local-sales-table` sin scrollbar vertical interno.
+
+### 2026-06-19 - Dashboard QA: Registro de productos como workspace operativo
+
+Objetivo: rehacer la experiencia de `Agregar producto` en `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products` para que sea mas comoda, clara y verificable en QA real, sin perder agrupaciones ni catalogos operativos.
+
+Cambios:
+- El listado de productos vuelve a tabla operativa full-width, sin cards comprimidas ni scroll horizontal en desktop; las acciones quedan en grilla clara (`Ver`, `Compra`, `Editar`, `Duplicar`, `Nueva variante`, `Publicar/Ocultar`, `Archivar`).
+- El editor queda oculto inicialmente y se abre como modal amplio al tocar `Nuevo producto`, `Editar`, `Duplicar`, `Nueva variante` o `Compra`; el usuario registra sin perder la lista ni bajar al final de la tabla.
+- El modal muestra feedback explicito al guardar/subir imagenes, cierra tras guardado correcto y deja aviso `Catalogo actualizado`; la UI elimina textos confusos de `borrador` y usa `Guardar producto`, `Guardar sin publicar` y `No publicado`.
+- En altas nuevas y nuevas variantes no se muestran acciones manuales de inventario: el stock inicial determina automaticamente si no hay movimiento (`0`) o si se crea compra inicial con factura (`>0`). En productos existentes, `Motivo ajuste` queda oculto salvo al seleccionar `Ajuste de inventario`.
+- La busqueda de productos vive como encabezado directo del listado, justo sobre la tabla, y ocupa el mismo ancho fluido que el contenedor de la tabla; no debe volver al toolbar angosto de filtros.
+- Los filtros de productos no deben duplicarse: las tarjetas superiores son resumen no clicable, y la unica seccion de filtros de estado es `Filtros de estado de productos`. `Publicables` significa productos ocultos/no publicados que ya cumplen todo el checklist de publicacion; no debe incluir productos ya publicados.
+- La tabla de productos no debe tener scroll vertical interno: `.paramascotas-products-table` queda con `overflow: visible` para que el desplazamiento vertical sea de la pagina, no de un contenedor anidado. El smoke QA valida desktop y viewport estrecho.
+- El boton global `Actualizar` del encabezado se oculta en pantallas que ya tienen una recarga contextual propia (`Reporte general`, productos, reportes, finanzas, operaciones, ajustes y catalogos nativos) para no duplicar acciones iguales en la misma vista.
+- La accion de salida del catalogo se llama `Archivar`, no `Retirar`: conserva ventas, compras, facturas y movimientos historicos. Backend y UI bloquean archivar productos con stock/lotes abiertos; primero debe hacerse un ajuste de inventario hasta dejar stock en 0.
+- Precios, stock y compra quedan juntos: PVP, precio base sin IVA, precio de mercado, costo, stock, IVA e intencion de inventario. Los importes se editan con formato local `$ 1.000,00`.
+- Marca, categoria visible y los atributos de variantes/catalogo operativo ya no se capturan como texto libre: peso/contenido, presentacion, empaque, talla, color, material, rango/edad, dosis y uso/necesidad son selects del catalogo maestro para evitar duplicados como `2kg` vs `2 KG`.
+- `sanitizeProductForm()` canonicaliza campos respaldados por catalogo antes de enviar al backend: compara sin acentos, espacios ni mayusculas/minusculas, conserva el valor maestro (`2 kg`, `Azul`, `Bolsa`, etc.) y ya no envia `purchaseInvoice: null` cuando no hay compra/stock.
+- Backend: `ProductRepository::delete()` e `InventoryLotRepository::closeOpenLotsForProduct()` castean parametros SQL explicitamente para que `Retirar` archive productos sin `PRODUCT_DELETE_FAILED` en PostgreSQL/PDO.
+
+Operacion y verificacion:
+- Desplegados `Dashboard` y `backend` por scripts/wrappers permitidos en development QA.
+- Validacion real por APISIX con admin temporal MFA: lista con 12 filas, 12 agrupadas, modal de gestion, tabla sin scroll horizontal, guardado sin publicar temporal, formato monetario, duplicado, nueva variante agrupada, ocultar/publicar restaurado, archivo por API y limpieza de `QA-TMP-*`.
+- Validacion adicional por APISIX luego de corregir ubicacion: antes de `Nuevo producto` no existe `#paramascotasProductEditor`; despues del clic el editor queda visible arriba del card de catalogo y de la tabla, con `Nombre del producto` en viewport. Captura: `/tmp/paramascotas-products-new-product-top.png`.
+- Validacion adicional por APISIX de busqueda/listado: `.paramascotas-search--products-list` queda sobre `.paramascotas-products-table`, ancho input 1117 px vs tabla 1117 px, sin busqueda duplicada en toolbar. Captura: `/tmp/paramascotas-products-search-above-table.png`.
+- Validacion adicional por APISIX de archivo: producto con 5 unidades muestra `Archivar` deshabilitado; un `DELETE /dashboard/api/products/{id}` directo responde `409 PRODUCT_ARCHIVE_STOCK_ACTIVE` y conserva compras/facturas/movimientos. Captura: `/tmp/paramascotas-products-archive-stock-blocked.png`.
+- Validacion adicional por APISIX de modal: `paramascotas-product-modal-real.spec.ts` crea admin temporal MFA, abre `Nuevo producto`, `Editar`, `Duplicar`, `Nueva variante`, `Compra`, verifica acciones `Publicar/Ocultar` y `Archivar`, y confirma que el modal no contiene textos de `borrador`. Captura: `/tmp/paramascotas-product-modal-real-new.png`.
+- Validacion adicional por APISIX de alta/variante/compra: `Nuevo producto` y `Nueva variante` no renderizan `[name="inventoryAction"]`; al cargar variante con stock `+5 uds` muestra `Stock inicial con compra`; al registrar `Compra` de producto existente muestra `Compra con trazabilidad` y no renderiza `[name="inventoryReason"]`.
+- Validacion adicional por APISIX de catalogo operativo cerrado: el modal QA verifica que `productBrand`, `productCategory`, `productWeight`, `productPresentation`, `productPackaging`, `productSize`, `productColor`, `productMaterial`, `productRange`, `productDosage` y `productUsage` renderizan como `select` y no como `input`.
+- Validacion adicional de filtros: la E2E focal confirma que `Publicables` muestra solo ocultos listos para publicar, excluye publicados ya visibles, `Bloqueados` muestra ocultos con requisitos pendientes y no existe el bloque duplicado `.paramascotas-product-insights` en QA.
+- Validacion adicional de scroll: el smoke real por APISIX mide `.paramascotas-products-table` en escritorio y 390x844, y confirma que `overflowY` no es `auto`/`scroll` ni existe scrollbar vertical interno.
+- Validacion adicional de acciones duplicadas: el smoke real por APISIX confirma que `Productos` y `Reporte general` tienen exactamente un boton visible `Actualizar`; el header global queda oculto cuando existe boton contextual.
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `git diff --check`, `php -l` de repositorios backend afectados y `scripts/check-container-connectivity.sh development`.
+- Pasaron Playwright focales posteriores al cierre de catalogo: lista/editor productos (`5/5`), integraciones margen/duplicado de variante (`2/2`) y smoke real APISIX del modal con selects cerrados (`1/1`).
+- Pasaron Playwright focales: lista/editor productos (`6/6`), integraciones de precio/publicacion/duplicado/restock/variante (`6/6`) y smoke real APISIX del modal (`1/1`).
+- `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` sigue bloqueado por la dependencia opcional local faltante de Rollup `@rollup/rollup-linux-x64-gnu`; la spec nueva compila mediante `type:check`.
+- Captura final actual del modal: `/tmp/paramascotas-product-modal-real-new.png`.
+
+### 2026-06-18 - Dashboard QA: Campos monetarios y alineacion en agregar producto
+
+Objetivo: mejorar la seccion `Agregar producto` en `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products`, corrigiendo inputs financieros desalineados y mostrando importes en formato local de moneda.
+
+Cambios:
+- `paramascotas-panel.component.html` reemplaza los inputs numericos de precio base, PVP, precio de mercado y costo por controles monetarios con prefijo `$`, texto claro y formato visible `1.000,00`.
+- Se eliminan de la UI los campos confusos `Precio anterior base` y `Precio anterior visible`; queda un solo `Precio de mercado`, y la diferencia contra el PVP calcula la oferta visible para la tienda.
+- `paramascotas-panel.component.ts` agrega helpers de edicion monetaria que conservan el valor numerico interno para backend, permiten escribir con punto/coma y formatean al salir del campo; editar PVP sigue recalculando la base neta y `Precio de mercado` actualiza internamente `originPrice`.
+- `paramascotas-panel.component.css` agrega una grilla financiera adaptativa: usa columnas comodas cuando hay ancho suficiente y cae a una columna en paneles estrechos para evitar recortes; tambien estabiliza altura de rotulos y ayudas.
+- `paramascotas-real-integrations.spec.ts` actualiza las expectativas del editor a `10,00`, `11,50`, etc., valida el prefijo `$` y confirma que los campos anteriores ya no se renderizan.
+
+Operacion y verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `git diff --check`, `npm run docker:up`, `npm run docker:health`.
+- Pasaron Playwright focales: margen invalido, guardado de precio base neto vs PVP y exento de IVA (`3/3`).
+- Validacion real por APISIX QA con admin temporal MFA: `Precio de mercado` aparece como unico precio de referencia; `PVP=250` y `mercado=300` muestra oferta visible `$50,00` (16,7%).
+- Captura final en `/tmp/paramascotas-product-market-price.png`; usuario temporal eliminado al cerrar la validacion.
 
 ### 2026-06-18 - QA: Campo definidor de variantes agrupadas
 
@@ -2255,7 +5908,7 @@ Cambios:
 - Se agrego `core/http/api-request-context.ts` como adaptador publico para contexto de backend real; los servicios Paramascotas dejan de importar directamente desde `core/http/fixtures`.
 - Se eliminaron literales productivos crudos `platform-admin`, reemplazandolos por `PLATFORM_ADMIN_PERMISSION`.
 - Se eliminaron `$any()` de templates de `ParamascotasPanelComponent` y `TenantAdminComponent`, moviendo parseo de eventos a helpers tipados.
-- `ParamascotasPanelComponent` deja de inyectar directamente clases `*ApiService`; usa servicios de datos del feature (`ParamascotasAdminDataService`, `ParamascotasPanelDataService`) como paso intermedio hacia fachadas mas completas.
+- `ParamascotasPanelComponent` deja de inyectar directamente clases `*ApiService`; usa servicios de datos del feature como paso intermedio hacia fachadas mas completas. Nota vigente 2026-06-25: el snapshot generico y `ParamascotasPanelDataService` ya fueron retirados del host transicional.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "fixed sidebar"` (`1/1`).

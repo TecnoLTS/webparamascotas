@@ -18,13 +18,6 @@ type AdminProductAdvancedFilters = {
 
 type AdminProductFilterOption = { value: string; label: string; count: number }
 
-const normalizeAdminGroupText = (value: string) =>
-    value
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim()
-
 const compareAdminLabels = (left: string, right: string) =>
     left.localeCompare(right, 'es', { sensitivity: 'base', numeric: true })
 
@@ -52,8 +45,23 @@ const getProductVariantMeta = (product: any) => {
     }
 }
 
+const getProductVariantGroupKey = (product: any) => {
+    const rawKey = String(product?.variantGroupKey || product?.attributes?.variantGroupKey || '').trim()
+    if (!rawKey || rawKey.startsWith('single:')) return ''
+    return rawKey
+}
+
+const getProductVariantFamilyName = (product: any) => (
+    String(product?.variantBaseName || product?.attributes?.variantBaseName || product?.name || '').trim()
+)
+
+const getProductVariantSortLabel = (product: any) => (
+    resolveProductVariantLabel(String(product?.productType || product?.category || ''), product?.attributes || {}, product) || ''
+).trim()
+
 type ProductsManagementPanelProps = {
     products: any[];
+    allProducts?: any[];
     summary: {
         all: number;
         published: number;
@@ -206,6 +214,7 @@ const MOVEMENT_PERIOD_OPTIONS: Array<{ key: ProductMovementPeriod; label: string
 
 export default React.memo(function ProductsManagementPanel({
     products,
+    allProducts,
     summary,
     activeFilter,
     activeQuickFilter,
@@ -298,6 +307,12 @@ export default React.memo(function ProductsManagementPanel({
 
     const sortedProducts = React.useMemo(() => {
         return [...products].sort((left, right) => {
+            const familyComparison = compareAdminLabels(getProductVariantFamilyName(left), getProductVariantFamilyName(right))
+            if (familyComparison !== 0) return familyComparison
+            const groupComparison = compareAdminLabels(getProductVariantGroupKey(left), getProductVariantGroupKey(right))
+            if (groupComparison !== 0) return groupComparison
+            const variantComparison = compareAdminLabels(getProductVariantSortLabel(left), getProductVariantSortLabel(right))
+            if (variantComparison !== 0) return variantComparison
             const nameComparison = compareAdminLabels(String(left?.name || ''), String(right?.name || ''))
             if (nameComparison !== 0) return nameComparison
             return compareAdminLabels(
@@ -306,6 +321,27 @@ export default React.memo(function ProductsManagementPanel({
             )
         })
     }, [products])
+    const familySummaryByGroupKey = React.useMemo(() => {
+        const map = new Map<string, { name: string; variants: number; stock: number }>()
+
+        ;(allProducts || products).forEach((product) => {
+            const groupKey = getProductVariantGroupKey(product)
+            if (!groupKey) return
+            const current = map.get(groupKey) || {
+                name: getProductVariantFamilyName(product),
+                variants: 0,
+                stock: 0,
+            }
+            current.variants += 1
+            current.stock += Number(product?.quantity ?? 0)
+            if (!current.name) {
+                current.name = getProductVariantFamilyName(product)
+            }
+            map.set(groupKey, current)
+        })
+
+        return map
+    }, [allProducts, products])
     const [movementProduct, setMovementProduct] = React.useState<any | null>(null)
     const [movementPeriod, setMovementPeriod] = React.useState<ProductMovementPeriod>('month')
     const [movementDetail, setMovementDetail] = React.useState<ProductMovementDetail | null>(null)
@@ -576,6 +612,8 @@ export default React.memo(function ProductsManagementPanel({
                             const publicationPending = Boolean(publicationPendingIds[productId])
                             const itemKey = productId || String(product?.id || product?.legacyId || product?.name || `product-${index}`)
                             const variantMeta = getProductVariantMeta(product)
+                            const variantGroupKey = getProductVariantGroupKey(product)
+                            const familySummary = variantGroupKey ? familySummaryByGroupKey.get(variantGroupKey) : undefined
                             const imageSrc = resolveAdminProductImage(product)
 
                             return (
@@ -615,6 +653,15 @@ export default React.memo(function ProductsManagementPanel({
                                                             SKU: {variantMeta.sku}
                                                         </span>
                                                     )}
+                                                </div>
+                                            )}
+                                            {familySummary && familySummary.variants > 1 && (
+                                                <div className="flex flex-wrap items-center gap-2 text-[11px] text-secondary">
+                                                    <span className="inline-flex rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">
+                                                        Familia: {familySummary.name || 'Sin nombre'}
+                                                    </span>
+                                                    <span>{familySummary.variants} variantes</span>
+                                                    <span>{familySummary.stock.toLocaleString('es-EC')} unidades en la familia</span>
                                                 </div>
                                             )}
                                         </div>

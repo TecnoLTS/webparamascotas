@@ -126,6 +126,8 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
   }, [activeVariantSelection, defaultVariant, productFamily, showGenericVariantSelector, variantAxes, variantProducts])
   const defaultVariantStock = getLiveProductAvailableStock(defaultVariant)
   const availableStock = getLiveProductAvailableStock(activeVariant)
+  const hasVariantChoices = variantProducts.length > 1
+  const totalFamilyStock = variantProducts.reduce((sum, variant) => sum + getLiveProductAvailableStock(variant), 0)
   const visibleReviews = reviews
   const verifiedReviewCount = Number(reviewSummary?.count ?? visibleReviews.length)
   const verifiedReviewAverage = Number(reviewSummary?.average ?? 0)
@@ -415,7 +417,8 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
       { key: 'species', label: 'Especie', value: petLabel },
       { key: 'sku', label: 'SKU', value: sku },
       { key: 'price', label: 'Precio', value: price > 0 ? `USD ${price.toFixed(2)}` : '' },
-      { key: 'stock', label: 'Disponibilidad', value: availableStock > 0 ? `${availableStock} en stock` : 'Sin stock' },
+      { key: 'stock', label: hasVariantChoices ? 'Stock de variante' : 'Disponibilidad', value: availableStock > 0 ? `${availableStock} en stock` : 'Sin stock' },
+      { key: 'familyStock', label: 'Stock total', value: hasVariantChoices ? `${totalFamilyStock} en la familia` : '' },
       { key: 'variants', label: 'Variantes', value: variantProducts.length > 1 ? `${variantProducts.length} opciones` : 'Producto unico' },
       { key: 'presentations', label: variantDisplayInfo.label, value: variantDisplayValues.join(', ') },
       {
@@ -447,10 +450,12 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
     attributeRows,
     availableStock,
     formattedCategory,
+    hasVariantChoices,
     petLabel,
     price,
     productFamily?.brand,
     sku,
+    totalFamilyStock,
     variantDisplayInfo.label,
     variantDisplayValues,
     variantProducts.length,
@@ -655,6 +660,19 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
                   </Link>
                 )}
                 <h1 className="heading4 mt-1">{productFamily.name}</h1>
+                {hasVariantChoices && (
+                  <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                    <span className="rounded-full bg-surface px-3 py-1 font-semibold text-secondary">
+                      {variantProducts.length} variantes
+                    </span>
+                    <span className="rounded-full bg-surface px-3 py-1 font-semibold text-secondary">
+                      {totalFamilyStock} unidades totales
+                    </span>
+                    <span className="rounded-full bg-surface px-3 py-1 font-semibold text-secondary">
+                      {availableStock} de la variante seleccionada
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -801,9 +819,15 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
                   </div>
                 )}
                 <div className="rounded-xl border border-line p-4 bg-white">
-                  <div className="caption1 text-secondary">Disponibilidad</div>
+                  <div className="caption1 text-secondary">{hasVariantChoices ? 'Stock de variante' : 'Disponibilidad'}</div>
                   <div className="text-title mt-1">{availableStock > 0 ? `${availableStock} en stock` : 'Sin stock'}</div>
                 </div>
+                {hasVariantChoices && (
+                  <div className="rounded-xl border border-line p-4 bg-white">
+                    <div className="caption1 text-secondary">Stock total</div>
+                    <div className="text-title mt-1">{totalFamilyStock} en la familia</div>
+                  </div>
+                )}
               </div>
 
               <div className="text-title mt-5">Cantidad:</div>
@@ -915,7 +939,7 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
                   <h3 className="text-title">Detalles utiles</h3>
                   <dl className="mt-4 space-y-3 text-sm">
                     {specificationRows
-                      .filter((row) => ['stock', 'variants', 'presentations', 'expiration'].includes(row.key))
+                      .filter((row) => ['stock', 'familyStock', 'variants', 'presentations', 'expiration'].includes(row.key))
                       .slice(0, 4)
                       .map((row) => (
                         <div key={`useful-${row.key}`} className="flex justify-between gap-4 border-b border-line pb-3">

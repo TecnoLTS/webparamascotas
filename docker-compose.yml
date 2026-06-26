@@ -1,3 +1,9 @@
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   app:
     profiles: ["production"]
@@ -19,6 +25,7 @@ services:
     container_name: paramascotasec-app
     hostname: paramascotasec-app
     restart: unless-stopped
+    logging: *default-logging
     init: true
     user: "10001:10001"
     read_only: true
@@ -94,6 +101,7 @@ services:
     container_name: paramascotasec-app-dev
     hostname: paramascotasec-app-dev
     restart: unless-stopped
+    logging: *default-logging
     security_opt:
       - no-new-privileges:true
     environment:

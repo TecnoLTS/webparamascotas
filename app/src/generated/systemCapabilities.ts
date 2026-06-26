@@ -2,54 +2,6 @@
 
 export const backendApiRoutes = [
   {
-    "id": "backend:GET:/api/products",
-    "method": "GET",
-    "path": "/api/products",
-    "capabilityId": "catalog.public"
-  },
-  {
-    "id": "backend:GET:/api/products/{id}/reviews",
-    "method": "GET",
-    "path": "/api/products/{id}/reviews",
-    "capabilityId": "catalog.reviews"
-  },
-  {
-    "id": "backend:POST:/api/products/{id}/reviews",
-    "method": "POST",
-    "path": "/api/products/{id}/reviews",
-    "capabilityId": "catalog.reviews"
-  },
-  {
-    "id": "backend:GET:/api/products/{id}/movement",
-    "method": "GET",
-    "path": "/api/products/{id}/movement",
-    "capabilityId": "catalog.public"
-  },
-  {
-    "id": "backend:GET:/api/products/{id}",
-    "method": "GET",
-    "path": "/api/products/{id}",
-    "capabilityId": "catalog.public"
-  },
-  {
-    "id": "backend:POST:/api/products",
-    "method": "POST",
-    "path": "/api/products",
-    "capabilityId": "catalog.admin"
-  },
-  {
-    "id": "backend:PUT:/api/products/{id}",
-    "method": "PUT",
-    "path": "/api/products/{id}",
-    "capabilityId": "catalog.admin"
-  },
-  {
-    "id": "backend:DELETE:/api/products/{id}",
-    "method": "DELETE",
-    "path": "/api/products/{id}",
-    "capabilityId": "catalog.admin"
-  },
-  {
     "id": "backend:GET:/api/users",
     "method": "GET",
     "path": "/api/users",
@@ -62,6 +14,18 @@ export const backendApiRoutes = [
     "capabilityId": "users.admin"
   },
   {
+    "id": "backend:GET:/api/users/{id}",
+    "method": "GET",
+    "path": "/api/users/{id}",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:PATCH:/api/users/{id}",
+    "method": "PATCH",
+    "path": "/api/users/{id}",
+    "capabilityId": "users.admin"
+  },
+  {
     "id": "backend:PUT:/api/users/{id}",
     "method": "PUT",
     "path": "/api/users/{id}",
@@ -71,6 +35,36 @@ export const backendApiRoutes = [
     "id": "backend:POST:/api/users/{id}/unlock",
     "method": "POST",
     "path": "/api/users/{id}/unlock",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:GET:/api/roles",
+    "method": "GET",
+    "path": "/api/roles",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:POST:/api/roles",
+    "method": "POST",
+    "path": "/api/roles",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:GET:/api/roles/{roleId}",
+    "method": "GET",
+    "path": "/api/roles/{roleId}",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:PATCH:/api/roles/{roleId}",
+    "method": "PATCH",
+    "path": "/api/roles/{roleId}",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:DELETE:/api/roles/{roleId}",
+    "method": "DELETE",
+    "path": "/api/roles/{roleId}",
     "capabilityId": "users.admin"
   },
   {
@@ -164,6 +158,138 @@ export const backendApiRoutes = [
     "capabilityId": "users.auth"
   },
   {
+    "id": "backend:GET:/api/admin/tenants",
+    "method": "GET",
+    "path": "/api/admin/tenants",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:POST:/api/admin/tenants",
+    "method": "POST",
+    "path": "/api/admin/tenants",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/tenants/{tenantId}/modules",
+    "method": "PATCH",
+    "path": "/api/admin/tenants/{tenantId}/modules",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/tenants/{tenantId}/configuration",
+    "method": "PATCH",
+    "path": "/api/admin/tenants/{tenantId}/configuration",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:GET:/api/admin/settings/session",
+    "method": "GET",
+    "path": "/api/admin/settings/session",
+    "capabilityId": "admin.settings"
+  },
+  {
+    "id": "backend:PUT:/api/admin/settings/session",
+    "method": "PUT",
+    "path": "/api/admin/settings/session",
+    "capabilityId": "admin.settings"
+  },
+  {
+    "id": "backend:GET:/api/health",
+    "method": "GET",
+    "path": "/api/health",
+    "capabilityId": "system.health"
+  },
+  {
+    "id": "backend:POST:/api/security/csp-report",
+    "method": "POST",
+    "path": "/api/security/csp-report",
+    "capabilityId": "security.telemetry"
+  },
+  {
+    "id": "backend:GET:/api/products",
+    "method": "GET",
+    "path": "/api/products",
+    "capabilityId": "catalog.public"
+  },
+  {
+    "id": "backend:GET:/api/products/{id}/reviews",
+    "method": "GET",
+    "path": "/api/products/{id}/reviews",
+    "capabilityId": "catalog.reviews"
+  },
+  {
+    "id": "backend:POST:/api/products/{id}/reviews",
+    "method": "POST",
+    "path": "/api/products/{id}/reviews",
+    "capabilityId": "catalog.reviews"
+  },
+  {
+    "id": "backend:GET:/api/products/{id}/movement",
+    "method": "GET",
+    "path": "/api/products/{id}/movement",
+    "capabilityId": "catalog.public"
+  },
+  {
+    "id": "backend:GET:/api/products/{id}",
+    "method": "GET",
+    "path": "/api/products/{id}",
+    "capabilityId": "catalog.public"
+  },
+  {
+    "id": "backend:POST:/api/products",
+    "method": "POST",
+    "path": "/api/products",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:PUT:/api/products/{id}",
+    "method": "PUT",
+    "path": "/api/products/{id}",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:DELETE:/api/products/{id}",
+    "method": "DELETE",
+    "path": "/api/products/{id}",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/reviews",
+    "method": "GET",
+    "path": "/api/admin/reviews",
+    "capabilityId": "catalog.reviews.admin"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/reviews/{id}",
+    "method": "PATCH",
+    "path": "/api/admin/reviews/{id}",
+    "capabilityId": "catalog.reviews.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/purchase-invoices",
+    "method": "GET",
+    "path": "/api/admin/purchase-invoices",
+    "capabilityId": "admin.procurement"
+  },
+  {
+    "id": "backend:GET:/api/admin/purchase-invoices/{id}",
+    "method": "GET",
+    "path": "/api/admin/purchase-invoices/{id}",
+    "capabilityId": "admin.procurement"
+  },
+  {
+    "id": "backend:GET:/api/admin/settings/product-reference-data",
+    "method": "GET",
+    "path": "/api/admin/settings/product-reference-data",
+    "capabilityId": "admin.settings"
+  },
+  {
+    "id": "backend:PUT:/api/admin/settings/product-reference-data",
+    "method": "PUT",
+    "path": "/api/admin/settings/product-reference-data",
+    "capabilityId": "admin.settings"
+  },
+  {
     "id": "backend:GET:/api/orders",
     "method": "GET",
     "path": "/api/orders",
@@ -212,36 +338,6 @@ export const backendApiRoutes = [
     "capabilityId": "orders.admin"
   },
   {
-    "id": "backend:GET:/api/admin/dashboard/stats",
-    "method": "GET",
-    "path": "/api/admin/dashboard/stats",
-    "capabilityId": "admin.reporting"
-  },
-  {
-    "id": "backend:GET:/api/admin/report",
-    "method": "GET",
-    "path": "/api/admin/report",
-    "capabilityId": "admin.reporting"
-  },
-  {
-    "id": "backend:GET:/api/admin/inventory/intelligence",
-    "method": "GET",
-    "path": "/api/admin/inventory/intelligence",
-    "capabilityId": "admin.reporting"
-  },
-  {
-    "id": "backend:GET:/api/admin/reviews",
-    "method": "GET",
-    "path": "/api/admin/reviews",
-    "capabilityId": "catalog.reviews.admin"
-  },
-  {
-    "id": "backend:PATCH:/api/admin/reviews/{id}",
-    "method": "PATCH",
-    "path": "/api/admin/reviews/{id}",
-    "capabilityId": "catalog.reviews.admin"
-  },
-  {
     "id": "backend:GET:/api/admin/settings/tax",
     "method": "GET",
     "path": "/api/admin/settings/tax",
@@ -251,18 +347,6 @@ export const backendApiRoutes = [
     "id": "backend:PUT:/api/admin/settings/tax",
     "method": "PUT",
     "path": "/api/admin/settings/tax",
-    "capabilityId": "admin.settings"
-  },
-  {
-    "id": "backend:GET:/api/admin/settings/session",
-    "method": "GET",
-    "path": "/api/admin/settings/session",
-    "capabilityId": "admin.settings"
-  },
-  {
-    "id": "backend:PUT:/api/admin/settings/session",
-    "method": "PUT",
-    "path": "/api/admin/settings/session",
     "capabilityId": "admin.settings"
   },
   {
@@ -368,18 +452,6 @@ export const backendApiRoutes = [
     "capabilityId": "admin.settings"
   },
   {
-    "id": "backend:GET:/api/admin/settings/product-reference-data",
-    "method": "GET",
-    "path": "/api/admin/settings/product-reference-data",
-    "capabilityId": "admin.settings"
-  },
-  {
-    "id": "backend:PUT:/api/admin/settings/product-reference-data",
-    "method": "PUT",
-    "path": "/api/admin/settings/product-reference-data",
-    "capabilityId": "admin.settings"
-  },
-  {
     "id": "backend:GET:/api/admin/discounts",
     "method": "GET",
     "path": "/api/admin/discounts",
@@ -414,6 +486,246 @@ export const backendApiRoutes = [
     "method": "PATCH",
     "path": "/api/admin/discounts/{id}/status",
     "capabilityId": "admin.discounts"
+  },
+  {
+    "id": "backend:GET:/api/admin/pos/shift/active",
+    "method": "GET",
+    "path": "/api/admin/pos/shift/active",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:GET:/api/admin/pos/shifts",
+    "method": "GET",
+    "path": "/api/admin/pos/shifts",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:GET:/api/admin/pos/movements",
+    "method": "GET",
+    "path": "/api/admin/pos/movements",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:GET:/api/admin/pos/customer-by-document",
+    "method": "GET",
+    "path": "/api/admin/pos/customer-by-document",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:POST:/api/admin/pos/shift/open",
+    "method": "POST",
+    "path": "/api/admin/pos/shift/open",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:POST:/api/admin/pos/shift/close",
+    "method": "POST",
+    "path": "/api/admin/pos/shift/close",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:POST:/api/admin/pos/movements",
+    "method": "POST",
+    "path": "/api/admin/pos/movements",
+    "capabilityId": "admin.pos"
+  },
+  {
+    "id": "backend:GET:/api/admin/quotes",
+    "method": "GET",
+    "path": "/api/admin/quotes",
+    "capabilityId": "admin.quotes"
+  },
+  {
+    "id": "backend:POST:/api/admin/quotes",
+    "method": "POST",
+    "path": "/api/admin/quotes",
+    "capabilityId": "admin.quotes"
+  },
+  {
+    "id": "backend:POST:/api/admin/quotes/close-expired",
+    "method": "POST",
+    "path": "/api/admin/quotes/close-expired",
+    "capabilityId": "admin.quotes"
+  },
+  {
+    "id": "backend:GET:/api/admin/quotes/{id}/pdf",
+    "method": "GET",
+    "path": "/api/admin/quotes/{id}/pdf",
+    "capabilityId": "admin.quotes"
+  },
+  {
+    "id": "backend:POST:/api/admin/quotes/{id}/close",
+    "method": "POST",
+    "path": "/api/admin/quotes/{id}/close",
+    "capabilityId": "admin.quotes"
+  },
+  {
+    "id": "backend:POST:/api/admin/quotes/{id}/convert",
+    "method": "POST",
+    "path": "/api/admin/quotes/{id}/convert",
+    "capabilityId": "admin.quotes"
+  },
+  {
+    "id": "backend:GET:/api/shipments",
+    "method": "GET",
+    "path": "/api/shipments",
+    "capabilityId": "admin.operations"
+  },
+  {
+    "id": "backend:POST:/api/contact",
+    "method": "POST",
+    "path": "/api/contact",
+    "capabilityId": "content.contact"
+  },
+  {
+    "id": "backend:GET:/health",
+    "method": "GET",
+    "path": "/health",
+    "capabilityId": "system.health"
+  },
+  {
+    "id": "backend:HEAD:/health",
+    "method": "HEAD",
+    "path": "/health",
+    "capabilityId": "system.health"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/health",
+    "method": "GET",
+    "path": "/api/admin/billing/health",
+    "capabilityId": "system.health"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/configuration",
+    "method": "GET",
+    "path": "/api/admin/billing/configuration",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/billing/configuration",
+    "method": "PATCH",
+    "path": "/api/admin/billing/configuration",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/configuration/certificate",
+    "method": "POST",
+    "path": "/api/admin/billing/configuration/certificate",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/configuration/branches",
+    "method": "POST",
+    "path": "/api/admin/billing/configuration/branches",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/billing/configuration/branches/{branchId}",
+    "method": "PATCH",
+    "path": "/api/admin/billing/configuration/branches/{branchId}",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/products",
+    "method": "GET",
+    "path": "/api/admin/billing/products",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/products",
+    "method": "POST",
+    "path": "/api/admin/billing/products",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/invoices",
+    "method": "POST",
+    "path": "/api/admin/billing/invoices",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/invoices/from-products",
+    "method": "POST",
+    "path": "/api/admin/billing/invoices/from-products",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/invoices/source/{sourceReference}",
+    "method": "GET",
+    "path": "/api/admin/billing/invoices/source/{sourceReference}",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/invoices/{accessKey}/status",
+    "method": "GET",
+    "path": "/api/admin/billing/invoices/{accessKey}/status",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/invoices/{accessKey}/xml",
+    "method": "GET",
+    "path": "/api/admin/billing/invoices/{accessKey}/xml",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/rides",
+    "method": "GET",
+    "path": "/api/admin/billing/rides",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/admin/billing/rides/{accessKey}/pdf",
+    "method": "GET",
+    "path": "/api/admin/billing/rides/{accessKey}/pdf",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/rides/{accessKey}/mail-test",
+    "method": "POST",
+    "path": "/api/admin/billing/rides/{accessKey}/mail-test",
+    "capabilityId": "mail.billing"
+  },
+  {
+    "id": "backend:POST:/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
+    "method": "POST",
+    "path": "/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/admin/mailer/health",
+    "method": "GET",
+    "path": "/api/admin/mailer/health",
+    "capabilityId": "system.health"
+  },
+  {
+    "id": "backend:GET:/api/admin/mailer/outbox",
+    "method": "GET",
+    "path": "/api/admin/mailer/outbox",
+    "capabilityId": "mail.service"
+  },
+  {
+    "id": "backend:GET:/api/admin/mailer/delivery-log",
+    "method": "GET",
+    "path": "/api/admin/mailer/delivery-log",
+    "capabilityId": "mail.service"
+  },
+  {
+    "id": "backend:GET:/api/admin/dashboard/stats",
+    "method": "GET",
+    "path": "/api/admin/dashboard/stats",
+    "capabilityId": "admin.reporting"
+  },
+  {
+    "id": "backend:GET:/api/admin/report",
+    "method": "GET",
+    "path": "/api/admin/report",
+    "capabilityId": "admin.reporting"
+  },
+  {
+    "id": "backend:GET:/api/admin/inventory/intelligence",
+    "method": "GET",
+    "path": "/api/admin/inventory/intelligence",
+    "capabilityId": "admin.reporting"
   },
   {
     "id": "backend:GET:/api/admin/expenses",
@@ -488,234 +800,96 @@ export const backendApiRoutes = [
     "capabilityId": "admin.finance"
   },
   {
-    "id": "backend:GET:/api/admin/purchase-invoices",
-    "method": "GET",
-    "path": "/api/admin/purchase-invoices",
-    "capabilityId": "admin.procurement"
-  },
-  {
-    "id": "backend:GET:/api/admin/purchase-invoices/{id}",
-    "method": "GET",
-    "path": "/api/admin/purchase-invoices/{id}",
-    "capabilityId": "admin.procurement"
-  },
-  {
-    "id": "backend:GET:/api/admin/billing/rides",
-    "method": "GET",
-    "path": "/api/admin/billing/rides",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "backend:GET:/api/admin/billing/rides/{accessKey}/pdf",
-    "method": "GET",
-    "path": "/api/admin/billing/rides/{accessKey}/pdf",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "backend:POST:/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
-    "method": "POST",
-    "path": "/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "backend:GET:/api/admin/pos/shift/active",
-    "method": "GET",
-    "path": "/api/admin/pos/shift/active",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:GET:/api/admin/pos/shifts",
-    "method": "GET",
-    "path": "/api/admin/pos/shifts",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:GET:/api/admin/pos/movements",
-    "method": "GET",
-    "path": "/api/admin/pos/movements",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:GET:/api/admin/pos/customer-by-document",
-    "method": "GET",
-    "path": "/api/admin/pos/customer-by-document",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:POST:/api/admin/pos/shift/open",
-    "method": "POST",
-    "path": "/api/admin/pos/shift/open",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:POST:/api/admin/pos/shift/close",
-    "method": "POST",
-    "path": "/api/admin/pos/shift/close",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:POST:/api/admin/pos/movements",
-    "method": "POST",
-    "path": "/api/admin/pos/movements",
-    "capabilityId": "admin.pos"
-  },
-  {
-    "id": "backend:GET:/api/admin/quotes",
-    "method": "GET",
-    "path": "/api/admin/quotes",
-    "capabilityId": "admin.quotes"
-  },
-  {
-    "id": "backend:POST:/api/admin/quotes",
-    "method": "POST",
-    "path": "/api/admin/quotes",
-    "capabilityId": "admin.quotes"
-  },
-  {
-    "id": "backend:POST:/api/admin/quotes/{id}/convert",
-    "method": "POST",
-    "path": "/api/admin/quotes/{id}/convert",
-    "capabilityId": "admin.quotes"
-  },
-  {
-    "id": "backend:GET:/api/shipments",
-    "method": "GET",
-    "path": "/api/shipments",
-    "capabilityId": "admin.operations"
-  },
-  {
-    "id": "backend:POST:/api/contact",
-    "method": "POST",
-    "path": "/api/contact",
-    "capabilityId": "content.contact"
-  },
-  {
     "id": "backend:GET:/api/reports/recent-orders",
     "method": "GET",
     "path": "/api/reports/recent-orders",
     "capabilityId": "admin.reporting"
-  },
-  {
-    "id": "backend:GET:/api/health",
-    "method": "GET",
-    "path": "/api/health",
-    "capabilityId": "system.health"
-  },
-  {
-    "id": "backend:POST:/api/security/csp-report",
-    "method": "POST",
-    "path": "/api/security/csp-report",
-    "capabilityId": "security.telemetry"
   }
 ] as const
 
-export const facturadorApiRoutes = [
+export const billingApiRoutes = [
   {
-    "id": "facturador:GET:/health",
+    "id": "backend:GET:/api/{apiMode}/v1/configuration",
     "method": "GET",
-    "path": "/health",
-    "capabilityId": "system.health"
+    "path": "/api/{apiMode}/v1/configuration",
+    "capabilityId": "billing.documents"
   },
   {
-    "id": "facturador:POST:/api/test/v1/invoices",
+    "id": "backend:POST:/api/{apiMode}/v1/configuration",
     "method": "POST",
-    "path": "/api/test/v1/invoices",
+    "path": "/api/{apiMode}/v1/configuration",
     "capabilityId": "billing.sri.pruebas"
   },
   {
-    "id": "facturador:GET:/api/test/v1/invoices/rides",
-    "method": "GET",
-    "path": "/api/test/v1/invoices/rides",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/test/v1/invoices/source/{sourceReference}",
-    "method": "GET",
-    "path": "/api/test/v1/invoices/source/{sourceReference}",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/status",
-    "method": "GET",
-    "path": "/api/test/v1/invoices/{accessKey}/status",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/xml",
-    "method": "GET",
-    "path": "/api/test/v1/invoices/{accessKey}/xml",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/test/v1/invoices/{accessKey}/ride.pdf",
-    "method": "GET",
-    "path": "/api/test/v1/invoices/{accessKey}/ride.pdf",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:POST:/api/test/v1/invoices/{accessKey}/mail-test",
+    "id": "backend:POST:/api/{apiMode}/v1/configuration/certificate",
     "method": "POST",
-    "path": "/api/test/v1/invoices/{accessKey}/mail-test",
-    "capabilityId": "mail.billing"
-  },
-  {
-    "id": "facturador:POST:/api/test/v1/invoices/{accessKey}/cancel-and-reissue",
-    "method": "POST",
-    "path": "/api/test/v1/invoices/{accessKey}/cancel-and-reissue",
+    "path": "/api/{apiMode}/v1/configuration/certificate",
     "capabilityId": "billing.sri.pruebas"
   },
   {
-    "id": "facturador:POST:/api/production/v1/invoices",
+    "id": "backend:POST:/api/{apiMode}/v1/configuration/branches",
     "method": "POST",
-    "path": "/api/production/v1/invoices",
-    "capabilityId": "billing.sri.production"
+    "path": "/api/{apiMode}/v1/configuration/branches",
+    "capabilityId": "billing.sri.pruebas"
   },
   {
-    "id": "facturador:GET:/api/production/v1/invoices/rides",
-    "method": "GET",
-    "path": "/api/production/v1/invoices/rides",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/production/v1/invoices/source/{sourceReference}",
-    "method": "GET",
-    "path": "/api/production/v1/invoices/source/{sourceReference}",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/status",
-    "method": "GET",
-    "path": "/api/production/v1/invoices/{accessKey}/status",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/xml",
-    "method": "GET",
-    "path": "/api/production/v1/invoices/{accessKey}/xml",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:GET:/api/production/v1/invoices/{accessKey}/ride.pdf",
-    "method": "GET",
-    "path": "/api/production/v1/invoices/{accessKey}/ride.pdf",
-    "capabilityId": "billing.documents"
-  },
-  {
-    "id": "facturador:POST:/api/production/v1/invoices/{accessKey}/mail-test",
+    "id": "backend:POST:/api/{apiMode}/v1/configuration/branches/{branchId}",
     "method": "POST",
-    "path": "/api/production/v1/invoices/{accessKey}/mail-test",
+    "path": "/api/{apiMode}/v1/configuration/branches/{branchId}",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:POST:/api/{apiMode}/v1/invoices",
+    "method": "POST",
+    "path": "/api/{apiMode}/v1/invoices",
+    "capabilityId": "billing.sri.pruebas"
+  },
+  {
+    "id": "backend:GET:/api/{apiMode}/v1/invoices/rides",
+    "method": "GET",
+    "path": "/api/{apiMode}/v1/invoices/rides",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/{apiMode}/v1/invoices/source/{sourceReference}",
+    "method": "GET",
+    "path": "/api/{apiMode}/v1/invoices/source/{sourceReference}",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/status",
+    "method": "GET",
+    "path": "/api/{apiMode}/v1/invoices/{accessKey}/status",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/xml",
+    "method": "GET",
+    "path": "/api/{apiMode}/v1/invoices/{accessKey}/xml",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
+    "method": "GET",
+    "path": "/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
+    "capabilityId": "billing.documents"
+  },
+  {
+    "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
+    "method": "POST",
+    "path": "/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
     "capabilityId": "mail.billing"
   },
   {
-    "id": "facturador:POST:/api/production/v1/invoices/{accessKey}/cancel-and-reissue",
+    "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
     "method": "POST",
-    "path": "/api/production/v1/invoices/{accessKey}/cancel-and-reissue",
-    "capabilityId": "billing.sri.production"
+    "path": "/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
+    "capabilityId": "billing.sri.pruebas"
   }
 ] as const
 
 export type BackendApiRouteId = typeof backendApiRoutes[number]['id']
-export type FacturadorApiRouteId = typeof facturadorApiRoutes[number]['id']
+export type BillingApiRouteId = typeof billingApiRoutes[number]['id']
 
 const backendRouteById = new Map<string, { path: string }>(backendApiRoutes.map((route) => [route.id, route]))
 

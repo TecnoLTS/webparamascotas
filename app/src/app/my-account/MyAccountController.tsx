@@ -7912,6 +7912,7 @@ const MyAccount = () => {
                                     {activeTab === 'products' && (
                                         <ProductsManagementPanel
                                             products={filteredAdminProductsList}
+                                            allProducts={adminProductsList}
                                             summary={productPublicationSummary}
                                             activeFilter={productPublicationFilter}
                                             activeQuickFilter={adminProductsQuickFilter}

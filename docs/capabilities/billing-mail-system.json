@@ -29,7 +29,7 @@
     },
     {
       "id": "mail.billing",
-      "summary": "Envio de correos de documentos autorizados y pruebas de correo del Facturador.",
+      "summary": "Envio de correos de documentos autorizados y pruebas de correo de Billing.",
       "auth": "api-key",
       "gateway": { "exposure": "billing-api" },
       "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
@@ -37,8 +37,17 @@
       "e2e": { "mode": "scenario", "fixture": "e2e-billing-mail", "assertDb": true, "cleanup": true, "scenario": "billing-mail-flow" }
     },
     {
+      "id": "mail.service",
+      "summary": "Modulo Mailer del backend: outbox, auditoria de entregas y estado operativo de correo.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "data": { "fixture": "none", "assertions": ["mailer-service-db-ready", "email-outbox-audited"] },
+      "e2e": { "mode": "generic", "fixture": "none", "assertDb": true, "cleanup": false }
+    },
+    {
       "id": "system.health",
-      "summary": "Healthchecks de frontend, backend, gateway y Facturador.",
+      "summary": "Healthchecks de frontend, backend, gateway y Billing.",
       "auth": "public",
       "gateway": { "exposure": "web-and-tenant-api-and-billing-api" },
       "frontend": {
