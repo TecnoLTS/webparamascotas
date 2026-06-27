@@ -34,30 +34,31 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 cd /home/admincenter/contenedores
 
 # Workspace completo:
-./deploy-development.sh       # development: certificado autofirmado
-./deploy-production.sh        # production: Let's Encrypt
+./deploy.sh development       # development: certificado autofirmado
+./deploy.sh production        # production: Let's Encrypt
 
 # Servicio individual development:
-./scripts/deploy-development.sh db
-./scripts/deploy-development.sh billing
-./scripts/deploy-development.sh backend
-./scripts/deploy-development.sh frontend
-./scripts/deploy-development.sh gateway
+./scripts/deploy.sh development db
+./scripts/deploy.sh development billing
+./scripts/deploy.sh development backend
+./scripts/deploy.sh development frontend
+./scripts/deploy.sh development gateway
 
 # Servicio individual production:
-./scripts/deploy-production.sh db
-./scripts/deploy-production.sh billing
-./scripts/deploy-production.sh backend
-./scripts/deploy-production.sh frontend
-./scripts/deploy-production.sh gateway
+./scripts/deploy.sh production db
+./scripts/deploy.sh production billing
+./scripts/deploy.sh production backend
+./scripts/deploy.sh production frontend
+./scripts/deploy.sh production gateway
 
 # Operaciones puntuales:
-RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend
+RUN_DB_SETUP=1 ./scripts/deploy.sh development backend
 ```
 
 Servicios validos del workspace orquestado: `db`, `billing`, `backend`, `frontend`, `gateway`. `billing` despliega el backend actual donde vive Billing SRI; el repo `Facturador` queda fuera del flujo orquestado normal y no debe desplegarse salvo trabajo legacy/standalone explicitamente solicitado.
 Orden del despliegue completo: DB -> Backend -> Frontend -> Gateway.
-Los scripts materializan el modo activo en `entorno/.env` por componente; `development` y `production` se despliegan solo por los wrappers de deploy.
+Los scripts materializan el modo activo en `entorno/.env` por componente; `development` y `production` se despliegan por `deploy.sh`. Los wrappers `deploy-development.sh` y `deploy-production.sh` quedan solo como compatibilidad.
+Solo `frontend` y `Dashboard` tienen flujo hot local separado: `paramascotasec/app -> npm run dev` y `Dashboard -> npm start`. Backend, DB y Gateway no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
 - Servicio PostgreSQL compartido: PostgreSQL 18 (`next-test-db`, data dir `postgres18_data`; conserva `postgres16_data` para rollback) con bases logicas por modulo.
 - Base logica ecommerce actual: `paramascotasec`.
@@ -129,6 +130,7 @@ npm run test         # lint + typecheck
 - Prebuild: `npm run images:manifest` antes de dev/build/lint/start; `images:home-performance` e `images:upload-variants` antes de build.
 - Perfiles frontend exclusivos: `development` usa `paramascotasec-app-dev`; `production` usa `paramascotasec-app`. Los scripts remueven el perfil opuesto.
 - Dev runtime de despliegue via `FRONTEND_DEV_RUNTIME=stable`: precompila produccion bajo `APP_ENV=development` detras del gateway con CSP estricta. `hot`/HMR no es un modo valido para el deploy del ambiente; usarlo solo como herramienta local explicita fuera de la validacion por gateway.
+- `paramascotasec/app/package.json` expone `npm run deploy:dev` y `npm run deploy:prod` como alias a `../scripts/deploy.sh development|production`.
 
 ## Backend `paramascotasec-backend`
 
@@ -165,7 +167,7 @@ npm run test         # lint + typecheck
 ## Gateway
 
 - Fragil para SSL, perfiles y reglas dinamicas: nunca levantar manualmente con `docker compose up`.
-- Usar `./scripts/deploy-development.sh gateway` o `./scripts/deploy-production.sh gateway` desde la raiz del workspace.
+- Usar `./scripts/deploy.sh development gateway` o `./scripts/deploy.sh production gateway` desde la raiz del workspace, o `Gateway/scripts/deploy.sh <modo>` desde el repo del componente.
 - APISIX se configura desde `Gateway/entorno/.env`; no hardcodear dominio, tenant, base path ni upstream en rutas.
 - Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
 - En QA local actual, probar ese contrato por `https://paramascotasec.com/` y, si el DNS/hosts del cliente no resuelve al host virtualizado, usar `--resolve paramascotasec.com:443:192.168.100.229` en `curl`.
@@ -232,9 +234,13 @@ cd paramascotasec-backend
 
 # Wipe completo + redeploy:
 docker stop $(docker ps -aq) 2>/dev/null || true
+docker rm -f $(docker ps -aq) 2>/dev/null || true
 docker system prune -a --volumes -f
-./deploy-development.sh
-RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend
+rm -rf paramascotasec-DB/postgres18_data paramascotasec-DB/postgres18_development_data
+./scripts/deploy.sh development db
+RUN_DB_SETUP=1 SEED_DEVELOPMENT_CATALOG=1 ./scripts/deploy.sh development backend
+./scripts/deploy.sh development frontend
+./scripts/deploy.sh development gateway
 ```
 
 Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando el objetivo dependa de ellas y haya confirmacion clara.
@@ -249,6 +255,79 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `paramascotasec/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-26 - Deploy scripts unificados y documentacion de despliegue corregida
+
+Objetivo: simplificar el despliegue por modo, dejar un contrato canonico unico para el workspace y corregir los README/documentos que seguian mezclando wrappers legacy, hot reload y el runtime `Facturador` dentro del flujo orquestado actual.
+
+Cambios:
+- Se agregan entrypoints canonicos `deploy.sh` en la raiz del workspace y en `paramascotasec`, `paramascotasec-backend` y `Gateway`; el flujo individual del workspace queda en `scripts/deploy.sh <development|production> <servicio>`.
+- `scripts/deploy-workspace.sh` y los wrappers `deploy-development.sh` / `deploy-production.sh` pasan a delegar al contrato nuevo sin romper compatibilidad existente.
+- `paramascotasec/app/package.json` corrige `deploy:dev` y `deploy:prod` para que apunten al deploy real del frontend.
+- Se corrigen los README principales y la documentacion operativa de despliegue para reflejar que solo frontend y Dashboard requieren flujo hot local, que el frontend desplegado usa `FRONTEND_DEV_RUNTIME=stable`, y que `Facturador` queda fuera del deploy normal del workspace.
+- `MapaCompleto.md` se reescribe contra la topologia vigente: Billing SRI dentro de `platform-core`, PostgreSQL compartido por bases logicas, redes activas actuales y deploy canonico `DB -> Backend -> Frontend -> Gateway`.
+
+Verificacion:
+- Pasaron `bash -n` sobre los nuevos scripts de deploy del workspace, frontend, backend y gateway.
+- Los README y documentos de despliegue ya no recomiendan `docker compose up` directo ni incluyen `Facturador` como servicio del workspace orquestado.
+
+### 2026-06-26 - Backend QA: redeploy limpio post-prune y README corregidos
+
+Objetivo: corregir el fallo real que aparecia despues de `docker system prune -a --volumes` y alinear la documentacion de wipe/redeploy con el comportamiento verificado del workspace.
+
+Cambios:
+- `paramascotasec-backend/docker-compose.yml` deja de unir `paramascotasec-backend-app` y `paramascotasec-backend-billing-worker` a la red externa legacy `paramascotasec-services-internal`, alineado con la arquitectura orquestada vigente.
+- `paramascotasec-backend/scripts/common.sh` ahora reconstruye primero la imagen `app` antes de levantar `billing-recovery-worker`, evitando el fallo `pull access denied for paramascotasec-backend-app` despues de un `prune` total.
+- `README.md`, `COMANDOS-RAPIDOS.md` y `AGENTS.md` corrigen el procedimiento de wipe limpio: ya no recomiendan `./deploy.sh development` directo sobre una DB vacia, y pasan a documentar el orden `db -> backend -> frontend -> gateway` con `RUN_DB_SETUP=1` y `SEED_DEVELOPMENT_CATALOG=1` cuando se arranca desde cero.
+- `README.md` raiz se limpia de texto accidental pegado y vuelve a quedar como guia operativa util.
+
+Verificacion:
+- Se reprodujo el fallo real con `./scripts/deploy.sh development backend` despues del prune: `pull access denied for paramascotasec-backend-app`.
+- Pasaron `bash -n` y `git diff --check` en los repos tocados despues del ajuste.
+
+### 2026-06-26 - Facturador legacy: restore sobre DB compartida sin `billing_user`
+
+Objetivo: corregir el restore standalone de `Facturador` que seguia intentando autenticarse contra `billing_service` con el usuario legacy `billing_user`, incompatible con la DB compartida actual sincronizada por `paramascotasec-DB`.
+
+Cambios:
+- `Facturador/scripts/common.sh` ahora sincroniza `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASSWORD` desde `paramascotasec-backend/entorno/.env` antes de desplegar o restaurar.
+- `Facturador/templates/entorno/.env.example` deja de sugerir `billing_user` / `billing_password` y documenta que los scripts reescriben esas credenciales automaticamente desde el owner real de `billing_service`.
+- `Facturador/README.md` aclara que las credenciales DB efectivas salen del backend compartido y que no debe usarse el usuario legacy.
+
+Verificacion:
+- `Facturador/entorno/.env` quedo sincronizado con `DB_NAME=billing_service`, `DB_USER=paramascotasec_backend_app` y la password real compartida.
+- Pasaron `bash -n` y `git diff --check` en `Facturador`.
+
+### 2026-06-26 - Facturador legacy: restore `--clean` con superusuario compartido
+
+Objetivo: corregir el segundo fallo del restore legacy de `Facturador`, donde el dump `pg_dump --clean --if-exists --no-owner --no-privileges` intentaba ejecutar `DROP/ALTER` sobre tablas de `billing_service` y fallaba con `must be owner of table invoice_headers`.
+
+Cambios:
+- `Facturador/scripts/common.sh` agrega resolucion de `POSTGRES_USER` y `POSTGRES_PASSWORD` desde `paramascotasec-DB/entorno/.env`.
+- `wait_for_db`, `apply_db_migrations`, `backup-and-stop.sh` y `restore-from-backup.sh` pasan a usar el superusuario real del PostgreSQL compartido para operaciones estructurales (`pg_isready`, `pg_dump`, `psql` restore y migraciones), dejando `DB_USER` runtime solo para la aplicacion legacy.
+- `Facturador/README.md` documenta que dumps `--clean` y restores legacy usan el superusuario de `paramascotasec-DB`.
+
+Verificacion:
+- Pasaron `bash -n` de los scripts tocados y `git diff --check` en `Facturador`.
+- La resolucion runtime de admin quedo validada con `SHARED_DB_ADMIN_USER=postgres`.
+
+### 2026-06-26 - Gateway QA: red externa residual de monitoreo eliminada
+
+Objetivo: recuperar el deploy development del Gateway que se cortaba al recrear APISIX por una dependencia a una red Docker externa que ya no forma parte del workspace orquestado.
+
+Cambios:
+- `Gateway/docker-compose.yml` deja de unir `apisix-gateway` a `monitor-infraestructura_app`.
+- Se elimina del bloque `networks` la definicion externa `monitor-infraestructura`, ya que el Gateway orquestado actual solo usa `edge`, `apisix-gateway-internal` y `paramascotasec-web-internal`.
+- `etcd` recupera su configuracion propia de red y persistencia: escucha en `0.0.0.0:2379/2380`, anuncia `apisix-etcd`, usa volumen `apisix_etcd_data` y deja de montar certificados/puertos HTTP que no le correspondian.
+- `certbot` deja de montar `Gateway/certbot/*` y usa solo `Gateway/entorno/certbot/*`, alineado al runtime vigente y evitando que el deploy se bloquee por rutas legacy.
+- `Gateway/scripts/setup-ssl-local.sh` deja de pre-sincronizar APISIX cuando existe un `apisix-gateway` no saludable; la sincronizacion temprana solo corre si el gateway ya esta `healthy`.
+- Los directorios legacy vacios `Gateway/certs` y `Gateway/certbot` se movieron a backup bajo `/home/admincenter/secure-backups/entorno-migration/Gateway/20260626T142414Z-legacy-empty-runtime/`.
+
+Verificacion:
+- El fallo original se reproducia con `network monitor-infraestructura_app declared as external, but could not be found`.
+- Paso `./scripts/deploy-development.sh gateway`; `apisix-etcd` quedo con volumen `apisix_etcd_data` y `apisix-gateway` quedo `healthy` exponiendo `192.168.100.229:80/443` y `127.0.0.1:9180`.
+- `scripts/check-container-connectivity.sh development` confirmo `gateway /healthz`, `gateway /paramascotasec/api/health`, `gateway /paramascotasec/api/products`, `gateway /paramascotasec/facturacion/health`, ACME webroot, auditoria de seguridad APISIX y autenticacion fiscal por API key/Bearer.
+- El check global aun reporta 2 derivas preexistentes ajenas a este ajuste del Gateway: `paramascotasec-backend-app` sigue unido a `paramascotasec-services-internal` y la ruta publica legacy `/api/products` responde `200` en vez de `404`.
 
 ### 2026-06-25 - Dashboard QA: e2e completo y single-site sin deriva
 
