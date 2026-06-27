@@ -2910,8 +2910,9 @@ export default function ProductEditorModal({
 
             const thumbEntries = applyDefaultSizes((form.thumbImages || []).filter((img: any) => img.url && img.url.trim()), 'thumb')
             const galleryEntries = applyDefaultSizes((form.galleryImages || []).filter((img: any) => img.url && img.url.trim()), 'gallery')
-            if (thumbEntries.length === 0) nextErrors.thumbImages = 'Agrega al menos una miniatura para el listado.'
-            if (galleryEntries.length === 0) nextErrors.galleryImages = 'Agrega al menos una imagen grande para la ficha del producto.'
+            const shouldValidateProductImages = !isRestockMode
+            if (shouldValidateProductImages && thumbEntries.length === 0) nextErrors.thumbImages = 'Agrega al menos una miniatura para el listado.'
+            if (shouldValidateProductImages && galleryEntries.length === 0) nextErrors.galleryImages = 'Agrega al menos una imagen grande para la ficha del producto.'
 
             const validateSizes = (entries: any[], label: string) => {
                 for (const entry of entries) {
@@ -2922,8 +2923,8 @@ export default function ProductEditorModal({
             }
             const thumbSizeError = validateSizes(thumbEntries, 'las miniaturas')
             const gallerySizeError = validateSizes(galleryEntries, 'las imágenes grandes')
-            if (thumbSizeError) nextErrors.thumbImages = thumbSizeError
-            if (gallerySizeError) nextErrors.galleryImages = gallerySizeError
+            if (shouldValidateProductImages && thumbSizeError) nextErrors.thumbImages = thumbSizeError
+            if (shouldValidateProductImages && gallerySizeError) nextErrors.galleryImages = gallerySizeError
 
             if (Object.keys(nextErrors).length > 0) {
                 commitAppliedReferenceDrafts()
@@ -2963,6 +2964,7 @@ export default function ProductEditorModal({
                 brand,
                 description,
                 inventoryAction,
+                restockQuantity: isRestockMode ? stockIncrease : undefined,
                 inventoryAdjustmentReason: stockDelta !== 0 ? adjustmentReason : undefined,
                 purchaseInvoice: saveRequiresPurchaseInvoice ? purchaseInvoice : undefined,
                 images: galleryEntries.map((img: any) => ({

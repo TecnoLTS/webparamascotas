@@ -37,19 +37,17 @@ export const useAuthBootstrap = ({
 }: UseAuthBootstrapParams) => {
   React.useEffect(() => {
     let cancelled = false
-    const redirectAdminToDashboard = () => {
-      if (typeof window !== 'undefined') {
-        window.location.replace('/dashboard/')
-        return
-      }
-
-      router.replace('/dashboard/')
+    const bootAdminSession = (adminUser: AccountUser) => {
+      setUser(adminUser)
+      setAdminReportSection('general')
+      setActiveTab('reports')
+      setAuthBootstrapping(false)
     }
 
     const storedUser = hasCookieSessionMarker() ? getStoredSessionUser() : null
 
     if (storedUser?.role === 'admin') {
-      redirectAdminToDashboard()
+      bootAdminSession(storedUser)
       return () => {
         cancelled = true
       }
@@ -71,7 +69,7 @@ export const useAuthBootstrap = ({
         setCookieSessionMarker()
         setStoredSessionUser(sessionUser)
         if (sessionUser.role === 'admin') {
-          redirectAdminToDashboard()
+          bootAdminSession(sessionUser)
           return
         }
         setUser(sessionUser)
