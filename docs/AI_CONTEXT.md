@@ -53,6 +53,7 @@ Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MO
 Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
 En restore, el ambiente activo define solo el destino (`POSTGRES_DATA_DIR`); el archivo origen puede ser cualquier `.sql.enc` valido y la clave debe corresponder al backup origen.
 El flujo interactivo de DB siempre pide clave: backup solicita clave y confirmacion antes de cifrar; restore solicita la clave y solo continua si descifra el archivo. `--yes` solo salta la confirmacion destructiva, no salta la clave.
+Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultimo backup local disponible. Restore con archivo exige ruta exacta existente; `backup-YYYYMMDDTHHMMSSZ.sql.enc` es solo patron documental. `./scripts/restore-from-backup.sh --list` lista nombres reales.
 Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
@@ -266,11 +267,15 @@ Cambios:
 - `restore-from-backup.sh` pide la clave del backup en terminal y solo continua si esa clave descifra el `.sql.enc`; `--yes` queda limitado a saltar la confirmacion destructiva.
 - `export-for-git.sh` deja de generar claves aleatorias en `transfer-secrets`; pide clave o usa `TRANSFER_BACKUP_PASSPHRASE` solo en modo no interactivo explicito.
 - `common.sh` ya no exige `BACKUP_ENCRYPTION_PASSPHRASE` para cargar `entorno/.env`.
+- `restore-from-backup.sh --yes` sin archivo queda como comando canonico para restaurar el ultimo backup disponible; `--list` muestra nombres reales y un argumento de archivo debe existir exactamente.
 - Documentacion operativa actualizada para indicar que la misma clave ingresada al sacar backup debe ingresarse al restaurar.
 
 Verificacion:
 - Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh`.
 - Pasaron ayudas `--help`; el restore documenta que `--yes` no salta la clave.
+- `restore-from-backup.sh --list` lista nombres reales disponibles.
+- Pasar el placeholder `backups/backup-YYYYMMDDTHHMMSSZ.sql.enc` falla antes de pedir clave, muestra el comando canonico para restaurar el ultimo (`./scripts/restore-from-backup.sh --yes`) y lista backups reales.
+- Dry-run sin archivo toma el ultimo `.sql.enc` disponible, valida la clave y se detiene antes de tocar datos si no se pasa `--yes`.
 - `backup-and-stop.sh` y `export-for-git.sh` sin TTY fallan antes de tocar Docker/datos indicando que necesitan pedir clave.
 - Dry-run de restore con `.sql.enc` temporal: clave incorrecta falla antes de tocar datos; clave correcta descifra y se detiene antes de tocar datos por falta de `--yes`.
 
