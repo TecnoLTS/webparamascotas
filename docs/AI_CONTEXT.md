@@ -52,6 +52,7 @@ Orden del despliegue completo: DB -> Backend -> Frontend -> gatewayapisix.
 Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`). QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
 Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
 En restore, el ambiente activo define solo el destino (`POSTGRES_DATA_DIR`); el archivo origen puede ser cualquier `.sql.enc` valido y la clave debe corresponder al backup origen.
+El flujo interactivo de DB siempre pide clave: backup solicita clave y confirmacion antes de cifrar; restore solicita la clave y solo continua si descifra el archivo. `--yes` solo salta la confirmacion destructiva, no salta la clave.
 Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
@@ -256,6 +257,23 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-28 - Backup/restore DB con clave siempre interactiva
+
+Objetivo: evitar claves implicitas en `.env` y hacer que el operador defina explicitamente la clave de cada backup/restauracion.
+
+Cambios:
+- `backup-and-stop.sh` pide clave y confirmacion antes de generar el snapshot; ya no usa `BACKUP_ENCRYPTION_PASSPHRASE` del `.env` como fallback silencioso.
+- `restore-from-backup.sh` pide la clave del backup en terminal y solo continua si esa clave descifra el `.sql.enc`; `--yes` queda limitado a saltar la confirmacion destructiva.
+- `export-for-git.sh` deja de generar claves aleatorias en `transfer-secrets`; pide clave o usa `TRANSFER_BACKUP_PASSPHRASE` solo en modo no interactivo explicito.
+- `common.sh` ya no exige `BACKUP_ENCRYPTION_PASSPHRASE` para cargar `entorno/.env`.
+- Documentacion operativa actualizada para indicar que la misma clave ingresada al sacar backup debe ingresarse al restaurar.
+
+Verificacion:
+- Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh`.
+- Pasaron ayudas `--help`; el restore documenta que `--yes` no salta la clave.
+- `backup-and-stop.sh` y `export-for-git.sh` sin TTY fallan antes de tocar Docker/datos indicando que necesitan pedir clave.
+- Dry-run de restore con `.sql.enc` temporal: clave incorrecta falla antes de tocar datos; clave correcta descifra y se detiene antes de tocar datos por falta de `--yes`.
+
 ### 2026-06-28 - Backups DB con nombres neutrales
 
 Objetivo: evitar que los comandos y nombres de backups sugieran un flujo separado por ambiente.
@@ -280,14 +298,14 @@ Objetivo: corregir la interpretacion de backups por ambiente para permitir resta
 
 Cambios:
 - `restore-from-backup.sh` ya no busca por defecto solo backups del ambiente activo; usa el `.sql.enc` local mas reciente disponible si no se indica archivo.
-- El restore valida checksum si existe y prueba claves disponibles en este orden flexible: `BACKUP_DECRYPTION_PASSPHRASE`, `TRANSFER_BACKUP_PASSPHRASE`, `BACKUP_ENCRYPTION_PASSPHRASE_OVERRIDE`, `BACKUP_PASSPHRASE_FILE`, passphrase local en `transfer-secrets/` y `BACKUP_ENCRYPTION_PASSPHRASE` del `.env` activo.
+- Esta entrada fue supersedida por "Backup/restore DB con clave siempre interactiva": el restore ya no prueba claves de `.env` ni `transfer-secrets`; pide la clave del backup y valida que descifre.
 - `transfer-db restore` e `import-from-git-transfer.sh` delegan la resolucion de clave al restore comun para evitar doble prompt y permitir paquetes portables.
 - `README.md`, `COMANDOS-RAPIDOS.md` y `basesdedatos/README.md` documentan que el destino sale del `.env` activo y el origen del backup no se filtra por `qa`/`production`.
 
 Verificacion:
 - Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh`.
 - Pasaron ayudas `--help` de `restore-from-backup.sh`, `transfer-db.sh` e `import-from-git-transfer.sh`.
-- Dry-run de `restore-from-backup.sh backups/qa-20260628T183627Z.sql.enc` con `BACKUP_DECRYPTION_PASSPHRASE='OrAcle10$'` valida checksum, ignora la clave incorrecta, abre el backup con la clave activa del `.env` y se detiene antes de tocar datos por falta de `--yes`.
+- Esta verificacion fue supersedida por el flujo actual: clave incorrecta falla y clave correcta descifra antes de cualquier restore destructivo.
 - Dry-run sin archivo toma el ultimo `.sql.enc` disponible sin filtrar por ambiente y se detiene antes de tocar datos.
 - La variante legacy `restore-from-backup.sh qa` sigue fallando antes de tocar Docker o datos.
 - Pasaron `git diff --check` en `basesdedatos` y `webparamascotas`; docs raiz sin espacios finales.
