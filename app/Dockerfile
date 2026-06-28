@@ -16,7 +16,7 @@ WORKDIR /app
 
 FROM base AS dev
 
-ENV APP_ENV=development \
+ENV APP_ENV=qa \
     NODE_ENV=development
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -33,6 +33,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM base AS builder
 
+ARG APP_ENV=production
 ARG NEXT_PUBLIC_BASE_URL=
 ARG NEXT_PUBLIC_BACKEND_URL=
 ARG NEXT_PUBLIC_SITE_DOMAIN=
@@ -44,7 +45,7 @@ ARG NEXT_PUBLIC_API_BASE_PATH=
 ARG NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME=pm_csrf
 ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
 
-ENV APP_ENV=production \
+ENV APP_ENV=${APP_ENV} \
     NODE_ENV=production \
     NEXT_PUBLIC_BASE_URL=${NEXT_PUBLIC_BASE_URL} \
     NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL} \

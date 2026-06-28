@@ -37,7 +37,7 @@ const categoryImageSpecs: Partial<Record<UploadImageKind, { width: number; heigh
   categoryFeaturedDesktopSecondary: { width: 1260, height: 590, label: 'banner2-desktop-630x295' },
 }
 const maxUploadBytes = 8 * 1024 * 1024
-const backendBase = (process.env.BACKEND_URL_INTERNAL || 'http://paramascotasec-backend-web:8080/api').replace(/\/$/, '')
+const backendBase = (process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api').replace(/\/$/, '')
 const seoFilenameMaxLength = 140
 
 type UploadImageMetadata = {

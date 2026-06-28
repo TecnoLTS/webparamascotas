@@ -42,4 +42,4 @@ Notes
 - If an image still looks too cut off with the correct dimensions, the issue is composition, not ratio.
 - To replace an image, keep the same file name and overwrite the file in the same folder.
 - After changing images, regenerate versions:
-  - `cd /home/admincenter/contenedores/paramascotasec/app && npm run images:manifest`
+  - `cd /home/admincenter/contenedores/webparamascotas/app && npm run images:manifest`

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "generatedBy": "paramascotasec/scripts/generate-system-capabilities.mjs",
+  "generatedBy": "webparamascotas/scripts/generate-system-capabilities.mjs",
   "capabilities": [
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.discounts",
       "summary": "Codigos de descuento y auditoria de uso.",
       "auth": "admin",
@@ -31,7 +31,7 @@
           "path": "/api/admin/discounts",
           "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@index",
           "capabilityId": "admin.discounts",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/discounts",
@@ -39,7 +39,7 @@
           "path": "/api/admin/discounts",
           "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@store",
           "capabilityId": "admin.discounts",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/discounts/audit",
@@ -47,7 +47,7 @@
           "path": "/api/admin/discounts/audit",
           "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@audit",
           "capabilityId": "admin.discounts",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/discounts/{id}",
@@ -55,7 +55,7 @@
           "path": "/api/admin/discounts/{id}",
           "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@show",
           "capabilityId": "admin.discounts",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/discounts/{id}",
@@ -63,7 +63,7 @@
           "path": "/api/admin/discounts/{id}",
           "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@update",
           "capabilityId": "admin.discounts",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/admin/discounts/{id}/status",
@@ -71,14 +71,14 @@
           "path": "/api/admin/discounts/{id}/status",
           "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@updateStatus",
           "capabilityId": "admin.discounts",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.finance",
       "summary": "Gastos, recurrencias, periodos financieros y ajustes.",
       "auth": "admin",
@@ -106,7 +106,7 @@
           "path": "/api/admin/expenses",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@index",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/expenses",
@@ -114,7 +114,7 @@
           "path": "/api/admin/expenses",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@store",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/financial-periods",
@@ -122,7 +122,7 @@
           "path": "/api/admin/financial-periods",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@index",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/financial-periods/{period}/preview",
@@ -130,7 +130,7 @@
           "path": "/api/admin/financial-periods/{period}/preview",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@preview",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/financial-periods/{period}/close",
@@ -138,7 +138,7 @@
           "path": "/api/admin/financial-periods/{period}/close",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@close",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/financial-adjustments",
@@ -146,7 +146,7 @@
           "path": "/api/admin/financial-adjustments",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@storeAdjustment",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/expenses/recurrences",
@@ -154,7 +154,7 @@
           "path": "/api/admin/expenses/recurrences",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@recurrences",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/expenses/recurrences",
@@ -162,7 +162,7 @@
           "path": "/api/admin/expenses/recurrences",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@storeRecurrence",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/expenses/recurrences/{id}",
@@ -170,7 +170,7 @@
           "path": "/api/admin/expenses/recurrences/{id}",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@updateRecurrence",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:DELETE:/api/admin/expenses/recurrences/{id}",
@@ -178,7 +178,7 @@
           "path": "/api/admin/expenses/recurrences/{id}",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@deleteRecurrence",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/expenses/{id}",
@@ -186,7 +186,7 @@
           "path": "/api/admin/expenses/{id}",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@update",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/admin/expenses/{id}/status",
@@ -194,14 +194,14 @@
           "path": "/api/admin/expenses/{id}/status",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@updateStatus",
           "capabilityId": "admin.finance",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.operations",
       "summary": "Operaciones administrativas complementarias como envios.",
       "auth": "admin",
@@ -227,14 +227,14 @@
           "path": "/api/shipments",
           "handler": "App\\Modules\\Commerce\\Controllers\\ShippingController@index",
           "capabilityId": "admin.operations",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.pos",
       "summary": "Turnos POS, movimientos de caja y busqueda de clientes por documento.",
       "auth": "admin",
@@ -263,7 +263,7 @@
           "path": "/api/admin/pos/shift/active",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@activeShift",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/pos/shifts",
@@ -271,7 +271,7 @@
           "path": "/api/admin/pos/shifts",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@shifts",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/pos/movements",
@@ -279,7 +279,7 @@
           "path": "/api/admin/pos/movements",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@movements",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/pos/customer-by-document",
@@ -287,7 +287,7 @@
           "path": "/api/admin/pos/customer-by-document",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@customerByDocument",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/pos/shift/open",
@@ -295,7 +295,7 @@
           "path": "/api/admin/pos/shift/open",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@openShift",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/pos/shift/close",
@@ -303,7 +303,7 @@
           "path": "/api/admin/pos/shift/close",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@closeShift",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/pos/movements",
@@ -311,14 +311,14 @@
           "path": "/api/admin/pos/movements",
           "handler": "App\\Modules\\Commerce\\Controllers\\PosController@addMovement",
           "capabilityId": "admin.pos",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.procurement",
       "summary": "Consulta de facturas de compra y detalle de abastecimiento.",
       "auth": "admin",
@@ -344,7 +344,7 @@
           "path": "/api/admin/purchase-invoices",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\PurchaseInvoiceController@index",
           "capabilityId": "admin.procurement",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/purchase-invoices/{id}",
@@ -352,14 +352,14 @@
           "path": "/api/admin/purchase-invoices/{id}",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\PurchaseInvoiceController@show",
           "capabilityId": "admin.procurement",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.quotes",
       "summary": "Cotizaciones administrativas y conversion a orden.",
       "auth": "admin",
@@ -387,7 +387,7 @@
           "path": "/api/admin/quotes",
           "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@index",
           "capabilityId": "admin.quotes",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/quotes",
@@ -395,7 +395,7 @@
           "path": "/api/admin/quotes",
           "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@store",
           "capabilityId": "admin.quotes",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/quotes/close-expired",
@@ -403,7 +403,7 @@
           "path": "/api/admin/quotes/close-expired",
           "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@closeExpired",
           "capabilityId": "admin.quotes",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/quotes/{id}/pdf",
@@ -411,7 +411,7 @@
           "path": "/api/admin/quotes/{id}/pdf",
           "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@pdf",
           "capabilityId": "admin.quotes",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/quotes/{id}/close",
@@ -419,7 +419,7 @@
           "path": "/api/admin/quotes/{id}/close",
           "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@close",
           "capabilityId": "admin.quotes",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/quotes/{id}/convert",
@@ -427,16 +427,16 @@
           "path": "/api/admin/quotes/{id}/convert",
           "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@convert",
           "capabilityId": "admin.quotes",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.reporting",
-      "summary": "Dashboard, reportes, inteligencia de inventario y reportes recientes.",
+      "summary": "dashboard, reportes, inteligencia de inventario y reportes recientes.",
       "auth": "admin",
       "gateway": {
         "exposure": "tenant-api"
@@ -461,7 +461,7 @@
           "path": "/api/admin/dashboard/stats",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardController@stats",
           "capabilityId": "admin.reporting",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/report",
@@ -469,7 +469,7 @@
           "path": "/api/admin/report",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardController@report",
           "capabilityId": "admin.reporting",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/inventory/intelligence",
@@ -477,7 +477,7 @@
           "path": "/api/admin/inventory/intelligence",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\InventoryIntelligenceController@intelligence",
           "capabilityId": "admin.reporting",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/reports/recent-orders",
@@ -485,14 +485,14 @@
           "path": "/api/reports/recent-orders",
           "handler": "App\\Modules\\ReportingFinance\\Controllers\\ReportController@recentOrders",
           "capabilityId": "admin.reporting",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.settings",
       "summary": "Configuracion de IVA, envio, estado de tienda, pagina de producto, precios y referencias.",
       "auth": "admin",
@@ -520,7 +520,7 @@
           "path": "/api/admin/settings/session",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SessionSettingsController@getSessionSettings",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/session",
@@ -528,7 +528,7 @@
           "path": "/api/admin/settings/session",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SessionSettingsController@updateSessionSettings",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/product-reference-data",
@@ -536,7 +536,7 @@
           "path": "/api/admin/settings/product-reference-data",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReferenceDataController@getProductReferenceData",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/product-reference-data",
@@ -544,7 +544,7 @@
           "path": "/api/admin/settings/product-reference-data",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReferenceDataController@updateProductReferenceData",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/tax",
@@ -552,7 +552,7 @@
           "path": "/api/admin/settings/tax",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getVat",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/tax",
@@ -560,7 +560,7 @@
           "path": "/api/admin/settings/tax",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateVat",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/shipping",
@@ -568,7 +568,7 @@
           "path": "/api/admin/settings/shipping",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getShipping",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/shipping",
@@ -576,7 +576,7 @@
           "path": "/api/admin/settings/shipping",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateShipping",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/store-status",
@@ -584,7 +584,7 @@
           "path": "/api/admin/settings/store-status",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getStoreStatus",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/store-status",
@@ -592,7 +592,7 @@
           "path": "/api/admin/settings/store-status",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateStoreStatus",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/product-page",
@@ -600,7 +600,7 @@
           "path": "/api/admin/settings/product-page",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getProductPage",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/product-page",
@@ -608,7 +608,7 @@
           "path": "/api/admin/settings/product-page",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateProductPage",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/pricing-margins",
@@ -616,7 +616,7 @@
           "path": "/api/admin/settings/pricing-margins",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPricingMargins",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/pricing-margins",
@@ -624,7 +624,7 @@
           "path": "/api/admin/settings/pricing-margins",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updatePricingMargins",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/pricing-calc",
@@ -632,7 +632,7 @@
           "path": "/api/admin/settings/pricing-calc",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPricingCalc",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/pricing-calc",
@@ -640,7 +640,7 @@
           "path": "/api/admin/settings/pricing-calc",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updatePricingCalc",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/settings/pricing-rules",
@@ -648,7 +648,7 @@
           "path": "/api/admin/settings/pricing-rules",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPricingRules",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/admin/settings/pricing-rules",
@@ -656,14 +656,14 @@
           "path": "/api/admin/settings/pricing-rules",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updatePricingRules",
           "capabilityId": "admin.settings",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "admin",
-      "source": "paramascotasec/docs/capabilities/admin.json",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.tenants",
       "summary": "Gestion de tenants, modulos contratados y configuracion funcional por tenant.",
       "auth": "platform-admin",
@@ -691,7 +691,7 @@
           "path": "/api/admin/tenants",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminIndex",
           "capabilityId": "admin.tenants",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/tenants",
@@ -699,7 +699,7 @@
           "path": "/api/admin/tenants",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminCreate",
           "capabilityId": "admin.tenants",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/admin/tenants/{tenantId}/modules",
@@ -707,7 +707,7 @@
           "path": "/api/admin/tenants/{tenantId}/modules",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateModules",
           "capabilityId": "admin.tenants",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/admin/tenants/{tenantId}/configuration",
@@ -715,14 +715,14 @@
           "path": "/api/admin/tenants/{tenantId}/configuration",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateConfiguration",
           "capabilityId": "admin.tenants",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "billing.documents",
       "summary": "Consulta de documentos emitidos, XML, RIDE/PDF y relacion con ordenes.",
       "auth": "admin-or-api-key",
@@ -751,7 +751,7 @@
           "path": "/api/admin/billing/configuration",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@configuration",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/products",
@@ -759,7 +759,7 @@
           "path": "/api/admin/billing/products",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@products",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/invoices/source/{sourceReference}",
@@ -767,7 +767,7 @@
           "path": "/api/admin/billing/invoices/source/{sourceReference}",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@source",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/invoices/{accessKey}/status",
@@ -775,7 +775,7 @@
           "path": "/api/admin/billing/invoices/{accessKey}/status",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@status",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/invoices/{accessKey}/xml",
@@ -783,7 +783,7 @@
           "path": "/api/admin/billing/invoices/{accessKey}/xml",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@xml",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/rides",
@@ -791,7 +791,7 @@
           "path": "/api/admin/billing/rides",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@rides",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/rides/{accessKey}/pdf",
@@ -799,7 +799,7 @@
           "path": "/api/admin/billing/rides/{accessKey}/pdf",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@ridePdf",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
@@ -807,7 +807,7 @@
           "path": "/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@cancelAndReissue",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": [
@@ -817,7 +817,7 @@
           "path": "/api/{apiMode}/v1/configuration",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@configuration",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/{apiMode}/v1/invoices/rides",
@@ -825,7 +825,7 @@
           "path": "/api/{apiMode}/v1/invoices/rides",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@rides",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/{apiMode}/v1/invoices/source/{sourceReference}",
@@ -833,7 +833,7 @@
           "path": "/api/{apiMode}/v1/invoices/source/{sourceReference}",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@source",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/status",
@@ -841,7 +841,7 @@
           "path": "/api/{apiMode}/v1/invoices/{accessKey}/status",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@status",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/xml",
@@ -849,7 +849,7 @@
           "path": "/api/{apiMode}/v1/invoices/{accessKey}/xml",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@xml",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
@@ -857,15 +857,15 @@
           "path": "/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@ridePdf",
           "capabilityId": "billing.documents",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ]
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "billing.sri.production",
-      "summary": "Contrato de rutas SRI produccion; bloqueado en E2E development.",
+      "summary": "Contrato de rutas SRI produccion; bloqueado en E2E QA.",
       "auth": "api-key",
       "gateway": {
         "exposure": "billing-api"
@@ -873,14 +873,14 @@
       "externalEffects": {
         "sri": {
           "environment": "produccion",
-          "enabledInDevelopment": false,
+          "enabledInQa": false,
           "forbidProduction": true
         }
       },
       "data": {
         "fixture": "none",
         "assertions": [
-          "not-called-in-development"
+          "not-called-in-qa"
         ]
       },
       "e2e": {
@@ -894,7 +894,7 @@
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "billing.sri.pruebas",
       "summary": "Emision, consulta, anulacion/reemision y recuperacion contra SRI pruebas.",
       "auth": "api-key",
@@ -904,7 +904,7 @@
       "externalEffects": {
         "sri": {
           "environment": "pruebas",
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "forbidProduction": true
         }
       },
@@ -929,7 +929,7 @@
           "path": "/api/admin/billing/configuration",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@updateConfiguration",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/billing/configuration/certificate",
@@ -937,7 +937,7 @@
           "path": "/api/admin/billing/configuration/certificate",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@uploadCertificate",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/billing/configuration/branches",
@@ -945,7 +945,7 @@
           "path": "/api/admin/billing/configuration/branches",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@createBranch",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/admin/billing/configuration/branches/{branchId}",
@@ -953,7 +953,7 @@
           "path": "/api/admin/billing/configuration/branches/{branchId}",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@updateBranch",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/billing/products",
@@ -961,7 +961,7 @@
           "path": "/api/admin/billing/products",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@storeProduct",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/billing/invoices",
@@ -969,7 +969,7 @@
           "path": "/api/admin/billing/invoices",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@emit",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/billing/invoices/from-products",
@@ -977,7 +977,7 @@
           "path": "/api/admin/billing/invoices/from-products",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@emitFromProducts",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": [
@@ -987,7 +987,7 @@
           "path": "/api/{apiMode}/v1/configuration",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@updateConfiguration",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/{apiMode}/v1/configuration/certificate",
@@ -995,7 +995,7 @@
           "path": "/api/{apiMode}/v1/configuration/certificate",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@uploadCertificate",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/{apiMode}/v1/configuration/branches",
@@ -1003,7 +1003,7 @@
           "path": "/api/{apiMode}/v1/configuration/branches",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@createBranch",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/{apiMode}/v1/configuration/branches/{branchId}",
@@ -1011,7 +1011,7 @@
           "path": "/api/{apiMode}/v1/configuration/branches/{branchId}",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@updateBranch",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/{apiMode}/v1/invoices",
@@ -1019,7 +1019,7 @@
           "path": "/api/{apiMode}/v1/invoices",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@emit",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
@@ -1027,13 +1027,13 @@
           "path": "/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@cancelAndReissue",
           "capabilityId": "billing.sri.pruebas",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ]
     },
     {
       "domain": "catalog",
-      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "source": "webparamascotas/docs/capabilities/catalog.json",
       "id": "catalog.admin",
       "summary": "Gestion administrativa de productos, stock operativo, imagenes y SEO de producto.",
       "auth": "admin",
@@ -1075,7 +1075,7 @@
           "path": "/api/products",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@store",
           "capabilityId": "catalog.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/products/{id}",
@@ -1083,7 +1083,7 @@
           "path": "/api/products/{id}",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@update",
           "capabilityId": "catalog.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:DELETE:/api/products/{id}",
@@ -1091,14 +1091,14 @@
           "path": "/api/products/{id}",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@destroy",
           "capabilityId": "catalog.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "catalog",
-      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "source": "webparamascotas/docs/capabilities/catalog.json",
       "id": "catalog.public",
       "summary": "Catalogo publico, productos publicados, categorias, marcas, sugerencias y datos base de tienda.",
       "auth": "public",
@@ -1198,7 +1198,7 @@
           "path": "/api/products",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@index",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/products/{id}/movement",
@@ -1206,7 +1206,7 @@
           "path": "/api/products/{id}/movement",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@movement",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/products/{id}",
@@ -1214,7 +1214,7 @@
           "path": "/api/products/{id}",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@show",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/settings/shipping",
@@ -1222,7 +1222,7 @@
           "path": "/api/settings/shipping",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getShipping",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/settings/store-status",
@@ -1230,7 +1230,7 @@
           "path": "/api/settings/store-status",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getStoreStatus",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/settings/brand-logos",
@@ -1238,7 +1238,7 @@
           "path": "/api/settings/brand-logos",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPublicBrandLogos",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/settings/product-categories",
@@ -1246,7 +1246,7 @@
           "path": "/api/settings/product-categories",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPublicProductCategories",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/settings/product-category-references",
@@ -1254,14 +1254,14 @@
           "path": "/api/settings/product-category-references",
           "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPublicProductCategoryReferences",
           "capabilityId": "catalog.public",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "catalog",
-      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "source": "webparamascotas/docs/capabilities/catalog.json",
       "id": "catalog.reviews",
       "summary": "Resenas publicas de productos y envio de opiniones de clientes.",
       "auth": "mixed",
@@ -1287,7 +1287,7 @@
           "path": "/api/products/{id}/reviews",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@indexForProduct",
           "capabilityId": "catalog.reviews",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/products/{id}/reviews",
@@ -1295,14 +1295,14 @@
           "path": "/api/products/{id}/reviews",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@storeForProduct",
           "capabilityId": "catalog.reviews",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "catalog",
-      "source": "paramascotasec/docs/capabilities/catalog.json",
+      "source": "webparamascotas/docs/capabilities/catalog.json",
       "id": "catalog.reviews.admin",
       "summary": "Moderacion administrativa de resenas de productos.",
       "auth": "admin",
@@ -1328,7 +1328,7 @@
           "path": "/api/admin/reviews",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@adminIndex",
           "capabilityId": "catalog.reviews.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/admin/reviews/{id}",
@@ -1336,14 +1336,14 @@
           "path": "/api/admin/reviews/{id}",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@adminUpdate",
           "capabilityId": "catalog.reviews.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "content-seo",
-      "source": "paramascotasec/docs/capabilities/content-seo.json",
+      "source": "webparamascotas/docs/capabilities/content-seo.json",
       "id": "content.contact",
       "summary": "Formulario de contacto publico y almacenamiento/envio de mensajes.",
       "auth": "public",
@@ -1365,7 +1365,7 @@
       },
       "externalEffects": {
         "mail": {
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "requiresAllowlist": true
         }
       },
@@ -1390,14 +1390,14 @@
           "path": "/api/contact",
           "handler": "App\\Modules\\Commerce\\Controllers\\ContactController@store",
           "capabilityId": "content.contact",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "content-seo",
-      "source": "paramascotasec/docs/capabilities/content-seo.json",
+      "source": "webparamascotas/docs/capabilities/content-seo.json",
       "id": "content.public",
       "summary": "Paginas institucionales, guias, servicios, preguntas frecuentes, politicas y terminos.",
       "auth": "public",
@@ -1513,7 +1513,7 @@
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "gateway.perimeter",
       "summary": "Contrato APISIX: dominio canonico, alias tecnico, rutas tenantizadas y bloqueo legacy.",
       "auth": "public",
@@ -1539,7 +1539,7 @@
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "mail.billing",
       "summary": "Envio de correos de documentos autorizados y pruebas de correo de Billing.",
       "auth": "api-key",
@@ -1548,7 +1548,7 @@
       },
       "externalEffects": {
         "mail": {
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "requiresAllowlist": true
         }
       },
@@ -1572,7 +1572,7 @@
           "path": "/api/admin/billing/rides/{accessKey}/mail-test",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@mailTest",
           "capabilityId": "mail.billing",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": [
@@ -1582,13 +1582,13 @@
           "path": "/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@mailTest",
           "capabilityId": "mail.billing",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ]
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "mail.service",
       "summary": "Modulo Mailer del backend: outbox, auditoria de entregas y estado operativo de correo.",
       "auth": "admin",
@@ -1597,7 +1597,7 @@
       },
       "externalEffects": {
         "mail": {
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "requiresAllowlist": true
         }
       },
@@ -1621,7 +1621,7 @@
           "path": "/api/admin/mailer/outbox",
           "handler": "App\\Modules\\Mailer\\Controllers\\MailerController@outbox",
           "capabilityId": "mail.service",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/mailer/delivery-log",
@@ -1629,14 +1629,14 @@
           "path": "/api/admin/mailer/delivery-log",
           "handler": "App\\Modules\\Mailer\\Controllers\\MailerController@deliveryLog",
           "capabilityId": "mail.service",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "users-orders",
-      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "source": "webparamascotas/docs/capabilities/users-orders.json",
       "id": "orders.admin",
       "summary": "Gestion administrativa de ordenes, estados, ventas historicas y ventas locales.",
       "auth": "admin",
@@ -1664,7 +1664,7 @@
           "path": "/api/orders",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@index",
           "capabilityId": "orders.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/orders/{id}/status",
@@ -1672,7 +1672,7 @@
           "path": "/api/orders/{id}/status",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@updateStatus",
           "capabilityId": "orders.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/admin/historical-sales",
@@ -1680,14 +1680,14 @@
           "path": "/api/admin/historical-sales",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@storeHistoricalSale",
           "capabilityId": "orders.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "users-orders",
-      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "source": "webparamascotas/docs/capabilities/users-orders.json",
       "id": "orders.checkout",
       "summary": "Carrito, cotizacion server-side, checkout, orden del cliente y factura asociada.",
       "auth": "mixed",
@@ -1727,12 +1727,12 @@
       },
       "externalEffects": {
         "mail": {
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "requiresAllowlist": true
         },
         "sri": {
           "environment": "pruebas",
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "forbidProduction": true
         }
       },
@@ -1758,7 +1758,7 @@
           "path": "/api/orders/my-orders",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@myOrders",
           "capabilityId": "orders.checkout",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/orders/{id}",
@@ -1766,7 +1766,7 @@
           "path": "/api/orders/{id}",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@show",
           "capabilityId": "orders.checkout",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/orders/{id}/invoice",
@@ -1774,7 +1774,7 @@
           "path": "/api/orders/{id}/invoice",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@invoice",
           "capabilityId": "orders.checkout",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/orders",
@@ -1782,7 +1782,7 @@
           "path": "/api/orders",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@store",
           "capabilityId": "orders.checkout",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/orders/quote",
@@ -1790,14 +1790,14 @@
           "path": "/api/orders/quote",
           "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@quote",
           "capabilityId": "orders.checkout",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "security.telemetry",
       "summary": "Recepcion de reportes CSP y validaciones de seguridad basica.",
       "auth": "public",
@@ -1824,14 +1824,14 @@
           "path": "/api/security/csp-report",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SecurityTelemetryController@cspReport",
           "capabilityId": "security.telemetry",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "system.frontend-proxy",
       "summary": "Route handlers internos del frontend para proxy API, logout, sugerencias y gestion de uploads.",
       "auth": "mixed",
@@ -1891,7 +1891,7 @@
     },
     {
       "domain": "billing-mail-system",
-      "source": "paramascotasec/docs/capabilities/billing-mail-system.json",
+      "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "system.health",
       "summary": "Healthchecks de frontend, backend, gateway y Billing.",
       "auth": "public",
@@ -1926,7 +1926,7 @@
           "path": "/api/health",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\HealthController@status",
           "capabilityId": "system.health",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/health",
@@ -1934,7 +1934,7 @@
           "path": "/health",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@health",
           "capabilityId": "system.health",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:HEAD:/health",
@@ -1942,7 +1942,7 @@
           "path": "/health",
           "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@health",
           "capabilityId": "system.health",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/billing/health",
@@ -1950,7 +1950,7 @@
           "path": "/api/admin/billing/health",
           "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@health",
           "capabilityId": "system.health",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/admin/mailer/health",
@@ -1958,14 +1958,14 @@
           "path": "/api/admin/mailer/health",
           "handler": "App\\Modules\\Mailer\\Controllers\\MailerController@health",
           "capabilityId": "system.health",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "users-orders",
-      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "source": "webparamascotas/docs/capabilities/users-orders.json",
       "id": "users.admin",
       "summary": "Gestion administrativa de usuarios y desbloqueo de cuentas.",
       "auth": "admin",
@@ -1992,7 +1992,7 @@
           "path": "/api/users",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@index",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/users",
@@ -2000,7 +2000,7 @@
           "path": "/api/users",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@store",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/users/{id}",
@@ -2008,7 +2008,7 @@
           "path": "/api/users/{id}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@show",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/users/{id}",
@@ -2016,7 +2016,7 @@
           "path": "/api/users/{id}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@patch",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/users/{id}",
@@ -2024,7 +2024,7 @@
           "path": "/api/users/{id}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@update",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/users/{id}/unlock",
@@ -2032,7 +2032,7 @@
           "path": "/api/users/{id}/unlock",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@unlock",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/roles",
@@ -2040,7 +2040,7 @@
           "path": "/api/roles",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@index",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/roles",
@@ -2048,7 +2048,7 @@
           "path": "/api/roles",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@store",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/roles/{roleId}",
@@ -2056,7 +2056,7 @@
           "path": "/api/roles/{roleId}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@show",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PATCH:/api/roles/{roleId}",
@@ -2064,7 +2064,7 @@
           "path": "/api/roles/{roleId}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@update",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:DELETE:/api/roles/{roleId}",
@@ -2072,14 +2072,14 @@
           "path": "/api/roles/{roleId}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@destroy",
           "capabilityId": "users.admin",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "users-orders",
-      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "source": "webparamascotas/docs/capabilities/users-orders.json",
       "id": "users.auth",
       "summary": "Registro, login, logout, sesion, OTP y recuperacion de contrasena.",
       "auth": "mixed",
@@ -2132,7 +2132,7 @@
       },
       "externalEffects": {
         "mail": {
-          "enabledInDevelopment": true,
+          "enabledInQa": true,
           "requiresAllowlist": true
         }
       },
@@ -2157,7 +2157,7 @@
           "path": "/api/auth/login",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@login",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/auth/logout",
@@ -2165,7 +2165,7 @@
           "path": "/api/auth/logout",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@logout",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/auth/register",
@@ -2173,7 +2173,7 @@
           "path": "/api/auth/register",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@register",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/auth/request-otp",
@@ -2181,7 +2181,7 @@
           "path": "/api/auth/request-otp",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@requestOtp",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/auth/verify-otp",
@@ -2189,7 +2189,7 @@
           "path": "/api/auth/verify-otp",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@verifyOtp",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/auth/password-reset/request",
@@ -2197,7 +2197,7 @@
           "path": "/api/auth/password-reset/request",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@requestPasswordReset",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:POST:/api/auth/password-reset/confirm",
@@ -2205,7 +2205,7 @@
           "path": "/api/auth/password-reset/confirm",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@confirmPasswordReset",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/auth/verify",
@@ -2213,7 +2213,7 @@
           "path": "/api/auth/verify",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@verify",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/auth/session",
@@ -2221,7 +2221,7 @@
           "path": "/api/auth/session",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@session",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/tenant/context",
@@ -2229,14 +2229,14 @@
           "path": "/api/tenant/context",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@context",
           "capabilityId": "users.auth",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
     },
     {
       "domain": "users-orders",
-      "source": "paramascotasec/docs/capabilities/users-orders.json",
+      "source": "webparamascotas/docs/capabilities/users-orders.json",
       "id": "users.profile",
       "summary": "Cuenta del cliente, direcciones, perfil y cambio de contrasena.",
       "auth": "user",
@@ -2278,7 +2278,7 @@
           "path": "/api/user/addresses",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@getAddresses",
           "capabilityId": "users.profile",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/user/addresses",
@@ -2286,7 +2286,7 @@
           "path": "/api/user/addresses",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateAddresses",
           "capabilityId": "users.profile",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:GET:/api/user/profile",
@@ -2294,7 +2294,7 @@
           "path": "/api/user/profile",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@getProfile",
           "capabilityId": "users.profile",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/user/profile",
@@ -2302,7 +2302,7 @@
           "path": "/api/user/profile",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateProfile",
           "capabilityId": "users.profile",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         },
         {
           "id": "backend:PUT:/api/user/password",
@@ -2310,7 +2310,7 @@
           "path": "/api/user/password",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updatePassword",
           "capabilityId": "users.profile",
-          "source": "paramascotasec-backend/config/routes.php"
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
@@ -2324,7 +2324,7 @@
         "path": "/api/users",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@index",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/users",
@@ -2332,7 +2332,7 @@
         "path": "/api/users",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@store",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/users/{id}",
@@ -2340,7 +2340,7 @@
         "path": "/api/users/{id}",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@show",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/users/{id}",
@@ -2348,7 +2348,7 @@
         "path": "/api/users/{id}",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@patch",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/users/{id}",
@@ -2356,7 +2356,7 @@
         "path": "/api/users/{id}",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@update",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/users/{id}/unlock",
@@ -2364,7 +2364,7 @@
         "path": "/api/users/{id}/unlock",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@unlock",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/roles",
@@ -2372,7 +2372,7 @@
         "path": "/api/roles",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@index",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/roles",
@@ -2380,7 +2380,7 @@
         "path": "/api/roles",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@store",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/roles/{roleId}",
@@ -2388,7 +2388,7 @@
         "path": "/api/roles/{roleId}",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@show",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/roles/{roleId}",
@@ -2396,7 +2396,7 @@
         "path": "/api/roles/{roleId}",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@update",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:DELETE:/api/roles/{roleId}",
@@ -2404,7 +2404,7 @@
         "path": "/api/roles/{roleId}",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@destroy",
         "capabilityId": "users.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/user/addresses",
@@ -2412,7 +2412,7 @@
         "path": "/api/user/addresses",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@getAddresses",
         "capabilityId": "users.profile",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/user/addresses",
@@ -2420,7 +2420,7 @@
         "path": "/api/user/addresses",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateAddresses",
         "capabilityId": "users.profile",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/user/profile",
@@ -2428,7 +2428,7 @@
         "path": "/api/user/profile",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@getProfile",
         "capabilityId": "users.profile",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/user/profile",
@@ -2436,7 +2436,7 @@
         "path": "/api/user/profile",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateProfile",
         "capabilityId": "users.profile",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/user/password",
@@ -2444,7 +2444,7 @@
         "path": "/api/user/password",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updatePassword",
         "capabilityId": "users.profile",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/login",
@@ -2452,7 +2452,7 @@
         "path": "/api/auth/login",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@login",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/logout",
@@ -2460,7 +2460,7 @@
         "path": "/api/auth/logout",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@logout",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/register",
@@ -2468,7 +2468,7 @@
         "path": "/api/auth/register",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@register",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/request-otp",
@@ -2476,7 +2476,7 @@
         "path": "/api/auth/request-otp",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@requestOtp",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/verify-otp",
@@ -2484,7 +2484,7 @@
         "path": "/api/auth/verify-otp",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@verifyOtp",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/password-reset/request",
@@ -2492,7 +2492,7 @@
         "path": "/api/auth/password-reset/request",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@requestPasswordReset",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/auth/password-reset/confirm",
@@ -2500,7 +2500,7 @@
         "path": "/api/auth/password-reset/confirm",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@confirmPasswordReset",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/auth/verify",
@@ -2508,7 +2508,7 @@
         "path": "/api/auth/verify",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@verify",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/auth/session",
@@ -2516,7 +2516,7 @@
         "path": "/api/auth/session",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@session",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/tenant/context",
@@ -2524,7 +2524,7 @@
         "path": "/api/tenant/context",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@context",
         "capabilityId": "users.auth",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/tenants",
@@ -2532,7 +2532,7 @@
         "path": "/api/admin/tenants",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminIndex",
         "capabilityId": "admin.tenants",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/tenants",
@@ -2540,7 +2540,7 @@
         "path": "/api/admin/tenants",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminCreate",
         "capabilityId": "admin.tenants",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/tenants/{tenantId}/modules",
@@ -2548,7 +2548,7 @@
         "path": "/api/admin/tenants/{tenantId}/modules",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateModules",
         "capabilityId": "admin.tenants",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/tenants/{tenantId}/configuration",
@@ -2556,7 +2556,7 @@
         "path": "/api/admin/tenants/{tenantId}/configuration",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateConfiguration",
         "capabilityId": "admin.tenants",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/session",
@@ -2564,7 +2564,7 @@
         "path": "/api/admin/settings/session",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SessionSettingsController@getSessionSettings",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/session",
@@ -2572,7 +2572,7 @@
         "path": "/api/admin/settings/session",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SessionSettingsController@updateSessionSettings",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/health",
@@ -2580,7 +2580,7 @@
         "path": "/api/health",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\HealthController@status",
         "capabilityId": "system.health",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/security/csp-report",
@@ -2588,7 +2588,7 @@
         "path": "/api/security/csp-report",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SecurityTelemetryController@cspReport",
         "capabilityId": "security.telemetry",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/products",
@@ -2596,7 +2596,7 @@
         "path": "/api/products",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@index",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/products/{id}/reviews",
@@ -2604,7 +2604,7 @@
         "path": "/api/products/{id}/reviews",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@indexForProduct",
         "capabilityId": "catalog.reviews",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/products/{id}/reviews",
@@ -2612,7 +2612,7 @@
         "path": "/api/products/{id}/reviews",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@storeForProduct",
         "capabilityId": "catalog.reviews",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/products/{id}/movement",
@@ -2620,7 +2620,7 @@
         "path": "/api/products/{id}/movement",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@movement",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/products/{id}",
@@ -2628,7 +2628,7 @@
         "path": "/api/products/{id}",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@show",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/products",
@@ -2636,7 +2636,7 @@
         "path": "/api/products",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@store",
         "capabilityId": "catalog.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/products/{id}",
@@ -2644,7 +2644,7 @@
         "path": "/api/products/{id}",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@update",
         "capabilityId": "catalog.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:DELETE:/api/products/{id}",
@@ -2652,7 +2652,7 @@
         "path": "/api/products/{id}",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@destroy",
         "capabilityId": "catalog.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/reviews",
@@ -2660,7 +2660,7 @@
         "path": "/api/admin/reviews",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@adminIndex",
         "capabilityId": "catalog.reviews.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/reviews/{id}",
@@ -2668,7 +2668,7 @@
         "path": "/api/admin/reviews/{id}",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReviewController@adminUpdate",
         "capabilityId": "catalog.reviews.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/purchase-invoices",
@@ -2676,7 +2676,7 @@
         "path": "/api/admin/purchase-invoices",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\PurchaseInvoiceController@index",
         "capabilityId": "admin.procurement",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/purchase-invoices/{id}",
@@ -2684,7 +2684,7 @@
         "path": "/api/admin/purchase-invoices/{id}",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\PurchaseInvoiceController@show",
         "capabilityId": "admin.procurement",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/product-reference-data",
@@ -2692,7 +2692,7 @@
         "path": "/api/admin/settings/product-reference-data",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReferenceDataController@getProductReferenceData",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/product-reference-data",
@@ -2700,7 +2700,7 @@
         "path": "/api/admin/settings/product-reference-data",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductReferenceDataController@updateProductReferenceData",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/orders",
@@ -2708,7 +2708,7 @@
         "path": "/api/orders",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@index",
         "capabilityId": "orders.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/orders/my-orders",
@@ -2716,7 +2716,7 @@
         "path": "/api/orders/my-orders",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@myOrders",
         "capabilityId": "orders.checkout",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/orders/{id}",
@@ -2724,7 +2724,7 @@
         "path": "/api/orders/{id}",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@show",
         "capabilityId": "orders.checkout",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/orders/{id}/status",
@@ -2732,7 +2732,7 @@
         "path": "/api/orders/{id}/status",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@updateStatus",
         "capabilityId": "orders.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/orders/{id}/invoice",
@@ -2740,7 +2740,7 @@
         "path": "/api/orders/{id}/invoice",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@invoice",
         "capabilityId": "orders.checkout",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/orders",
@@ -2748,7 +2748,7 @@
         "path": "/api/orders",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@store",
         "capabilityId": "orders.checkout",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/orders/quote",
@@ -2756,7 +2756,7 @@
         "path": "/api/orders/quote",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@quote",
         "capabilityId": "orders.checkout",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/historical-sales",
@@ -2764,7 +2764,7 @@
         "path": "/api/admin/historical-sales",
         "handler": "App\\Modules\\Commerce\\Controllers\\OrderController@storeHistoricalSale",
         "capabilityId": "orders.admin",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/tax",
@@ -2772,7 +2772,7 @@
         "path": "/api/admin/settings/tax",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getVat",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/tax",
@@ -2780,7 +2780,7 @@
         "path": "/api/admin/settings/tax",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateVat",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/settings/shipping",
@@ -2788,7 +2788,7 @@
         "path": "/api/settings/shipping",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getShipping",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/settings/store-status",
@@ -2796,7 +2796,7 @@
         "path": "/api/settings/store-status",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getStoreStatus",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/settings/brand-logos",
@@ -2804,7 +2804,7 @@
         "path": "/api/settings/brand-logos",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPublicBrandLogos",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/settings/product-categories",
@@ -2812,7 +2812,7 @@
         "path": "/api/settings/product-categories",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPublicProductCategories",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/settings/product-category-references",
@@ -2820,7 +2820,7 @@
         "path": "/api/settings/product-category-references",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPublicProductCategoryReferences",
         "capabilityId": "catalog.public",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/shipping",
@@ -2828,7 +2828,7 @@
         "path": "/api/admin/settings/shipping",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getShipping",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/shipping",
@@ -2836,7 +2836,7 @@
         "path": "/api/admin/settings/shipping",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateShipping",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/store-status",
@@ -2844,7 +2844,7 @@
         "path": "/api/admin/settings/store-status",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getStoreStatus",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/store-status",
@@ -2852,7 +2852,7 @@
         "path": "/api/admin/settings/store-status",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateStoreStatus",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/product-page",
@@ -2860,7 +2860,7 @@
         "path": "/api/admin/settings/product-page",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getProductPage",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/product-page",
@@ -2868,7 +2868,7 @@
         "path": "/api/admin/settings/product-page",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updateProductPage",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/pricing-margins",
@@ -2876,7 +2876,7 @@
         "path": "/api/admin/settings/pricing-margins",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPricingMargins",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/pricing-margins",
@@ -2884,7 +2884,7 @@
         "path": "/api/admin/settings/pricing-margins",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updatePricingMargins",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/pricing-calc",
@@ -2892,7 +2892,7 @@
         "path": "/api/admin/settings/pricing-calc",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPricingCalc",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/pricing-calc",
@@ -2900,7 +2900,7 @@
         "path": "/api/admin/settings/pricing-calc",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updatePricingCalc",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/settings/pricing-rules",
@@ -2908,7 +2908,7 @@
         "path": "/api/admin/settings/pricing-rules",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@getPricingRules",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/settings/pricing-rules",
@@ -2916,7 +2916,7 @@
         "path": "/api/admin/settings/pricing-rules",
         "handler": "App\\Modules\\Commerce\\Controllers\\SettingsController@updatePricingRules",
         "capabilityId": "admin.settings",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/discounts",
@@ -2924,7 +2924,7 @@
         "path": "/api/admin/discounts",
         "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@index",
         "capabilityId": "admin.discounts",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/discounts",
@@ -2932,7 +2932,7 @@
         "path": "/api/admin/discounts",
         "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@store",
         "capabilityId": "admin.discounts",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/discounts/audit",
@@ -2940,7 +2940,7 @@
         "path": "/api/admin/discounts/audit",
         "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@audit",
         "capabilityId": "admin.discounts",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/discounts/{id}",
@@ -2948,7 +2948,7 @@
         "path": "/api/admin/discounts/{id}",
         "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@show",
         "capabilityId": "admin.discounts",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/discounts/{id}",
@@ -2956,7 +2956,7 @@
         "path": "/api/admin/discounts/{id}",
         "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@update",
         "capabilityId": "admin.discounts",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/discounts/{id}/status",
@@ -2964,7 +2964,7 @@
         "path": "/api/admin/discounts/{id}/status",
         "handler": "App\\Modules\\Commerce\\Controllers\\DiscountController@updateStatus",
         "capabilityId": "admin.discounts",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/pos/shift/active",
@@ -2972,7 +2972,7 @@
         "path": "/api/admin/pos/shift/active",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@activeShift",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/pos/shifts",
@@ -2980,7 +2980,7 @@
         "path": "/api/admin/pos/shifts",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@shifts",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/pos/movements",
@@ -2988,7 +2988,7 @@
         "path": "/api/admin/pos/movements",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@movements",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/pos/customer-by-document",
@@ -2996,7 +2996,7 @@
         "path": "/api/admin/pos/customer-by-document",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@customerByDocument",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/pos/shift/open",
@@ -3004,7 +3004,7 @@
         "path": "/api/admin/pos/shift/open",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@openShift",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/pos/shift/close",
@@ -3012,7 +3012,7 @@
         "path": "/api/admin/pos/shift/close",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@closeShift",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/pos/movements",
@@ -3020,7 +3020,7 @@
         "path": "/api/admin/pos/movements",
         "handler": "App\\Modules\\Commerce\\Controllers\\PosController@addMovement",
         "capabilityId": "admin.pos",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/quotes",
@@ -3028,7 +3028,7 @@
         "path": "/api/admin/quotes",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@index",
         "capabilityId": "admin.quotes",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/quotes",
@@ -3036,7 +3036,7 @@
         "path": "/api/admin/quotes",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@store",
         "capabilityId": "admin.quotes",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/quotes/close-expired",
@@ -3044,7 +3044,7 @@
         "path": "/api/admin/quotes/close-expired",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@closeExpired",
         "capabilityId": "admin.quotes",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/quotes/{id}/pdf",
@@ -3052,7 +3052,7 @@
         "path": "/api/admin/quotes/{id}/pdf",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@pdf",
         "capabilityId": "admin.quotes",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/quotes/{id}/close",
@@ -3060,7 +3060,7 @@
         "path": "/api/admin/quotes/{id}/close",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@close",
         "capabilityId": "admin.quotes",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/quotes/{id}/convert",
@@ -3068,7 +3068,7 @@
         "path": "/api/admin/quotes/{id}/convert",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@convert",
         "capabilityId": "admin.quotes",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/shipments",
@@ -3076,7 +3076,7 @@
         "path": "/api/shipments",
         "handler": "App\\Modules\\Commerce\\Controllers\\ShippingController@index",
         "capabilityId": "admin.operations",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/contact",
@@ -3084,7 +3084,7 @@
         "path": "/api/contact",
         "handler": "App\\Modules\\Commerce\\Controllers\\ContactController@store",
         "capabilityId": "content.contact",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/health",
@@ -3092,7 +3092,7 @@
         "path": "/health",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@health",
         "capabilityId": "system.health",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:HEAD:/health",
@@ -3100,7 +3100,7 @@
         "path": "/health",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@health",
         "capabilityId": "system.health",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/configuration",
@@ -3108,7 +3108,7 @@
         "path": "/api/{apiMode}/v1/configuration",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@configuration",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration",
@@ -3116,7 +3116,7 @@
         "path": "/api/{apiMode}/v1/configuration",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@updateConfiguration",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration/certificate",
@@ -3124,7 +3124,7 @@
         "path": "/api/{apiMode}/v1/configuration/certificate",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@uploadCertificate",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration/branches",
@@ -3132,7 +3132,7 @@
         "path": "/api/{apiMode}/v1/configuration/branches",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@createBranch",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration/branches/{branchId}",
@@ -3140,7 +3140,7 @@
         "path": "/api/{apiMode}/v1/configuration/branches/{branchId}",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@updateBranch",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/invoices",
@@ -3148,7 +3148,7 @@
         "path": "/api/{apiMode}/v1/invoices",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@emit",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/rides",
@@ -3156,7 +3156,7 @@
         "path": "/api/{apiMode}/v1/invoices/rides",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@rides",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/source/{sourceReference}",
@@ -3164,7 +3164,7 @@
         "path": "/api/{apiMode}/v1/invoices/source/{sourceReference}",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@source",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/status",
@@ -3172,7 +3172,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/status",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@status",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/xml",
@@ -3180,7 +3180,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/xml",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@xml",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
@@ -3188,7 +3188,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@ridePdf",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
@@ -3196,7 +3196,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@mailTest",
         "capabilityId": "mail.billing",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
@@ -3204,7 +3204,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@cancelAndReissue",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/health",
@@ -3212,7 +3212,7 @@
         "path": "/api/admin/billing/health",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@health",
         "capabilityId": "system.health",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/configuration",
@@ -3220,7 +3220,7 @@
         "path": "/api/admin/billing/configuration",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@configuration",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/billing/configuration",
@@ -3228,7 +3228,7 @@
         "path": "/api/admin/billing/configuration",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@updateConfiguration",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/configuration/certificate",
@@ -3236,7 +3236,7 @@
         "path": "/api/admin/billing/configuration/certificate",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@uploadCertificate",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/configuration/branches",
@@ -3244,7 +3244,7 @@
         "path": "/api/admin/billing/configuration/branches",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@createBranch",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/billing/configuration/branches/{branchId}",
@@ -3252,7 +3252,7 @@
         "path": "/api/admin/billing/configuration/branches/{branchId}",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@updateBranch",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/products",
@@ -3260,7 +3260,7 @@
         "path": "/api/admin/billing/products",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@products",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/products",
@@ -3268,7 +3268,7 @@
         "path": "/api/admin/billing/products",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@storeProduct",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/invoices",
@@ -3276,7 +3276,7 @@
         "path": "/api/admin/billing/invoices",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@emit",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/invoices/from-products",
@@ -3284,7 +3284,7 @@
         "path": "/api/admin/billing/invoices/from-products",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@emitFromProducts",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/invoices/source/{sourceReference}",
@@ -3292,7 +3292,7 @@
         "path": "/api/admin/billing/invoices/source/{sourceReference}",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@source",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/invoices/{accessKey}/status",
@@ -3300,7 +3300,7 @@
         "path": "/api/admin/billing/invoices/{accessKey}/status",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@status",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/invoices/{accessKey}/xml",
@@ -3308,7 +3308,7 @@
         "path": "/api/admin/billing/invoices/{accessKey}/xml",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@xml",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/rides",
@@ -3316,7 +3316,7 @@
         "path": "/api/admin/billing/rides",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@rides",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/billing/rides/{accessKey}/pdf",
@@ -3324,7 +3324,7 @@
         "path": "/api/admin/billing/rides/{accessKey}/pdf",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@ridePdf",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/rides/{accessKey}/mail-test",
@@ -3332,7 +3332,7 @@
         "path": "/api/admin/billing/rides/{accessKey}/mail-test",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@mailTest",
         "capabilityId": "mail.billing",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
@@ -3340,7 +3340,7 @@
         "path": "/api/admin/billing/rides/{accessKey}/cancel-and-reissue",
         "handler": "App\\Modules\\Billing\\Controllers\\BillingDocumentController@cancelAndReissue",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/mailer/health",
@@ -3348,7 +3348,7 @@
         "path": "/api/admin/mailer/health",
         "handler": "App\\Modules\\Mailer\\Controllers\\MailerController@health",
         "capabilityId": "system.health",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/mailer/outbox",
@@ -3356,7 +3356,7 @@
         "path": "/api/admin/mailer/outbox",
         "handler": "App\\Modules\\Mailer\\Controllers\\MailerController@outbox",
         "capabilityId": "mail.service",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/mailer/delivery-log",
@@ -3364,7 +3364,7 @@
         "path": "/api/admin/mailer/delivery-log",
         "handler": "App\\Modules\\Mailer\\Controllers\\MailerController@deliveryLog",
         "capabilityId": "mail.service",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/dashboard/stats",
@@ -3372,7 +3372,7 @@
         "path": "/api/admin/dashboard/stats",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardController@stats",
         "capabilityId": "admin.reporting",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/report",
@@ -3380,7 +3380,7 @@
         "path": "/api/admin/report",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardController@report",
         "capabilityId": "admin.reporting",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/inventory/intelligence",
@@ -3388,7 +3388,7 @@
         "path": "/api/admin/inventory/intelligence",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\InventoryIntelligenceController@intelligence",
         "capabilityId": "admin.reporting",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/expenses",
@@ -3396,7 +3396,7 @@
         "path": "/api/admin/expenses",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@index",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/expenses",
@@ -3404,7 +3404,7 @@
         "path": "/api/admin/expenses",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@store",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/financial-periods",
@@ -3412,7 +3412,7 @@
         "path": "/api/admin/financial-periods",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@index",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/financial-periods/{period}/preview",
@@ -3420,7 +3420,7 @@
         "path": "/api/admin/financial-periods/{period}/preview",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@preview",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/financial-periods/{period}/close",
@@ -3428,7 +3428,7 @@
         "path": "/api/admin/financial-periods/{period}/close",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@close",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/financial-adjustments",
@@ -3436,7 +3436,7 @@
         "path": "/api/admin/financial-adjustments",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\FinancialPeriodController@storeAdjustment",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/admin/expenses/recurrences",
@@ -3444,7 +3444,7 @@
         "path": "/api/admin/expenses/recurrences",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@recurrences",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/admin/expenses/recurrences",
@@ -3452,7 +3452,7 @@
         "path": "/api/admin/expenses/recurrences",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@storeRecurrence",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/expenses/recurrences/{id}",
@@ -3460,7 +3460,7 @@
         "path": "/api/admin/expenses/recurrences/{id}",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@updateRecurrence",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:DELETE:/api/admin/expenses/recurrences/{id}",
@@ -3468,7 +3468,7 @@
         "path": "/api/admin/expenses/recurrences/{id}",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@deleteRecurrence",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PUT:/api/admin/expenses/{id}",
@@ -3476,7 +3476,7 @@
         "path": "/api/admin/expenses/{id}",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@update",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:PATCH:/api/admin/expenses/{id}/status",
@@ -3484,7 +3484,7 @@
         "path": "/api/admin/expenses/{id}/status",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\BusinessExpenseController@updateStatus",
         "capabilityId": "admin.finance",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/reports/recent-orders",
@@ -3492,7 +3492,7 @@
         "path": "/api/reports/recent-orders",
         "handler": "App\\Modules\\ReportingFinance\\Controllers\\ReportController@recentOrders",
         "capabilityId": "admin.reporting",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       }
     ],
     "billingApiRoutes": [
@@ -3502,7 +3502,7 @@
         "path": "/api/{apiMode}/v1/configuration",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@configuration",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration",
@@ -3510,7 +3510,7 @@
         "path": "/api/{apiMode}/v1/configuration",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@updateConfiguration",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration/certificate",
@@ -3518,7 +3518,7 @@
         "path": "/api/{apiMode}/v1/configuration/certificate",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@uploadCertificate",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration/branches",
@@ -3526,7 +3526,7 @@
         "path": "/api/{apiMode}/v1/configuration/branches",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@createBranch",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/configuration/branches/{branchId}",
@@ -3534,7 +3534,7 @@
         "path": "/api/{apiMode}/v1/configuration/branches/{branchId}",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@updateBranch",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/invoices",
@@ -3542,7 +3542,7 @@
         "path": "/api/{apiMode}/v1/invoices",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@emit",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/rides",
@@ -3550,7 +3550,7 @@
         "path": "/api/{apiMode}/v1/invoices/rides",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@rides",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/source/{sourceReference}",
@@ -3558,7 +3558,7 @@
         "path": "/api/{apiMode}/v1/invoices/source/{sourceReference}",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@source",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/status",
@@ -3566,7 +3566,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/status",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@status",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/xml",
@@ -3574,7 +3574,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/xml",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@xml",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:GET:/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
@@ -3582,7 +3582,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/ride.pdf",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@ridePdf",
         "capabilityId": "billing.documents",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
@@ -3590,7 +3590,7 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/mail-test",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@mailTest",
         "capabilityId": "mail.billing",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       },
       {
         "id": "backend:POST:/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
@@ -3598,279 +3598,279 @@
         "path": "/api/{apiMode}/v1/invoices/{accessKey}/cancel-and-reissue",
         "handler": "App\\Modules\\Billing\\Controllers\\PublicBillingController@cancelAndReissue",
         "capabilityId": "billing.sri.pruebas",
-        "source": "paramascotasec-backend/config/routes.php"
+        "source": "backend/config/routes.php"
       }
     ],
     "frontendPages": [
       {
         "path": "/",
-        "source": "paramascotasec/app/src/app/page.tsx"
+        "source": "webparamascotas/app/src/app/page.tsx"
       },
       {
         "path": "/cart",
-        "source": "paramascotasec/app/src/app/cart/page.tsx"
+        "source": "webparamascotas/app/src/app/cart/page.tsx"
       },
       {
         "path": "/checkout",
-        "source": "paramascotasec/app/src/app/checkout/page.tsx"
+        "source": "webparamascotas/app/src/app/checkout/page.tsx"
       },
       {
         "path": "/forgot-password",
-        "source": "paramascotasec/app/src/app/forgot-password/page.tsx"
+        "source": "webparamascotas/app/src/app/forgot-password/page.tsx"
       },
       {
         "path": "/guias",
-        "source": "paramascotasec/app/src/app/guias/page.tsx"
+        "source": "webparamascotas/app/src/app/guias/page.tsx"
       },
       {
         "path": "/guias/[slug]",
-        "source": "paramascotasec/app/src/app/guias/[slug]/page.tsx"
+        "source": "webparamascotas/app/src/app/guias/[slug]/page.tsx"
       },
       {
         "path": "/login",
-        "source": "paramascotasec/app/src/app/login/page.tsx"
+        "source": "webparamascotas/app/src/app/login/page.tsx"
       },
       {
         "path": "/my-account",
-        "source": "paramascotasec/app/src/app/my-account/page.tsx"
+        "source": "webparamascotas/app/src/app/my-account/page.tsx"
       },
       {
         "path": "/pages/about",
-        "source": "paramascotasec/app/src/app/pages/about/page.tsx"
+        "source": "webparamascotas/app/src/app/pages/about/page.tsx"
       },
       {
         "path": "/pages/contact",
-        "source": "paramascotasec/app/src/app/pages/contact/page.tsx"
+        "source": "webparamascotas/app/src/app/pages/contact/page.tsx"
       },
       {
         "path": "/pages/politica-de-privacidad",
-        "source": "paramascotasec/app/src/app/pages/politica-de-privacidad/page.tsx"
+        "source": "webparamascotas/app/src/app/pages/politica-de-privacidad/page.tsx"
       },
       {
         "path": "/pages/preguntas-frecuentes",
-        "source": "paramascotasec/app/src/app/pages/preguntas-frecuentes/page.tsx"
+        "source": "webparamascotas/app/src/app/pages/preguntas-frecuentes/page.tsx"
       },
       {
         "path": "/pages/terminos-y-condiciones",
-        "source": "paramascotasec/app/src/app/pages/terminos-y-condiciones/page.tsx"
+        "source": "webparamascotas/app/src/app/pages/terminos-y-condiciones/page.tsx"
       },
       {
         "path": "/productos/[slug]",
-        "source": "paramascotasec/app/src/app/productos/[slug]/page.tsx"
+        "source": "webparamascotas/app/src/app/productos/[slug]/page.tsx"
       },
       {
         "path": "/register",
-        "source": "paramascotasec/app/src/app/register/page.tsx"
+        "source": "webparamascotas/app/src/app/register/page.tsx"
       },
       {
         "path": "/reset-password",
-        "source": "paramascotasec/app/src/app/reset-password/page.tsx"
+        "source": "webparamascotas/app/src/app/reset-password/page.tsx"
       },
       {
         "path": "/search-result",
-        "source": "paramascotasec/app/src/app/search-result/page.tsx"
+        "source": "webparamascotas/app/src/app/search-result/page.tsx"
       },
       {
         "path": "/servicios",
-        "source": "paramascotasec/app/src/app/servicios/page.tsx"
+        "source": "webparamascotas/app/src/app/servicios/page.tsx"
       },
       {
         "path": "/servicios/[slug]",
-        "source": "paramascotasec/app/src/app/servicios/[slug]/page.tsx"
+        "source": "webparamascotas/app/src/app/servicios/[slug]/page.tsx"
       },
       {
         "path": "/tienda",
-        "source": "paramascotasec/app/src/app/tienda/page.tsx"
+        "source": "webparamascotas/app/src/app/tienda/page.tsx"
       },
       {
         "path": "/tienda/[slug]",
-        "source": "paramascotasec/app/src/app/tienda/[slug]/page.tsx"
+        "source": "webparamascotas/app/src/app/tienda/[slug]/page.tsx"
       },
       {
         "path": "/tienda/marcas/[marca]",
-        "source": "paramascotasec/app/src/app/tienda/marcas/[marca]/page.tsx"
+        "source": "webparamascotas/app/src/app/tienda/marcas/[marca]/page.tsx"
       }
     ],
     "frontendHandlers": [
       {
         "method": "ANY",
         "path": "/api/[...path]",
-        "source": "paramascotasec/app/src/app/api/[...path]/route.ts"
+        "source": "webparamascotas/app/src/app/api/[...path]/route.ts"
       },
       {
         "method": "ANY",
         "path": "/api/auth/logout",
-        "source": "paramascotasec/app/src/app/api/auth/logout/route.ts"
+        "source": "webparamascotas/app/src/app/api/auth/logout/route.ts"
       },
       {
         "method": "ANY",
         "path": "/api/suggestions",
-        "source": "paramascotasec/app/src/app/api/suggestions/route.ts"
+        "source": "webparamascotas/app/src/app/api/suggestions/route.ts"
       },
       {
         "method": "ANY",
         "path": "/api/uploads/images",
-        "source": "paramascotasec/app/src/app/api/uploads/images/route.ts"
+        "source": "webparamascotas/app/src/app/api/uploads/images/route.ts"
       },
       {
         "method": "ANY",
         "path": "/feeds/google-products.xml",
-        "source": "paramascotasec/app/src/app/feeds/google-products.xml/route.ts"
+        "source": "webparamascotas/app/src/app/feeds/google-products.xml/route.ts"
       },
       {
         "method": "ANY",
         "path": "/healthz",
-        "source": "paramascotasec/app/src/app/healthz/route.ts"
+        "source": "webparamascotas/app/src/app/healthz/route.ts"
       },
       {
         "method": "ANY",
         "path": "/llms.txt",
-        "source": "paramascotasec/app/src/app/llms.txt/route.ts"
+        "source": "webparamascotas/app/src/app/llms.txt/route.ts"
       },
       {
         "method": "ANY",
         "path": "/quote",
-        "source": "paramascotasec/app/src/app/quote/route.ts"
+        "source": "webparamascotas/app/src/app/quote/route.ts"
       },
       {
         "method": "GET",
         "path": "/robots.txt",
-        "source": "paramascotasec/app/src/app/robots.ts"
+        "source": "webparamascotas/app/src/app/robots.ts"
       },
       {
         "method": "ANY",
         "path": "/sitemap-images.xml",
-        "source": "paramascotasec/app/src/app/sitemap-images.xml/route.ts"
+        "source": "webparamascotas/app/src/app/sitemap-images.xml/route.ts"
       },
       {
         "method": "GET",
         "path": "/sitemap.xml",
-        "source": "paramascotasec/app/src/app/sitemap.ts"
+        "source": "webparamascotas/app/src/app/sitemap.ts"
       },
       {
         "method": "ANY",
         "path": "/suggestions-data",
-        "source": "paramascotasec/app/src/app/suggestions-data/route.ts"
+        "source": "webparamascotas/app/src/app/suggestions-data/route.ts"
       },
       {
         "method": "ANY",
         "path": "/uploads-api/images",
-        "source": "paramascotasec/app/src/app/uploads-api/images/route.ts"
+        "source": "webparamascotas/app/src/app/uploads-api/images/route.ts"
       },
       {
         "method": "ANY",
         "path": "/uploads/[...path]",
-        "source": "paramascotasec/app/src/app/uploads/[...path]/route.ts"
+        "source": "webparamascotas/app/src/app/uploads/[...path]/route.ts"
       }
     ],
     "frontendApiUses": [
       {
         "path": "/api/admin/billing/rides/{param}/cancel-and-reissue",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1386"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1386"
       },
       {
         "path": "/api/admin/billing/rides/{param}/pdf",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1348"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1348"
       },
       {
         "path": "/api/admin/expenses/{param}/status",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1571"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1571"
       },
       {
         "path": "/api/admin/expenses/recurrences/{param}",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1533"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1533"
       },
       {
         "path": "/api/admin/expenses/recurrences/{param}",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1553"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1553"
       },
       {
         "path": "/api/admin/expenses/recurrences/{param}",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1591"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1591"
       },
       {
         "path": "/api/admin/expenses/recurrences",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1513"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1513"
       },
       {
         "path": "/api/admin/expenses",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1493"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1493"
       },
       {
         "path": "/api/admin/financial-adjustments",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1635"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1635"
       },
       {
         "path": "/api/admin/financial-periods/{param}/close",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1610"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1610"
       },
       {
         "path": "/api/admin/historical-sales",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1655"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1655"
       },
       {
         "path": "/api/auth/logout",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:3011"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:3011"
       },
       {
         "path": "/api/auth/logout",
-        "source": "paramascotasec/app/src/components/Header/Menu/MenuPet.tsx:507"
+        "source": "webparamascotas/app/src/components/Header/Menu/MenuPet.tsx:507"
       },
       {
         "path": "/api/auth/session",
-        "source": "paramascotasec/app/src/lib/apiClient.ts:171"
+        "source": "webparamascotas/app/src/lib/apiClient.ts:171"
       },
       {
         "path": "/api/orders/{param}/invoice",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1680"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1680"
       },
       {
         "path": "/api/orders/{param}/status",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1287"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1287"
       },
       {
         "path": "/api/products/{param}",
-        "source": "paramascotasec/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2985"
+        "source": "webparamascotas/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2987"
       },
       {
         "path": "/api/products/{param}",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1232"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1232"
       },
       {
         "path": "/api/products/{param}",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1257"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1257"
       },
       {
         "path": "/api/products/{param}",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:2080"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:2080"
       },
       {
         "path": "/api/products",
-        "source": "paramascotasec/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2992"
+        "source": "webparamascotas/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2994"
       },
       {
         "path": "/api/uploads/images",
-        "source": "paramascotasec/app/src/app/my-account/components/BrandReferenceSectionCard.tsx:42"
+        "source": "webparamascotas/app/src/app/my-account/components/BrandReferenceSectionCard.tsx:42"
       },
       {
         "path": "/api/uploads/images",
-        "source": "paramascotasec/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:429"
+        "source": "webparamascotas/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:429"
       },
       {
         "path": "/api/uploads/images",
-        "source": "paramascotasec/app/src/app/my-account/components/ProductReferenceSectionCard.tsx:349"
+        "source": "webparamascotas/app/src/app/my-account/components/ProductReferenceSectionCard.tsx:349"
       },
       {
         "path": "/api/user/addresses",
-        "source": "paramascotasec/app/src/app/checkout/CheckoutClient.tsx:498"
+        "source": "webparamascotas/app/src/app/checkout/CheckoutClient.tsx:498"
       },
       {
         "path": "/api/user/addresses",
-        "source": "paramascotasec/app/src/app/checkout/CheckoutClient.tsx:865"
+        "source": "webparamascotas/app/src/app/checkout/CheckoutClient.tsx:865"
       },
       {
         "path": "/api/user/password",
-        "source": "paramascotasec/app/src/app/my-account/MyAccountController.tsx:1890"
+        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1890"
       }
     ]
   }

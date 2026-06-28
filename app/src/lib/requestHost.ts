@@ -7,13 +7,11 @@ const csvHosts = (value?: string | null) =>
     .filter(Boolean)
 
 const INTERNAL_HOST_PATTERNS = [
-  /^next-test-app$/i,
-  /^app-dev$/i,
+  /^webparamascotas$/i,
   /^app$/i,
-  /-app-dev$/i,
   /-app$/i,
-  /-backend-web$/i,
-  /^backend-web$/i,
+  /-backend-http$/i,
+  /^backend-http$/i,
 ]
 
 const isInternalHost = (host: string) => {

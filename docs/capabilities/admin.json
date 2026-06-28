@@ -3,7 +3,7 @@
   "capabilities": [
     {
       "id": "admin.reporting",
-      "summary": "Dashboard, reportes, inteligencia de inventario y reportes recientes.",
+      "summary": "dashboard, reportes, inteligencia de inventario y reportes recientes.",
       "auth": "admin",
       "gateway": { "exposure": "tenant-api" },
       "data": { "fixture": "e2e-reporting-window", "assertions": ["dashboard-loads", "report-loads"] },

@@ -14,7 +14,7 @@
           { "path": "/reset-password", "samplePath": "/reset-password", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }
         ]
       },
-      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "externalEffects": { "mail": { "enabledInQa": true, "requiresAllowlist": true } },
       "data": { "fixture": "e2e-user", "assertions": ["user-session-created", "otp-mail-allowlisted"] },
       "e2e": { "mode": "scenario", "fixture": "e2e-user", "assertDb": true, "cleanup": true, "scenario": "auth-account-flow" }
     },
@@ -54,8 +54,8 @@
         ]
       },
       "externalEffects": {
-        "mail": { "enabledInDevelopment": true, "requiresAllowlist": true },
-        "sri": { "environment": "pruebas", "enabledInDevelopment": true, "forbidProduction": true }
+        "mail": { "enabledInQa": true, "requiresAllowlist": true },
+        "sri": { "environment": "pruebas", "enabledInQa": true, "forbidProduction": true }
       },
       "data": { "fixture": "e2e-order", "assertions": ["server-side-totals", "inventory-updated", "invoice-linked"] },
       "e2e": { "mode": "scenario", "fixture": "e2e-order", "assertDb": true, "cleanup": true, "scenario": "checkout-order-invoice-flow" }

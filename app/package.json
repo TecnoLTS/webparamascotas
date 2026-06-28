@@ -24,8 +24,7 @@
     "capabilities:check": "node ../scripts/generate-system-capabilities.mjs --check --workspace ../..",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "npm run capabilities:check && npm run lint && npm run typecheck",
-    "deploy:dev": "../scripts/deploy.sh development",
-    "deploy:prod": "../scripts/deploy.sh production"
+    "deploy": "../scripts/deploy.sh"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

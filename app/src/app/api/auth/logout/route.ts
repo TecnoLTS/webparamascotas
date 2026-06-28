@@ -5,7 +5,7 @@ import { getConfiguredCookieDomains } from '@/lib/cookieDomains'
 
 export const dynamic = 'force-dynamic'
 
-const getBackendBase = () => (process.env.BACKEND_URL_INTERNAL || 'http://paramascotasec-backend-web:8080/api').replace(/\/$/, '')
+const getBackendBase = () => (process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api').replace(/\/$/, '')
 
 const forwardedHeaderNames = [
   'accept',

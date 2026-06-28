@@ -1,4 +1,4 @@
-# Frontend Principal (`paramascotasec`)
+# Frontend Principal (`webparamascotas`)
 
 Sitio ecommerce en Next.js.
 
@@ -7,7 +7,7 @@ Sitio ecommerce en Next.js.
 Para cambios en caliente de UI:
 
 ```bash
-cd /home/admincenter/contenedores/paramascotasec/app
+cd /home/admincenter/contenedores/webparamascotas/app
 npm install
 npm run dev
 ```
@@ -15,33 +15,38 @@ npm run dev
 Eso es solo para trabajo local.
 No es el modo correcto del ambiente publicado detras del gateway.
 
-## Deploy del componente
+## Despliegues
 
-Desde el repo:
-
-```bash
-cd /home/admincenter/contenedores/paramascotasec
-./scripts/deploy.sh development
-./scripts/deploy.sh production
-```
-
-Desde la raiz del workspace:
+Despliegue completo del workspace:
 
 ```bash
 cd /home/admincenter/contenedores
-./scripts/deploy.sh development frontend
-./scripts/deploy.sh production frontend
+./deploy.sh
 ```
 
-En `development`, el deploy correcto usa `FRONTEND_DEV_RUNTIME=stable`.
-Eso compila y sirve un runtime estable con `APP_ENV=development`.
+Despliegue individual del frontend desde la raiz:
+
+```bash
+cd /home/admincenter/contenedores
+./scripts/deploy.sh frontend
+```
+
+Despliegue individual desde este repo:
+
+```bash
+cd /home/admincenter/contenedores/webparamascotas
+./scripts/deploy.sh
+```
+
+En QA, el deploy correcto usa `FRONTEND_QA_RUNTIME=stable` con `COMPOSE_PROFILES=qa`.
+Eso compila y sirve un runtime estable con `APP_ENV=qa`.
 `hot`/HMR no debe usarse para validar el ambiente a traves de APISIX.
 
 ## Variables y contexto
 
 - El archivo real es `entorno/.env`.
 - La plantilla versionada vive en `templates/entorno/.env.example`.
-- `BACKEND_URL_INTERNAL=http://paramascotasec-backend-web:8080/api` es el upstream interno canonico.
+- `BACKEND_URL_INTERNAL=http://backend-http:8080/api` es el upstream interno canonico.
 - `INTERNAL_PROXY_TOKEN` debe coincidir con backend/gateway cuando comparten proxy interno.
 - El contenedor no debe exponerse directamente a Internet; el acceso publico correcto entra por `apisix-gateway`.
 
@@ -50,21 +55,21 @@ Eso compila y sirve un runtime estable con `APP_ENV=development`.
 En un host nuevo, el orden del workspace es:
 
 ```text
-DB -> Backend -> Frontend -> Gateway
+DB -> Backend -> Frontend -> gatewayapisix
 ```
 
-Deploy completo:
+Despliegue completo:
 
 ```bash
 cd /home/admincenter/contenedores
-./deploy.sh production
+./deploy.sh
 ```
 
 ## Validacion
 
 ```bash
-docker exec apisix-gateway sh -lc 'curl -fsS http://paramascotasec-frontend:3000/healthz'
-cd /home/admincenter/contenedores/paramascotasec/app
+docker exec apisix-gateway sh -lc 'curl -fsS http://webparamascotas:3000/healthz'
+cd /home/admincenter/contenedores/webparamascotas/app
 npm run lint
 npm run typecheck
 ```

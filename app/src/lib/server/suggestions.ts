@@ -11,7 +11,7 @@ import {
 import { ProductType } from '@/type/ProductType'
 
 const resolveBackendUrl = () => {
-  const base = process.env.BACKEND_URL_INTERNAL || 'http://paramascotasec-backend-web:8080/api'
+  const base = process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api'
   return `${base.replace(/\/$/, '')}/products`
 }
 

@@ -14,17 +14,17 @@
       "summary": "Emision, consulta, anulacion/reemision y recuperacion contra SRI pruebas.",
       "auth": "api-key",
       "gateway": { "exposure": "billing-api" },
-      "externalEffects": { "sri": { "environment": "pruebas", "enabledInDevelopment": true, "forbidProduction": true } },
+      "externalEffects": { "sri": { "environment": "pruebas", "enabledInQa": true, "forbidProduction": true } },
       "data": { "fixture": "e2e-sri-test-invoice", "assertions": ["source-reference-idempotent", "sri-test-response-stored"] },
       "e2e": { "mode": "scenario", "fixture": "e2e-sri-test-invoice", "assertDb": true, "cleanup": true, "scenario": "sri-pruebas-invoice-flow" }
     },
     {
       "id": "billing.sri.production",
-      "summary": "Contrato de rutas SRI produccion; bloqueado en E2E development.",
+      "summary": "Contrato de rutas SRI produccion; bloqueado en E2E QA.",
       "auth": "api-key",
       "gateway": { "exposure": "billing-api" },
-      "externalEffects": { "sri": { "environment": "produccion", "enabledInDevelopment": false, "forbidProduction": true } },
-      "data": { "fixture": "none", "assertions": ["not-called-in-development"] },
+      "externalEffects": { "sri": { "environment": "produccion", "enabledInQa": false, "forbidProduction": true } },
+      "data": { "fixture": "none", "assertions": ["not-called-in-qa"] },
       "e2e": { "mode": "guard", "fixture": "none", "assertDb": false, "cleanup": false }
     },
     {
@@ -32,7 +32,7 @@
       "summary": "Envio de correos de documentos autorizados y pruebas de correo de Billing.",
       "auth": "api-key",
       "gateway": { "exposure": "billing-api" },
-      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "externalEffects": { "mail": { "enabledInQa": true, "requiresAllowlist": true } },
       "data": { "fixture": "e2e-billing-mail", "assertions": ["mail-sent-to-allowlist"] },
       "e2e": { "mode": "scenario", "fixture": "e2e-billing-mail", "assertDb": true, "cleanup": true, "scenario": "billing-mail-flow" }
     },
@@ -41,7 +41,7 @@
       "summary": "Modulo Mailer del backend: outbox, auditoria de entregas y estado operativo de correo.",
       "auth": "admin",
       "gateway": { "exposure": "tenant-api" },
-      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "externalEffects": { "mail": { "enabledInQa": true, "requiresAllowlist": true } },
       "data": { "fixture": "none", "assertions": ["mailer-service-db-ready", "email-outbox-audited"] },
       "e2e": { "mode": "generic", "fixture": "none", "assertDb": true, "cleanup": false }
     },

@@ -19,9 +19,9 @@ const getArgValue = (name, fallback = undefined) => {
 
 const mode = args.has('--check') ? 'check' : 'write'
 const workspaceRoot = path.resolve(getArgValue('--workspace', path.join(__dirname, '..', '..')))
-const frontendRoot = path.join(workspaceRoot, 'paramascotasec')
+const frontendRoot = path.join(workspaceRoot, 'webparamascotas')
 const frontendAppRoot = path.join(frontendRoot, 'app')
-const backendRoot = path.join(workspaceRoot, 'paramascotasec-backend')
+const backendRoot = path.join(workspaceRoot, 'backend')
 const capabilityDir = path.join(frontendRoot, 'docs', 'capabilities')
 const generatedJsonPath = path.join(frontendRoot, 'docs', 'system-capabilities.generated.json')
 const generatedTsPath = path.join(frontendAppRoot, 'src', 'generated', 'systemCapabilities.ts')
@@ -112,7 +112,7 @@ const flattenCapabilities = (modules) => {
       seen.set(capability.id, module.file)
       capabilities.push({
         domain: module.domain,
-        source: `paramascotasec/docs/capabilities/${module.file}`,
+        source: `webparamascotas/docs/capabilities/${module.file}`,
         ...capability,
       })
     }
@@ -158,7 +158,7 @@ const loadBackendRoutes = () => {
     path: route.path,
     handler: route.handler,
     capabilityId: route.capability,
-    source: 'paramascotasec-backend/config/routes.php',
+    source: 'backend/config/routes.php',
   }))
 }
 
@@ -272,13 +272,13 @@ const assertCapabilityIntegrity = (capabilities, backendRoutes) => {
       }
     }
 
-    const hasExternalMail = capability.externalEffects?.mail?.enabledInDevelopment
+    const hasExternalMail = capability.externalEffects?.mail?.enabledInQa
     if (hasExternalMail && capability.externalEffects?.mail?.requiresAllowlist !== true) {
-      fail(`${capability.id}: correo development requiere allowlist`)
+      fail(`${capability.id}: correo QA requiere allowlist`)
     }
     const sri = capability.externalEffects?.sri
-    if (sri?.environment === 'produccion' && sri.enabledInDevelopment !== false) {
-      fail(`${capability.id}: SRI produccion no puede habilitarse en development`)
+    if (sri?.environment === 'produccion' && sri.enabledInQa !== false) {
+      fail(`${capability.id}: SRI produccion no puede habilitarse en QA`)
     }
     if (sri?.environment === 'pruebas' && sri.forbidProduction !== true) {
       fail(`${capability.id}: SRI pruebas debe declarar forbidProduction`)
@@ -362,7 +362,7 @@ const buildGeneratedJson = (capabilities, backendRoutes, billingApiRoutes, front
 
   return {
     schemaVersion: 1,
-    generatedBy: 'paramascotasec/scripts/generate-system-capabilities.mjs',
+    generatedBy: 'webparamascotas/scripts/generate-system-capabilities.mjs',
     capabilities: generatedCapabilities,
     indexes: {
       backendRoutes,

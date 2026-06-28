@@ -36,7 +36,7 @@
           { "path": "/pages/contact", "samplePath": "/pages/contact", "seo": { "policy": "indexable", "canonical": "self", "sitemap": true } }
         ]
       },
-      "externalEffects": { "mail": { "enabledInDevelopment": true, "requiresAllowlist": true } },
+      "externalEffects": { "mail": { "enabledInQa": true, "requiresAllowlist": true } },
       "data": { "fixture": "e2e-contact-message", "assertions": ["contact-message-stored", "mail-sent-to-allowlist"] },
       "e2e": { "mode": "scenario", "fixture": "e2e-contact-message", "assertDb": true, "cleanup": true, "scenario": "contact-mail-flow" }
     }

@@ -17,8 +17,8 @@ dependencies_ready() {
     && [ -d /app/node_modules/@tailwindcss/postcss ]
 }
 
-# En producción, las dependencias deben venir preempaquetadas en la imagen.
-if [ "$APP_ENV" = "production" ]; then
+# En runtimes estables, las dependencias deben venir preempaquetadas en la imagen.
+if [ "$NODE_ENV" = "production" ] && [ "${FRONTEND_QA_RUNTIME:-stable}" = "stable" ]; then
   if ! dependencies_ready; then
     echo "Faltan dependencias de producción dentro de la imagen."
     exit 1

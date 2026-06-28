@@ -12,19 +12,20 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 ## Mantenimiento de contexto IA
 
 - `AGENTS.md` en la raiz del workspace es la fuente canonica.
-- La copia versionada vive en `paramascotasec/docs/AI_CONTEXT.md`; si hay conflicto, manda este archivo raiz.
+- La copia versionada vive en `webparamascotas/docs/AI_CONTEXT.md`; si hay conflicto, manda este archivo raiz.
 - Al cerrar trabajo importante, actualizar primero `AGENTS.md` y luego sincronizar la copia versionada.
 - Registrar avances en `Historial de trabajo IA` con fecha, objetivo, cambios, decisiones y pendientes. Consolidar entradas antiguas para evitar duplicados temporales.
 - No guardar secretos, passwords, tokens reales, certificados, llaves `.p12` ni datos sensibles de clientes.
-- La raiz `/home/admincenter/contenedores` no es repo Git; los componentes (`paramascotasec`, `paramascotasec-backend`, `Facturador`, `Gateway`, `paramascotasec-DB`) son repos separados.
+- La raiz `/home/admincenter/contenedores` no es repo Git; los proyectos runtime son repos separados: `webparamascotas`, `gatewayapisix`, `backend` y `basesdedatos`.
 
 ## Contexto operativo actual
 
-- Ambiente local vigente: QA local sobre el stack `development`; no asumir `production` salvo pedido explicito del usuario.
+- Ambiente local vigente: QA local con `ENTORNO_MODE=qa`; no asumir `production` salvo pedido explicito del usuario.
 - IP LAN del host virtualizado en este ambiente: `192.168.100.229`.
 - Dominio funcional del QA local: `paramascotasec.com`, resolviendo hacia `192.168.100.229`.
 - Todas las verificaciones funcionales del sitio/API en este entorno deben entrar por APISIX usando el contrato publico y el dominio `paramascotasec.com`; usar puertos internos o sidecars solo para diagnostico explicito.
-- El Gateway development puede exponerse por esa IP segun configuracion de `GATEWAY_BIND_IP`; usar scripts de development para cambios locales, aunque el ambiente operativo se trate como QA.
+- `gatewayapisix` QA puede exponerse por esa IP segun configuracion de `GATEWAY_BIND_IP`; usar los mismos scripts canonicos y cambiar solo `.env`.
+- Estructura canonica del workspace: `webparamascotas` (pagina web), `gatewayapisix` (APISIX), `backend` (API/core y Billing SRI nativo) y `basesdedatos` (PostgreSQL compartido). `dashboard` queda como tooling interno QA/admin; `scripts` y `reports` son soporte operativo.
 
 ## Despliegue critico
 
@@ -34,93 +35,85 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 cd /home/admincenter/contenedores
 
 # Workspace completo:
-./deploy.sh development       # development: certificado autofirmado
-./deploy.sh production        # production: Let's Encrypt
+./deploy.sh
 
-# Servicio individual development:
-./scripts/deploy.sh development db
-./scripts/deploy.sh development billing
-./scripts/deploy.sh development backend
-./scripts/deploy.sh development frontend
-./scripts/deploy.sh development gateway
-
-# Servicio individual production:
-./scripts/deploy.sh production db
-./scripts/deploy.sh production billing
-./scripts/deploy.sh production backend
-./scripts/deploy.sh production frontend
-./scripts/deploy.sh production gateway
+# Servicio individual:
+./scripts/deploy.sh db
+./scripts/deploy.sh backend
+./scripts/deploy.sh frontend
+./scripts/deploy.sh gateway
 
 # Operaciones puntuales:
-RUN_DB_SETUP=1 ./scripts/deploy.sh development backend
+RUN_DB_SETUP=1 ./scripts/deploy.sh backend
 ```
 
-Servicios validos del workspace orquestado: `db`, `billing`, `backend`, `frontend`, `gateway`. `billing` despliega el backend actual donde vive Billing SRI; el repo `Facturador` queda fuera del flujo orquestado normal y no debe desplegarse salvo trabajo legacy/standalone explicitamente solicitado.
-Orden del despliegue completo: DB -> Backend -> Frontend -> Gateway.
-Los scripts materializan el modo activo en `entorno/.env` por componente; `development` y `production` se despliegan por `deploy.sh`. Los wrappers `deploy-development.sh` y `deploy-production.sh` quedan solo como compatibilidad.
-Solo `frontend` y `Dashboard` tienen flujo hot local separado: `paramascotasec/app -> npm run dev` y `Dashboard -> npm start`. Backend, DB y Gateway no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
+Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `gateway`. Billing SRI vive dentro de `backend`; `billing` y `facturador` no son servicios desplegables del workspace.
+Orden del despliegue completo: DB -> Backend -> Frontend -> gatewayapisix.
+Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`). QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
+Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
-- Servicio PostgreSQL compartido: PostgreSQL 18 (`next-test-db`, data dir `postgres18_data`; conserva `postgres16_data` para rollback) con bases logicas por modulo.
+- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas por modulo.
 - Base logica ecommerce actual: `paramascotasec`.
 - Base logica Billing SRI actual: `billing_service`, atendida por `platform-core/Billing`.
-- Store de infraestructura Gateway: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
+- Store de infraestructura gatewayapisix: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
 
 ## Red
 
-El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda para entrada del Gateway; las comunicaciones internas usan redes `internal` y los contenedores con salida externa tienen redes de egreso dedicadas.
+El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda para entrada de gatewayapisix; las comunicaciones internas usan redes `internal` y los contenedores con salida externa tienen redes de egreso dedicadas.
 
 - `apisix-gateway-internal`: APISIX, etcd y webroot ACME interno.
-- `paramascotasec-web-internal`: APISIX Gateway, Frontend y Backend Web.
-- `paramascotasec-db-internal`: Backend App, worker Billing nativo y DB compartida.
-- Redes de egreso no publicadas: Backend App para SMTP; worker Billing nativo para SRI y SMTP.
+- `webparamascotas-internal`: APISIX gatewayapisix, Frontend y `backend-http`.
+- `basesdedatos-internal`: `backend-api`, `backend-sri-worker` y DB compartida.
+- Redes de egreso no publicadas: `backend-api` para SMTP; `backend-sri-worker` para SRI y SMTP.
 - `paramascotasec-services-internal` no pertenece al flujo orquestado actual; APISIX y backend no deben unirse a esa red.
-- Mantener el aislamiento de redes tambien en development: no conectar contenedores internos a `bridge`/egreso temporal como solucion normal. Si una tarea exige egreso para instalar dependencias o diagnosticar, preferir los scripts/imagenes/caches previstos; cualquier excepcion debe ser explicita, temporal, documentada y revertida antes de cerrar.
+- Mantener el aislamiento de redes tambien en QA: no conectar contenedores internos a `bridge`/egreso temporal como solucion normal. Si una tarea exige egreso para instalar dependencias o diagnosticar, preferir los scripts/imagenes/caches previstos; cualquier excepcion debe ser explicita, temporal, documentada y revertida antes de cerrar.
 
 | Servicio | Host interno | Notas |
 |----------|--------------|-------|
-| Backend API | `http://paramascotasec-backend-web:8080/api` | PHP-FPM detras de Nginx |
-| Frontend | `http://paramascotasec-frontend:3000` | Next.js |
+| Backend API | `http://backend-http:8080/api` | Nginx interno delante de PHP-FPM |
+| Frontend | `http://webparamascotas:3000` | Next.js |
 | DB compartida | `db:5432` | PostgreSQL compartido con bases logicas por modulo |
 
 ## Arquitectura
 
 | Componente | Tech | Contenedores |
 |------------|------|--------------|
-| Frontend | Node 24 LTS + Next.js 16 + React 19 + Tailwind CSS 4 + TypeScript 6 | `paramascotasec-app` prod / `paramascotasec-app-dev` dev |
-| Backend | PHP 8.5 MVC propio + PostgreSQL | `paramascotasec-backend-app`, `paramascotasec-backend-web`, `paramascotasec-backend-billing-worker` |
-| Database | PostgreSQL 18 | `next-test-db` |
-| Gateway | APISIX 3.16 + etcd 3.5 + Certbot oficial | `apisix-gateway`, `apisix-etcd`, `apisix-acme-webroot`, `certbot` |
+| Frontend | Node 24 LTS + Next.js 16 + React 19 + Tailwind CSS 4 + TypeScript 6 | `webparamascotas` |
+| Backend | PHP 8.5 MVC propio + PostgreSQL | `backend-api`, `backend-http`, `backend-sri-worker` |
+| Database | PostgreSQL 18 | `basesdedatos` |
+| gatewayapisix | APISIX 3.16 + etcd 3.5 + Certbot oficial | `apisix-gateway`, `apisix-etcd`, `apisix-acme-webroot`, `certbot` |
 
 ## Modularidad orquestada
 
-- El Dashboard es el orquestador visual y operativo; no es duenio de catalogo, pedidos, clientes ni facturas.
+- El dashboard es el orquestador visual y operativo; no es duenio de catalogo, pedidos, clientes ni facturas.
 - Cada modulo real debe soportar dos modos: `individual` y `orquestado`.
-- El registro canonico del orquestador vive en `Dashboard/public/module-registry.json`.
+- El registro canonico del orquestador vive en `dashboard/public/module-registry.json`.
 - Cada modulo real publica su contrato en `module.json`.
-- La relacion entre modulo runtime y modulo contratado/feature del Dashboard vive en `Dashboard/public/tenant-module-topology.json`.
-- `Dashboard/public/system-runtime-topology.json` debe publicar por runtime sus entrypoints, `standalone.requires`, `orchestrated.requires`, `dataOwnershipRules`, `consumesRuntimeApis` y `migrationBoundaries`; `/module-topology` debe leer esa misma capa.
-- `Dashboard/docs/MODULE-EVOLUTION-PLAYBOOK.md` define cuando ampliar un owner actual, cuando crear un runtime nuevo y como extraer un dominio del `platform-core`; `system-runtime-topology.json` debe referenciar esa guia.
+- La relacion entre modulo runtime y modulo contratado/feature del dashboard vive en `dashboard/public/tenant-module-topology.json`.
+- `dashboard/public/system-runtime-topology.json` debe publicar por runtime sus entrypoints, `standalone.requires`, `orchestrated.requires`, `dataOwnershipRules`, `consumesRuntimeApis` y `migrationBoundaries`; `/module-topology` debe leer esa misma capa.
+- `dashboard/docs/MODULE-EVOLUTION-PLAYBOOK.md` define cuando ampliar un owner actual, cuando crear un runtime nuevo y como extraer un dominio del `platform-core`; `system-runtime-topology.json` debe referenciar esa guia.
 - Contrato minimo por modulo integrable: `GET /health`, `GET /module.json`, migraciones propias, backup/restore propio y permisos/capacidades propias.
 - En modo orquestado, `billing-sri` entra por `platform-core/Billing`; no hay runtime fiscal HTTP paralelo ni fallback Facturador.
 - El contrato publico APISIX `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` reescribe a `platform-core/Billing` (`/api/{test|production}/v1/*`) y queda protegido por `X-API-Key` o `Authorization: Bearer`.
 - Regla vigente de persistencia: un solo servicio PostgreSQL y una base logica por modulo/servicio; multiples tenants del mismo modulo comparten esa base logica bajo aislamiento por `tenant_id` o equivalente del owner.
 - Regla vigente de identidad: los usuarios humanos pertenecen al tenant, no al modulo. `IdentityPlatform` es el owner unico de auth, sesiones, recovery, tenants, membresias, roles y permisos; los modulos solo consumen `tenant_id`, `user_id` y permisos `module.action`.
+- Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
 - Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
 - Tipos de identidad vigentes: `platform` para superadmins/recovery TECNOLTS, `tenant_staff` para admins/equipo operativo del tenant, `customer` para compradores ecommerce y `service` para integraciones internas.
 - `/api/users` debe listar solo `tenant_staff` del tenant actual; compradores ecommerce (`customer`) no aparecen como usuarios operativos y superadmins (`platform`) viven en `platform-access`.
-- `paramascotasec-backend` sigue siendo un solo runtime `platform-core`, pero sus dominios principales ya resuelven bases logicas dedicadas: `identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance` y `mailer_service`. La base legacy `paramascotasec` puede existir para bootstrap/compatibilidad, pero no es owner funcional de esos dominios.
+- `backend` sigue siendo un solo runtime `platform-core`, pero sus dominios principales ya resuelven bases logicas dedicadas: `identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance` y `mailer_service`. La base legacy `paramascotasec` puede existir para bootstrap/compatibilidad, pero no es owner funcional de esos dominios.
 - Regla permanente: no crear foreign keys entre DBs de modulos; integrar por IDs estables, snapshots o contratos API. Las tablas FDW cross-domain son compatibilidad temporal para consultas existentes, no un permiso para crear acoplamientos nuevos.
-- Guia detallada: `Dashboard/docs/MODULAR-ORCHESTRATION.md`.
-- En `Dashboard`, `npm run verify` debe incluir `npm run module:check` para romper temprano si deriva el contrato modular publicado.
+- Guia detallada: `dashboard/docs/MODULAR-ORCHESTRATION.md`.
+- En `dashboard`, `npm run verify` debe incluir `npm run module:check` para romper temprano si deriva el contrato modular publicado.
 
-## Frontend `paramascotasec/app`
+## Frontend `webparamascotas/app`
 
 - Entry point: `src/app/layout.tsx`; rutas con Next.js App Router en `src/app/`.
-- Comandos desde `paramascotasec/app`:
+- Comandos desde `webparamascotas/app`:
 
 ```bash
-npm run dev          # hot reload; webpack por defecto, FRONTEND_DEV_BUNDLER=turbopack para Turbopack
+npm run dev          # hot reload local; webpack por defecto, FRONTEND_QA_BUNDLER=turbopack para Turbopack
 npm run build        # build produccion
 npm run lint         # ESLint --max-warnings=0
 npm run typecheck    # tsc --noEmit
@@ -128,11 +121,11 @@ npm run test         # lint + typecheck
 ```
 
 - Prebuild: `npm run images:manifest` antes de dev/build/lint/start; `images:home-performance` e `images:upload-variants` antes de build.
-- Perfiles frontend exclusivos: `development` usa `paramascotasec-app-dev`; `production` usa `paramascotasec-app`. Los scripts remueven el perfil opuesto.
-- Dev runtime de despliegue via `FRONTEND_DEV_RUNTIME=stable`: precompila produccion bajo `APP_ENV=development` detras del gateway con CSP estricta. `hot`/HMR no es un modo valido para el deploy del ambiente; usarlo solo como herramienta local explicita fuera de la validacion por gateway.
-- `paramascotasec/app/package.json` expone `npm run deploy:dev` y `npm run deploy:prod` como alias a `../scripts/deploy.sh development|production`.
+- El contenedor visible del frontend siempre se llama `webparamascotas`; `COMPOSE_PROFILES=qa|production` solo elige el runtime interno de Docker Compose desde `.env`.
+- Runtime estable QA via `FRONTEND_QA_RUNTIME=stable`: precompila bajo `APP_ENV=qa` detras del gateway con CSP estricta. `hot`/HMR no es un modo valido para el deploy del ambiente; usarlo solo como herramienta local explicita fuera de la validacion por gateway.
+- `webparamascotas/app/package.json` expone `npm run deploy` como alias al deploy real del frontend.
 
-## Backend `paramascotasec-backend`
+## Backend `backend`
 
 - Entry point: `public/index.php`.
 - Arquitectura: MVC propio sin framework; Router custom, JWT auth, CORS, CSRF y tenant resolution.
@@ -142,9 +135,9 @@ npm run test         # lint + typecheck
 - `src/Core/ConnectionRegistry.php` resuelve la conexion por dominio usando `config/module-databases.php`; los dominios principales ya apuntan a bases logicas dedicadas (`identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance`, `mailer_service`). La DB legacy `paramascotasec` queda solo para bootstrap/compatibilidad.
 - `src/Modules/Billing/Native/` contiene la logica fiscal nativa para XML, RIDE, SRI, configuracion, sucursales, certificados, mail y recuperacion.
 - `src/Modules/Mailer/` contiene la frontera tecnica de correo del Core API: contacto, outbox, auditoria de entregas y salud operativa sobre `mailer_service`. La feature comercial visible `email-service` sigue planned hasta tener UI/contratos propios.
-- `src/Modules/Billing/Controllers/PublicBillingController.php` atiende el contrato fiscal publico compatible `/api/{test|production}/v1/*` dentro del backend, sin sesion Dashboard y autenticado por API key fiscal.
+- `src/Modules/Billing/Controllers/PublicBillingController.php` atiende el contrato fiscal publico compatible `/api/{test|production}/v1/*` dentro del backend, sin sesion dashboard y autenticado por API key fiscal.
 - `BillingGatewayFactory` usa solo `BILLING_GATEWAY_DRIVER=native`; `native_fallback` y `facturador_http` deben fallar si reaparecen en configuracion.
-- El worker fiscal del backend vive en `scripts/process_billing_recovery.php` y corre como contenedor `paramascotasec-backend-billing-worker`; respeta minimo `3600` segundos entre reintentos.
+- El worker fiscal del backend vive en `scripts/process_billing_recovery.php` y corre como contenedor `backend-sri-worker`; respeta minimo `3600` segundos entre reintentos.
 - `src/Modules/IdentityPlatform/Application/TenantAccessService.php` es la regla central para modulos contratados, permisos `module.action`, identidad platform/tenant/customer/service y bloqueo de rutas operativas por modulo.
 - `Auth::requireAdmin()` en el backend legacy significa "identidad gestionada de tenant o plataforma"; los permisos reales se deciden despues por `TenantAccessService`, no por el campo legacy `User.role`.
 - Bootstrap DB: `scripts/bootstrap_schema.php`, ejecutado con `RUN_DB_SETUP=1`.
@@ -155,56 +148,57 @@ npm run test         # lint + typecheck
 - Billing SRI vive dentro de `platform-core`; no debe ser llamado como servicio paralelo por frontends, APISIX ni backend.
 - API principal publica por backend: `POST /api/{env}/v1/invoices`, `GET /api/{env}/v1/invoices/{accessKey}/status`, XML/RIDE y configuracion fiscal registrada en rutas del modulo Billing.
 - Auth publica fiscal: `X-API-Key` o `Authorization: Bearer`, usando `BILLING_API_KEY`/keys registradas en `billing_service`.
-- Worker: `php scripts/process_billing_recovery.php --limit=50 --min-age-seconds=3600`, ejecutado por `paramascotasec-backend-billing-worker`.
+- Worker: `php scripts/process_billing_recovery.php --limit=50 --min-age-seconds=3600`, ejecutado por `backend-sri-worker`.
 - Base logica propia: `billing_service` en `db:5432`.
-- Certificados `.p12` cargados por Billing nativo se guardan bajo `paramascotasec-backend/storage/billing/certs`.
-- Acceso publico fiscal entra por Gateway bajo `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/health` y `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`; APISIX reescribe a `/health` y `/api/{test|production}/v1/*` dentro del backend.
-- SRI por entorno: desarrollo usa `pruebas` (`celcer.sri.gob.ec`) y produccion usa `produccion` (`cel.sri.gob.ec`).
-- En QA/desarrollo puede restaurarse una base de produccion para diagnostico. En ese caso pueden existir facturas con `ambiente=produccion`, pero el entorno debe seguir usando SRI pruebas; no cambiar endpoints a produccion ni consultar SRI produccion desde QA. Las consultas de estado deben preservar la autorizacion local de esas facturas restauradas.
+- Certificados `.p12` cargados por Billing nativo se guardan bajo `backend/storage/billing/certs`.
+- Acceso publico fiscal entra por gatewayapisix bajo `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/health` y `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`; APISIX reescribe a `/health` y `/api/{test|production}/v1/*` dentro del backend.
+- SRI por entorno: QA usa `pruebas` (`celcer.sri.gob.ec`) y produccion usa `produccion` (`cel.sri.gob.ec`).
+- En QA puede restaurarse una base de produccion para diagnostico. En ese caso pueden existir facturas con `ambiente=produccion`, pero el entorno debe seguir usando SRI pruebas; no cambiar endpoints a produccion ni consultar SRI produccion desde QA. Las consultas de estado deben preservar la autorizacion local de esas facturas restauradas.
 - Los eventos internos de Billing (`invoice.emitted`, `invoice.authorized`, `invoice.rejected`) se persisten en `billing_service.billing_domain_events` desde el dispatcher nativo; una falla del registro de evento no debe bloquear emision ni consulta de estado.
-- El correo fiscal puede venir de la configuracion de sucursal en DB; `paramascotasec-backend-billing-worker` requiere egreso SMTP cuando haya sucursales con mail activo.
+- El correo fiscal puede venir de la configuracion de sucursal en DB; `backend-sri-worker` requiere egreso SMTP cuando haya sucursales con mail activo.
 
-## Gateway
+## gatewayapisix
 
 - Fragil para SSL, perfiles y reglas dinamicas: nunca levantar manualmente con `docker compose up`.
-- Usar `./scripts/deploy.sh development gateway` o `./scripts/deploy.sh production gateway` desde la raiz del workspace, o `Gateway/scripts/deploy.sh <modo>` desde el repo del componente.
-- APISIX se configura desde `Gateway/entorno/.env`; no hardcodear dominio, tenant, base path ni upstream en rutas.
+- Usar `./scripts/deploy.sh gateway` desde la raiz del workspace, o `gatewayapisix/scripts/deploy.sh` desde el repo del componente.
+- APISIX se configura desde `gatewayapisix/entorno/.env`; no hardcodear dominio, tenant, base path ni upstream en rutas.
 - Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
 - En QA local actual, probar ese contrato por `https://paramascotasec.com/` y, si el DNS/hosts del cliente no resuelve al host virtualizado, usar `--resolve paramascotasec.com:443:192.168.100.229` en `curl`.
+- Certificados QA locales: `gatewayapisix/scripts/setup-ssl-local.sh` genera una CA local `gatewayapisix/entorno/certs/local-ca.crt` y un certificado de servidor para `paramascotasec.com`; instalar solo `local-ca.crt` en PCs cliente. Nunca copiar `local-ca.key`; copiar certificados de production a QA requiere decision explicita porque implica mover `privkey.pem` de production.
 - Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
 - Rutas legacy publicas `/api/*`, `/facturador/*` y `/uploads-api/*` quedan bloqueadas por APISIX.
 - `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed. Para APIs backend lee `config/routes.php` y `src/Modules/*/routes.php`; excluye `/api/{apiMode}/v1/*` porque Billing publico tiene rutas APISIX explicitas hacia `platform-core`.
-- Dashboard local de APISIX: `http://${APISIX_ADMIN_BIND_IP}:${APISIX_ADMIN_PORT}/ui/` (development actual: `127.0.0.1:9180`).
-- En desarrollo `GATEWAY_BIND_IP` debe apuntar a localhost/LAN; en produccion publica solo `80/443`.
+- UI local de APISIX: `http://${APISIX_ADMIN_BIND_IP}:${APISIX_ADMIN_PORT}/ui/` (QA actual: `127.0.0.1:9180`).
+- En QA `GATEWAY_BIND_IP` debe apuntar a localhost/LAN; en produccion publica solo `80/443`.
 - `certbot` corre solo en produccion via perfil `certbot`.
 - Renovacion manual:
 
 ```bash
-cd Gateway && ./scripts/renew-letsencrypt.sh
+cd gatewayapisix && ./scripts/renew-letsencrypt.sh
 ```
 
 ## Verificacion
 
 ```bash
 scripts/check-paramascotas.sh    # capability registry + frontend lint/typecheck + backend PHP syntax + backend health
-php paramascotasec-backend/scripts/check_modular_routes.php # handlers HTTP bajo src/Modules sin App\Controllers legacy
-docker exec paramascotasec-backend-app php scripts/check_module_databases.php # ownership real de bases logicas
-node Dashboard/tools/check-module-manifests.mjs
+php backend/scripts/check_modular_routes.php # handlers HTTP bajo src/Modules sin App\Controllers legacy
+docker exec backend-api php scripts/check_module_databases.php # ownership real de bases logicas
+node dashboard/tools/check-module-manifests.mjs
 scripts/check-env-secrets.sh all # preflight .env/secrets sin imprimir valores
-scripts/check-container-connectivity.sh development
+scripts/check-container-connectivity.sh qa
 scripts/check-container-connectivity.sh production
-scripts/e2e-development.sh       # suite development: contracts, checks, SEO, Billing y probes Gateway
+scripts/e2e-qa.sh                # suite QA: contracts, checks, SEO, Billing y probes gatewayapisix
 
-cd paramascotasec/app
+cd webparamascotas/app
 npm run capabilities:check       # valida registro maestro de capacidades
 npm run capabilities:generate    # regenera docs/system-capabilities.generated.json y helper TS
 ```
 
-`check-container-connectivity.sh` tambien valida que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelva productos publicos y que las rutas legacy `/api/*`, `/facturador/*` y `/uploads-api/*` respondan 404. Un deploy dev/prod debe fallar si el catalogo publico queda vacio; en development solo se permite sembrar datasets demo con `SEED_DEVELOPMENT_CATALOG=1`, no por defecto. `check-container-connectivity.sh production` valida el runtime de produccion; no correrlo esperando exito mientras el workspace esta desplegado en development. Para cambios acotados, correr tambien checks del componente afectado cuando aplique.
+`check-container-connectivity.sh` tambien valida que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelva productos publicos y que las rutas legacy `/api/*`, `/facturador/*` y `/uploads-api/*` respondan 404. Un deploy QA/production debe fallar si el catalogo publico queda vacio; en QA solo se permite sembrar datasets demo con `SEED_QA_CATALOG=1`, no por defecto. `check-container-connectivity.sh production` valida el runtime de produccion; no correrlo esperando exito mientras el workspace esta desplegado en QA. Para cambios acotados, correr tambien checks del componente afectado cuando aplique.
 
-`paramascotasec-backend/scripts/check_module_databases.php` valida que `ConnectionRegistry` resuelva cada dominio a su base dedicada, que las tablas owner sean locales, que las tablas ajenas de compatibilidad sean foreign tables FDW y que no existan foreign keys fisicas entre dominios. `scripts/check-paramascotas.sh` y `scripts/check-container-connectivity.sh` lo ejecutan desde el contenedor backend.
+`backend/scripts/check_module_databases.php` valida que `ConnectionRegistry` resuelva cada dominio a su base dedicada, que las tablas owner sean locales, que las tablas ajenas de compatibilidad sean foreign tables FDW y que no existan foreign keys fisicas entre dominios. `scripts/check-paramascotas.sh` y `scripts/check-container-connectivity.sh` lo ejecutan desde el contenedor backend.
 
-El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.json`; el manifiesto generado queda en `paramascotasec/docs/system-capabilities.generated.json` y el helper frontend en `paramascotasec/app/src/generated/systemCapabilities.ts`. Toda ruta backend nueva debe registrarse en `paramascotasec-backend/config/routes.php` o `src/Modules/*/routes.php` con `capability`. Si una pagina, route handler o uso API queda fuera del registro, `npm run capabilities:check` debe fallar.
+El registro maestro de capacidades vive en `webparamascotas/docs/capabilities/*.json`; el manifiesto generado queda en `webparamascotas/docs/system-capabilities.generated.json` y el helper frontend en `webparamascotas/app/src/generated/systemCapabilities.ts`. Toda ruta backend nueva debe registrarse en `backend/config/routes.php` o `src/Modules/*/routes.php` con `capability`. Si una pagina, route handler o uso API queda fuera del registro, `npm run capabilities:check` debe fallar.
 
 ## Reglas de negocio criticas
 
@@ -214,13 +208,13 @@ El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.j
 - Descuentos: server-side; tipos porcentaje o fijo; soportan `min_subtotal`, `max_discount`, `max_uses`.
 - Consumidor final: `9999999999999` solo se permite hasta USD 50.00 oficiales. Ventas mayores deben tener cedula o RUC valido del cliente; backend/Billing bloquean el caso antes de emitir.
 - Inventario FIFO: `inventory_lots` rastrea lotes de compra; ordenes consumen lotes antiguos primero; costos se restauran al cancelar.
-- Sitio publico: dominio principal, alias y tenant salen de `.env` del Gateway; en development actual son `paramascotasec.com`, `www.paramascotasec.com` y `paramascotasec`. Dominios ajenos deben quedar rechazados o redirigidos por APISIX segun reglas.
+- Sitio publico: dominio principal, alias y tenant salen de `.env` de gatewayapisix; en QA actual son `paramascotasec.com`, `www.paramascotasec.com` y `paramascotasec`. Dominios ajenos deben quedar rechazados o redirigidos por APISIX segun reglas.
 
 ## Seguridad
 
 - Auth: JWT HS256 en cookie httpOnly y Bearer opcional. Payload: `sub`, `email`, `name`, `role`, `tenant_id`, `jti`.
 - CSRF: requerido para mutaciones API excepto auth/contact/health/quote. Header `X-CSRF-Token` debe coincidir con cookie `pm_csrf`.
-- Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren identidad gestionada (`platform` o `tenant_staff`) y allowlist IP (`ADMIN_IP_MODE=private` por defecto en dev/prod; usar `custom` para IP publica fija). El acceso funcional se valida despues por permisos `module.action` desde `TenantAccessService`.
+- Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren identidad gestionada (`platform` o `tenant_staff`) y allowlist IP (`ADMIN_IP_MODE=private` por defecto en QA/produccion; usar `custom` para IP publica fija). El acceso funcional se valida despues por permisos `module.action` desde `TenantAccessService`.
 - Bloqueo de cuenta: despues de `AUTH_LOGIN_MAX_ATTEMPTS` (default 5), bloqueo por `AUTH_LOGIN_LOCK_MINUTES` (default 15).
 - MFA: OTP por email para admins (`request-otp`, `verify-otp`).
 - Proxy interno: `INTERNAL_PROXY_TOKEN` permite auth inter-contenedores sin login.
@@ -229,18 +223,18 @@ El registro maestro de capacidades vive en `paramascotasec/docs/capabilities/*.j
 
 ```bash
 # Reset de ventas solamente: preserva clientes, catalogo y config.
-cd paramascotasec-backend
-./scripts/reset_sales_data.sh development --yes
+cd backend
+./scripts/reset_sales_data.sh qa --yes
 
 # Wipe completo + redeploy:
 docker stop $(docker ps -aq) 2>/dev/null || true
 docker rm -f $(docker ps -aq) 2>/dev/null || true
 docker system prune -a --volumes -f
-rm -rf paramascotasec-DB/postgres18_data paramascotasec-DB/postgres18_development_data
-./scripts/deploy.sh development db
-RUN_DB_SETUP=1 SEED_DEVELOPMENT_CATALOG=1 ./scripts/deploy.sh development backend
-./scripts/deploy.sh development frontend
-./scripts/deploy.sh development gateway
+rm -rf basesdedatos/postgres18_data basesdedatos/postgres18_qa_data
+./scripts/deploy.sh db
+RUN_DB_SETUP=1 SEED_QA_CATALOG=1 ./scripts/deploy.sh backend
+./scripts/deploy.sh frontend
+./scripts/deploy.sh gateway
 ```
 
 Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando el objetivo dependa de ellas y haya confirmacion clara.
@@ -252,9 +246,184 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Sitemap: `/sitemap.xml`, generado desde `app/sitemap.ts`.
 - Google Products Feed: `/feeds/google-products.xml` RSS 2.0.
 - Search Console, estado mayo 2026: 1 URL indexada, 98 no indexadas, sitemap no detectado.
-- Guia SEO/Google: `paramascotasec/SEO-GOOGLE-SETUP.md`.
+- Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-28 - Gateway QA: CA local instalable para navegador
+
+Objetivo: eliminar el aviso de certificado inseguro en PCs cliente sin copiar llaves privadas de production al QA.
+
+Cambios:
+- `gatewayapisix/scripts/setup-ssl-local.sh` ahora genera una CA local QA (`local-ca.crt`/`local-ca.key`) y firma `local-cert.crt` para `paramascotasec.com`, `www.paramascotasec.com` y las IPs locales declaradas.
+- El certificado de servidor queda emitido por `ParamascotasEC QA Local CA`; el cliente debe instalar solo `gatewayapisix/entorno/certs/local-ca.crt` en el trust store local.
+- `gatewayapisix/scripts/setup-letsencrypt.sh` valida el challenge HTTP-01 antes de llamar a ACME; `renew-letsencrypt.sh` usa `entorno/.env`; `sync-certs.sh` valida dominio, expiracion y correspondencia llave-certificado antes de instalar.
+- `gatewayapisix/README.md` documenta instalacion en Windows y deja la copia de certificados production como alternativa no preferida y explicitamente riesgosa.
+
+Verificacion:
+- Paso `openssl verify -CAfile gatewayapisix/entorno/certs/local-ca.crt gatewayapisix/entorno/certs/local-cert.crt`.
+- `curl --cacert gatewayapisix/entorno/certs/local-ca.crt --resolve paramascotasec.com:443:192.168.100.229 https://paramascotasec.com/` devuelve 200.
+- Paso `./scripts/check-container-connectivity.sh qa`; conserva solo la advertencia esperada hasta instalar la CA local en el sistema cliente.
+
+### 2026-06-28 - Identidad platform separada del tenant Paramascotas
+
+Objetivo: corregir la cuenta `evasquez@tecnolts.com` para que sea superadmin de plataforma/tenants y no administrador operativo de Paramascotas.
+
+Cambios:
+- `backend/src/Repositories/UserRepository.php` permite resolver identidades globales `tenant_id=platform` durante login, MFA, sesion, token activo y bloqueo de cuenta desde el dominio de un tenant.
+- La cuenta `evasquez@tecnolts.com` queda en `identity_platform."User"` con `tenant_id=platform`, `profile.identityType=platform` y `roleIds=["platform_admin"]`.
+- Se eliminaron membresia y rol asignado de esa cuenta sobre `paramascotasec`; se mantiene solo membresia/rol `platform_admin` en el tenant tecnico `platform`.
+
+Verificacion:
+- Login completo con MFA devuelve contexto `roleIds=["platform_admin"]` y permisos `["platform-admin"]`.
+- `GET /paramascotasec/api/admin/tenants` responde 200 para la sesion platform.
+- `GET /paramascotasec/api/users` no lista `evasquez@tecnolts.com`.
+- Paso `php -l backend/src/Repositories/UserRepository.php`, `git -C backend diff --check` y `./scripts/check-container-connectivity.sh qa`.
+
+### 2026-06-28 - Backend runtime con nombres por responsabilidad
+
+Objetivo: aclarar que `backend` es un solo proyecto con tres procesos operativos distintos, evitando nombres ambiguos como `backend-app`, `backend-web` y `backend-billing-worker`.
+
+Cambios:
+- El compose del backend pasa a servicios `api`, `http` y `sri-worker`, con contenedores `backend-api`, `backend-http` y `backend-sri-worker`.
+- La imagen runtime PHP pasa a llamarse `backend-api`; el worker SRI usa esa misma imagen porque ejecuta el mismo codigo del backend en modo proceso asincrono.
+- Los upstreams internos de gatewayapisix, webparamascotas y dashboard pasan a `http://backend-http:8080/api`, manteniendo `backend-api` aislado como PHP-FPM interno.
+- Los checks raiz validan los nombres nuevos y rechazan que reaparezcan `backend-app`, `backend-web` o `backend-billing-worker`.
+
+Decisiones:
+- No se fusionan contenedores: la separacion API HTTP/worker fiscal sigue siendo correcta para salud, seguridad, reintentos SRI y aislamiento de egreso.
+- No se renombran usuarios, bases logicas ni rutas publicas; el cambio es de runtime Docker/DNS interno.
+
+Verificacion:
+- Se redeplegaron backend, webparamascotas, dashboard y gatewayapisix.
+- `docker ps -a` queda con `backend-api`, `backend-http` y `backend-sri-worker`; no quedan `backend-app`, `backend-web` ni `backend-billing-worker`.
+- Pasaron `bash -n`, `git diff --check`, `node dashboard/tools/check-module-manifests.mjs`, `npm run docker:health` en dashboard, `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh` y `./scripts/e2e-qa.sh`.
+
+### 2026-06-28 - Nombres runtime sin sufijos de ambiente
+
+Objetivo: eliminar nombres visibles que mezclaban proyecto y ambiente, renombrar la carpeta de la web a `webparamascotas`, bajar `Dashboard` a `dashboard` y dejar el frontend con un unico nombre de contenedor/imagen valido para QA y produccion.
+
+Cambios:
+- Se renombro la carpeta `paramascotasec` a `webparamascotas` y `Dashboard` a `dashboard`, preservando `.git` y cambios locales.
+- El frontend queda visible como contenedor/imagen/host Docker `webparamascotas`; `paramascotasec-app`, `paramascotasec-app-qa` y `paramascotasec-app-dev` quedan solo como nombres legacy que los checks rechazan.
+- PostgreSQL compartido queda visible como contenedor `basesdedatos`; `next-test-db` queda solo como nombre legacy removido por el deploy de DB.
+- La red compartida web pasa a `webparamascotas-internal`; backend, gatewayapisix, dashboard y webparamascotas la consumen sin nombrar ambiente.
+- `FRONTEND_UPSTREAM` y el proxy de uploads del dashboard apuntan a `http://webparamascotas:3000`.
+- Se mantiene intacto el contrato publico `paramascotasec.com`, el tenant slug `/paramascotasec` y la base logica `paramascotasec`; esos nombres son datos/URL publicas, no carpetas ni contenedores.
+
+Verificacion:
+- Paso `./deploy.sh` completo y `npm run docker:up` en `dashboard`.
+- `docker ps -a` queda sin `paramascotasec-app*`, `next-test-db`, `billing-*`, `facturador-*` ni `dashboard-dashboard`; los contenedores activos visibles son `webparamascotas`, `basesdedatos`, `backend-*`, `apisix-*` y `dashboard`.
+- Pasaron `bash -n` de scripts tocados, `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh`, `./scripts/check-seo-gateway.sh qa`, `./scripts/e2e-qa.sh`, `node dashboard/tools/check-module-manifests.mjs` y `npm run docker:health` en `dashboard`.
+- Se eliminaron imagenes legacy y redes `paramascotasec-*`; se preservaron volumenes PostgreSQL legacy de Facturador por politica de no borrar datos/facturas.
+
+### 2026-06-28 - QA canonico y renombre de proyectos runtime
+
+Objetivo: dejar QA como unico modo no productivo, eliminar el alias operativo heredado y publicar los proyectos fisicos canonicos `gatewayapisix` y `basesdedatos`.
+
+Cambios:
+- Se renombraron las carpetas runtime conservando `.git`, cambios locales y datos: `gatewayapisix` y `basesdedatos`.
+- La data QA de PostgreSQL se preservo bajo `basesdedatos/postgres18_qa_data`; la red interna de DB pasa a `basesdedatos-internal`.
+- Se eliminaron wrappers de deploy por ambiente y scripts de migracion de `.env` legacy; los scripts activos leen `qa|production` solo desde `.env`.
+- El frontend QA usa `COMPOSE_PROFILES=qa`, `FRONTEND_QA_RUNTIME=stable` y contenedor visible `webparamascotas`.
+- dashboard queda como tooling interno con `APP_ENV=qa` y configuracion Angular `qa`; las topologias publicadas usan `gatewayapisix` y `basesdedatos`.
+- `gatewayapisix` trata `apisix-gateway-internal` y `apisix_etcd_data` como recursos externos creados por script para preservar estado y evitar labels heredados del proyecto anterior.
+
+Verificacion:
+- Paso `./deploy.sh` completo: DB -> Backend -> Frontend -> gatewayapisix.
+- Paso `./scripts/deploy.sh gateway` sin advertencias de recursos heredados.
+- Pasaron `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh` y `node dashboard/tools/check-module-manifests.mjs`.
+- Paso `./scripts/check-seo-gateway.sh qa` y `./scripts/e2e-qa.sh`; el reporte quedo en `reports/e2e/qa/capability-e2e-report.json`.
+- Los comandos con alias heredado fallan con uso canonico: `./deploy.sh <alias>`, `./scripts/deploy.sh <alias> backend` y `./scripts/check-env-secrets.sh <alias>`.
+- `docker ps -a` no muestra contenedores `billing-*`, `facturador-*` ni `paramascotasec-app*`; el frontend activo es `webparamascotas`.
+
+### 2026-06-27 - QA y produccion unificados por `.env`
+
+Objetivo: eliminar argumentos de ambiente en deploy y hacer que QA y produccion usen exactamente los mismos scripts, diferenciandose solo por `entorno/.env`.
+
+Cambios:
+- `./deploy.sh` despliega el workspace completo y `./scripts/deploy.sh db|backend|frontend|gateway` despliega servicios individuales leyendo `ENTORNO_MODE=qa|production` desde los `.env` activos.
+- Los deploys de `backend`, `gatewayapisix`, `paramascotasec` y `basesdedatos` no reciben modo; no hay wrappers operativos por ambiente.
+- Se agregan guardrails para QA (`SRI_ENVIRONMENT=pruebas`, segmento fiscal `test`, bind no publico) y produccion (`SRI_ENVIRONMENT=produccion`, segmento `production`, `GATEWAY_BIND_IP=0.0.0.0`, Let's Encrypt real).
+- Los validadores y E2E canonicos usan `qa|production`; el alias heredado queda rechazado.
+
+### 2026-06-27 - Workspace ordenado en cuatro proyectos runtime
+
+Objetivo: alinear la estructura fisica y la documentacion activa con la arquitectura vigente: pagina web, gateway APISIX, backend/core y base de datos compartida.
+
+Cambios:
+- `Facturador` se archivo fuera de la raiz del workspace en `/home/admincenter/secure-backups/legacy/Facturador/20260627T230501Z/`, preservando `.git`, cambios locales y un manifiesto de rollback.
+- La estructura canonica queda como cuatro proyectos runtime: `paramascotasec`, `gatewayapisix`, `backend` y `basesdedatos`; `Dashboard` queda documentado como tooling interno QA/admin.
+- Los scripts raiz dejan de publicar `billing` como servicio valido; `billing` y `facturador` fallan con mensaje que dirige a desplegar `backend`.
+- La documentacion operativa activa elimina comandos de deploy/restore de `Facturador`; Billing SRI queda declarado solo dentro de `backend/platform-core`.
+
+Verificacion:
+- Pasaron `bash -n` sobre scripts raiz/checks tocados.
+- Los comandos de `billing` y `facturador` fallan con mensaje dirigido a desplegar `backend`.
+- Pasaron `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh`, `node Dashboard/tools/check-module-manifests.mjs`, `jq empty` sobre topologias JSON tocadas y `git diff --check` en `Dashboard` y `paramascotasec`.
+
+### 2026-06-27 - Dashboard QA: retiro operativo de superficies legacy no vigentes
+
+Objetivo: sacar del runtime publicado del Dashboard las superficies legacy que ya no forman parte del QA operativo, reducir deriva entre navegacion real y topologia tenantizada, y alinear las pruebas E2E con el estado vigente.
+
+Cambios:
+- Se elimina la ruta y la implementacion legacy `paramascotas-backend` del Dashboard, incluyendo pagina, facade, servicio API/modelo asociados y su spec E2E dedicada.
+- La navegacion tenant deja de publicar `Workspace` y el resumen legacy de Paramascotas; el catalogo tenant conserva `workspace` solo como compatibilidad tecnica, sin permisos operativos ni oferta comercial vigente.
+- `workspace` deja de exponerse como superficie publicada del runtime: `app-route-sources.ts` ya no publica rutas activas para ese source, `workspace.routes.ts` queda solo como metadata de compatibilidad interna, `tenant-module-topology.json` lo marca como planned/no operativo y `backend/module.json` deja de proyectarlo como modulo tenantizado activo.
+- Se ajustan pruebas reales del Dashboard para el estado vigente del QA: helper robusto para expansion del sidebar, fixtures de cotizaciones sensibles a fecha real del ambiente, redirects SRI/auth actualizados y remocion de expectativas sobre rutas legacy.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run arch:check`, `npm run module:check` y `git diff --check` en `Dashboard`.
+- `npm run e2e` quedo en `237` pruebas pasando y `1` fallando; el unico fallo residual era la prueba movil del sidebar que seguia cerrando un grupo ya expandido por defecto.
+- Tras corregir ese caso, paso el rerun focal `npm run e2e -- --grep "paramascotas mobile sidebar expands submenu links and navigates|paramascotas desktop sidebar submenus navigate under the public dashboard base path|paramascotas quotations can close expired quotes without deleting history"` con `3/3` pruebas.
+
+Pendientes:
+- Si se necesita certificado completo `238/238` despues del ultimo ajuste del sidebar movil, rerunear `npm run e2e` completo; no se repitio la suite entera despues de ese parche final.
+
+### 2026-06-27 - QA local: auditoria integral, Billing publico corregido y residuos acotados
+
+Objetivo: auditar el ambiente QA `development` completo por APISIX, validar integridad operacional real del stack y corregir los fallos concretos detectados en Billing publico/gateway antes de cerrar la revision.
+
+Cambios:
+- Se confirma operativamente que los probes manuales del QA deben usar `--resolve paramascotasec.com:443:192.168.100.229` cuando el host del operador siga resolviendo `paramascotasec.com` al IP publico `80.241.213.31`; sin ese override se termina auditando otro front door y no el QA local.
+- `backend/scripts/common.sh` prepara permisos consistentes sobre `storage/billing` para que `backend-app` lea certificados `.p12` y escriba XML/RIDE sin ajustes manuales posteriores al deploy.
+- `scripts/check-env-secrets.sh` valida no solo que exista el `.p12`, sino que el password guardado permita abrirlo desde el runtime real `backend-app`.
+- `Gateway/scripts/sync-apisix.sh` deja las rutas Billing publicas robustas en APISIX sin perder `billing-deny`; la auditoria de seguridad del gateway vuelve a quedar limpia.
+- `backend/src/Modules/Billing/Infrastructure/NativeBillingGateway.php` permite regenerar RIDE local en QA para comprobantes restaurados con `ambiente=produccion` reutilizando configuracion segura `pruebas` sin consultar SRI produccion.
+- `backend/src/Modules/Billing/Native/Billing/Application/Dto/Request/EmitInvoiceRequest.php` ahora acepta tanto payload plano (`customer_*`) como payload con `customer.{identification,name,address,email}` y mapea `source_reference` top-level hacia `additional_info.order_id`.
+- `backend/src/Modules/Billing/Native/Billing/Application/UseCases/EmitInvoice.php` responde usando la fila persistida despues del flujo de emision, alineando el `201` con el estado realmente guardado.
+
+Verificacion:
+- Pasaron `scripts/check-container-connectivity.sh development`, `Gateway/scripts/check-apisix-security.sh development`, `scripts/check-env-secrets.sh development`, `docker exec backend-app php /var/www/html/scripts/check_module_databases.php` y `scripts/e2e-development.sh`.
+- Por el contrato publico QA local se verifico `GET /paramascotasec/facturacion/health`, `GET /.../invoices/source/{source}`, `GET /.../invoices/{accessKey}/status`, descarga de XML autorizado y generacion/descarga de `ride.pdf`.
+- Quedo validado un RIDE restaurado autorizado en QA local: `2706202601175968768200120010010000001365309955916` ya sirve XML y PDF por APISIX despues del redeploy del backend.
+- Se valido que el API publico de emision vuelve a aceptar el payload anidado expuesto por el Dashboard y que `source_reference` ya se persiste/consulta correctamente.
+
+Pendientes:
+- Las emisiones nuevas contra SRI pruebas no son totalmente estables: existe un comprobante que sigue `EN PROCESAMIENTO` y otro devolvio `DEVUELTA` por `ERROR SECUENCIAL REGISTRADO`, aunque el contrato HTTP ya responde y persiste de forma consistente.
+- `Dashboard` mantiene una deriva E2E propia fuera del check global del workspace: `npm run e2e` termino con `253` pruebas pasando y `14` fallando, concentradas en fixtures/legacy routes (`sign-in`, `auth/callback`, `calendar-main`, `invoice-add`), navegacion/sidebar y algunos flujos UI de catalogos/cotizaciones que deben revisarse aparte antes de declarar el Dashboard completamente limpio.
+
+### 2026-06-27 - Limpieza de residuos legacy y rename operativo de `paramascotasec-backend` a `backend`
+
+Objetivo: retirar residuos del runtime legacy `Facturador` y renombrar el componente backend del workspace a un nombre generico acorde a su rol real como core API de multiples servicios.
+
+Cambios:
+- Se bajo y removio el stack legacy `Facturador` con `docker compose down --remove-orphans`, incluyendo contenedores detenidos y proxies locales residuales.
+- El repo local pasa a llamarse `backend` dentro del workspace; se actualizan referencias activas en scripts raiz, Gateway, Frontend, Dashboard, Facturador standalone, DB shared config y documentacion operativa vigente.
+- El runtime Docker del core API pasa a usar `backend-app`, `backend-web` y `backend-billing-worker`; los upstreams internos y ejemplos de URL quedan alineados a `http://backend-web:8080`.
+- Se actualizaron los `.env` reales del QA local (`Gateway/entorno/.env`, `paramascotasec/entorno/.env`, `Dashboard/.env`) para que el ambiente activo no siga resolviendo al host viejo.
+- `scripts/show-admin-recovery-code.sh` deja de apuntar al `.env` legacy del repo y ahora lee `backend/entorno/.env`, consistente con la estructura vigente.
+
+Decisiones:
+- El rename cubre carpeta local, contenedores, upstreams y rutas de trabajo actuales; no se renombraron usuarios/roles de base de datos como `paramascotasec_backend_app` para evitar churn innecesario de secretos y privilegios.
+- Las entradas historicas previas conservan menciones al nombre antiguo cuando describen estados pasados; las secciones vigentes y el nuevo historial ya usan `backend`.
+
+Pendientes:
+- Si existen automatizaciones externas fuera de `/home/admincenter/contenedores` que apunten a `paramascotasec-backend`, deben actualizarse manualmente porque el workspace ya opera con `backend`.
+
+Verificacion:
+- `docker ps -a` quedo sin contenedores `Facturador` despues del cleanup.
+- Se validaron y actualizaron las referencias activas de runtime antes del redeploy focal del backend, frontend y gateway.
 
 ### 2026-06-26 - Deploy scripts unificados y documentacion de despliegue corregida
 
@@ -1163,7 +1332,7 @@ Objetivo: evitar que la documentacion visible contradiga la arquitectura actual,
 
 Cambios:
 - `Dashboard/docs/diagrams/paramascotas-containers-network.html` deja de mostrar `billing-nginx`, `billing-service`, puerto local `127.0.0.1:8084` y DB fiscal paralela como flujo activo.
-- El diagrama ahora presenta `platform-core/Billing`, `Billing\\Native`, `paramascotasec-backend-billing-worker` y `billing_service @ next-test-db`.
+- El diagrama ahora presenta `platform-core/Billing`, `Billing\\Native`, `paramascotasec-backend-billing-worker` y `billing_service @ basesdedatos`.
 - `MODULAR-ORCHESTRATION.md` aclara que `Facturador/module.json` puede existir como referencia legacy/standalone historica, pero no como runtime activo del modo orquestado.
 
 Operacion y verificacion:
@@ -1447,12 +1616,12 @@ Cambios:
 - `paramascotasec-DB/scripts/common.sh` ahora sincroniza roles, grants y bases por modulo; se agregan `scripts/sync-module-databases.sh` y `scripts/migrate-facturador-db-to-shared.sh` para orquestar la creacion de bases logicas y la migracion desde el `billing-postgres` legacy.
 - `paramascotasec-backend/scripts/create_tenant_dbs.sh` queda deprecado a proposito: ya no se permite una base por tenant; el aislamiento correcto pasa a ser por modulo y tenancy interno del owner.
 - `Facturador/docker-compose.yml`, `docker-compose.development.yml`, `scripts/common.sh`, `scripts/backup-and-stop.sh`, `scripts/restore-from-backup.sh`, `templates/entorno/.env.example` y `src/Shared/Infrastructure/Persistence/PostgresConnection.php` se reconectan al PostgreSQL compartido `db:5432`, manteniendo a Facturador aislado por ownership pero ya no por contenedor PostgreSQL propio.
-- `scripts/deploy-workspace.sh`, `scripts/check-container-connectivity.sh`, `scripts/check-env-secrets.sh` y `scripts/rotate-owned-secrets.sh` se actualizan para operar sobre `next-test-db` y la base logica `billing_service`.
-- `Dashboard/public/system-runtime-topology.json`, `Dashboard/public/ecosystem-atlas.json`, `Facturador/module.json`, `MapaCompleto.md` y esta documentacion canonica pasan a describir `billing-sri-db` como base logica del modulo fiscal dentro de `next-test-db`.
+- `scripts/deploy-workspace.sh`, `scripts/check-container-connectivity.sh`, `scripts/check-env-secrets.sh` y `scripts/rotate-owned-secrets.sh` se actualizan para operar sobre `basesdedatos` y la base logica `billing_service`.
+- `Dashboard/public/system-runtime-topology.json`, `Dashboard/public/ecosystem-atlas.json`, `Facturador/module.json`, `MapaCompleto.md` y esta documentacion canonica pasan a describir `billing-sri-db` como base logica del modulo fiscal dentro de `basesdedatos`.
 
 Operacion y verificacion:
 - La regla publicada queda fija: un solo servicio PostgreSQL, una base logica por modulo, multiples tenants del mismo modulo dentro de esa misma base y sin foreign keys entre modulos futuros.
-- Queda pendiente la ejecucion de checks/deploy/migracion del runtime para confirmar la sustitucion del contenedor `billing-postgres` por la base logica `billing_service` en `next-test-db`.
+- Queda pendiente la ejecucion de checks/deploy/migracion del runtime para confirmar la sustitucion del contenedor `billing-postgres` por la base logica `billing_service` en `basesdedatos`.
 
 ### 2026-06-24 - Dashboard QA: superadmin ve identidades gestionadas, no clientes compradores
 
@@ -2015,7 +2184,7 @@ Objetivo: dejar documentado con claridad extrema como se comunica el ecosistema 
 
 Cambios:
 - `MapaCompleto.md` se rehizo como mapa tecnico actual: modulos, contenedores, bases reales, redes, flujos HTTP, ownership, despliegue y pasos concretos para agregar APIs o modulos.
-- La documentacion canonica deja explicito que hoy hay 2 bases de negocio (`next-test-db` PostgreSQL 18.4 y `billing-postgres` PostgreSQL 16.14) y 1 store de infraestructura (`apisix-etcd` 3.5.31).
+- La documentacion canonica deja explicito que hoy hay 2 bases de negocio (`basesdedatos` PostgreSQL 18.4 y `billing-postgres` PostgreSQL 16.14) y 1 store de infraestructura (`apisix-etcd` 3.5.31).
 - `AGENTS.md` y `paramascotasec/docs/AI_CONTEXT.md` corrigen el estado operativo de persistencia: la DB principal corre en PostgreSQL 18, pero el Facturador sigue en PostgreSQL 16 en runtime actual; no debe asumirse migrado a 18 hasta que runtime y compose coincidan.
 - `README.md` ahora apunta a `MapaCompleto.md` como mapa tecnico amplio del ecosistema.
 - `Dashboard/src/app/shared/models/pagination.ts` centraliza presets de paginacion para tablas, cards y monitoreo.
@@ -9462,7 +9631,7 @@ Cambios:
 - Frontend agrega controles subir/bajar y etiqueta `Principal` en miniaturas e imagenes grandes del editor de productos.
 
 Operacion y verificacion:
-- Migracion aplicada solo en development sobre `next-test-db`; 378 imagenes existentes recibieron orden inicial y no quedaron filas con `display_order` nulo.
+- Migracion aplicada solo en development sobre `basesdedatos`; 378 imagenes existentes recibieron orden inicial y no quedaron filas con `display_order` nulo.
 - Redeploy solo development: `./scripts/deploy-development.sh backend` y `./scripts/deploy-development.sh frontend`.
 - Pasaron `npm run typecheck`, `npm run lint`, sintaxis PHP de archivos tocados, `git diff --check`, `./scripts/check-paramascotas.sh` y `./scripts/check-container-connectivity.sh development`.
 - No se desplego production.
@@ -9611,7 +9780,7 @@ Cambios:
 - Los repositorios financieros/gastos/POS ya no ejecutan DDL en runtime; ahora verifican que las tablas requeridas existan y fallan con mensaje operativo si falta bootstrap/migracion.
 
 Operacion y verificacion:
-- Se aplico la migracion en development con `psql` dentro de `next-test-db`, sin imprimir secretos.
+- Se aplico la migracion en development con `psql` dentro de `basesdedatos`, sin imprimir secretos.
 - Se redeplego solo backend development con `./scripts/deploy-development.sh backend`.
 - Reproduccion directa OK: `FinancialPeriodRepository`, `BusinessExpenseRepository` y `PosRepository` instancian sin error.
 - `./scripts/check-container-connectivity.sh development` paso completo.

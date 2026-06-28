@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const workspaceRoot = path.resolve(process.argv.includes('--workspace') ? process.argv[process.argv.indexOf('--workspace') + 1] : path.join(__dirname, '..', '..'))
-const manifestPath = path.join(workspaceRoot, 'paramascotasec', 'docs', 'system-capabilities.generated.json')
-const gatewayEnvPath = path.join(workspaceRoot, 'Gateway', 'entorno', '.env')
-const reportDir = path.join(workspaceRoot, 'reports', 'e2e', 'development')
+const manifestPath = path.join(workspaceRoot, 'webparamascotas', 'docs', 'system-capabilities.generated.json')
+const gatewayEnvPath = path.join(workspaceRoot, 'gatewayapisix', 'entorno', '.env')
+const reportDir = path.join(workspaceRoot, 'reports', 'e2e', 'qa')
 const reportPath = path.join(reportDir, 'capability-e2e-report.json')
 
 const parseEnvFile = (filePath) => {
@@ -31,11 +31,13 @@ const parseEnvFile = (filePath) => {
 }
 
 const gatewayEnv = parseEnvFile(gatewayEnvPath)
-if ((gatewayEnv.GATEWAY_ENV ?? gatewayEnv.ENTORNO_MODE) !== 'development') {
-  throw new Error('E2E development bloqueado: Gateway no esta en development.')
+const activeMode = gatewayEnv.ENTORNO_MODE ?? gatewayEnv.GATEWAY_ENV ?? 'qa'
+const gatewayMode = gatewayEnv.GATEWAY_ENV ?? activeMode
+if (activeMode !== 'qa' || gatewayMode !== 'qa') {
+  throw new Error('E2E QA bloqueado: gatewayapisix no esta en QA.')
 }
 if (gatewayEnv.PUBLIC_BILLING_ENV_SEGMENT !== 'test') {
-  throw new Error('E2E development bloqueado: el segmento publico de facturacion debe ser test.')
+  throw new Error('E2E QA bloqueado: el segmento publico de facturacion debe ser test.')
 }
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
@@ -50,10 +52,10 @@ const resolveIp = process.env.E2E_RESOLVE_IP
   || '127.0.0.1'
 
 const report = {
-  mode: 'development',
+  mode: 'qa',
   domain,
   resolveIp,
-  generatedBy: 'paramascotasec/scripts/run-development-capability-e2e.mjs',
+  generatedBy: 'webparamascotas/scripts/run-qa-capability-e2e.mjs',
   results: [],
   scenarioCoverage: [],
 }
@@ -164,7 +166,7 @@ failed = !expectStatus('legacy-uploads-block', '/uploads-api/images', [404, 405]
 
 for (const route of manifest.indexes.billingApiRoutes ?? []) {
   if (route.path.startsWith('/api/production/')) {
-    addResult(`billing-production-guard:${route.path}`, 'passed', { guard: 'not-called-in-development' })
+    addResult(`billing-production-guard:${route.path}`, 'passed', { guard: 'not-called-in-qa' })
   }
 }
 
@@ -173,8 +175,8 @@ mkdirSync(reportDir, { recursive: true })
 writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`)
 
 if (failed) {
-  console.error(`Capability E2E development fallo. Reporte: ${reportPath}`)
+  console.error(`Capability E2E QA fallo. Reporte: ${reportPath}`)
   process.exit(1)
 }
 
-console.log(`Capability E2E development OK. Reporte: ${reportPath}`)
+console.log(`Capability E2E QA OK. Reporte: ${reportPath}`)

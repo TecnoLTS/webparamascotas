@@ -3,8 +3,25 @@ import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 import { getConfiguredCookieDomains } from '@/lib/cookieDomains'
 
+const normalizeHost = (value: string | null | undefined) =>
+  (value || '')
+    .split(',')[0]
+    ?.trim()
+    .toLowerCase()
+    .replace(/:\d+$/, '') || ''
+
+const publicLegacyApiHosts = new Set(
+  [
+    process.env.NEXT_PUBLIC_SITE_DOMAIN,
+    process.env.PRIMARY_SITE_DOMAIN,
+    ...(process.env.NEXT_PUBLIC_SITE_ALIASES || process.env.PRIMARY_SITE_ALIASES || '').split(','),
+  ]
+    .map((host) => normalizeHost(host))
+    .filter(Boolean),
+)
+
 const getBackendBase = () => {
-  return (process.env.BACKEND_URL_INTERNAL || 'http://paramascotasec-backend-web:8080/api').replace(/\/$/, '')
+  return (process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api').replace(/\/$/, '')
 }
 
 const buildExpiredCookie = (name: string, options?: { domain?: string; httpOnly?: boolean }) => {
@@ -89,6 +106,28 @@ const buildForwardHeaders = (req: NextRequest) => {
 }
 
 const forward = async (req: NextRequest) => {
+  const requestHost = normalizeHost(req.headers.get('x-forwarded-host') || req.headers.get('host'))
+  if (publicLegacyApiHosts.has(requestHost)) {
+    return new Response(
+      JSON.stringify({
+        ok: false,
+        error: {
+          code: 'LEGACY_ROUTE_NOT_FOUND',
+          message: 'Ruta publica no disponible. Usa la ruta tenantizada del gateway.',
+        },
+      }),
+      {
+        status: 404,
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          Pragma: 'no-cache',
+          Expires: '0',
+        },
+      },
+    )
+  }
+
   const targetUrl = buildTargetUrl(req)
   const headers = buildForwardHeaders(req)
 

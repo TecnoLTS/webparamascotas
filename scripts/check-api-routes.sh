@@ -4,7 +4,7 @@ set -euo pipefail
 HOST_HEADER="${2:-paramascotasec.com}"
 BASE_URL="${1:-https://${HOST_HEADER}}"
 USE_LOCAL_GATEWAY="${USE_LOCAL_GATEWAY:-}"
-GATEWAY_ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/Gateway/entorno/.env"
+GATEWAY_ENV_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/gatewayapisix/entorno/.env"
 if [[ $# -eq 0 ]]; then
   USE_LOCAL_GATEWAY=1
 fi
