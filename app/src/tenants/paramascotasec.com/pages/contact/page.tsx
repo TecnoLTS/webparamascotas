@@ -325,7 +325,7 @@ export default function ContactPage() {
             </Link>
 
             <Link
-              href="/my-account"
+              href="/dashboard/"
               prefetch={false}
               className="pm-contact-quicklink rounded-[28px] border border-[#d9e7ee] bg-white px-6 py-6 shadow-[0_18px_50px_rgba(15,23,42,0.05)] transition hover:border-[#0a7d99]"
             >

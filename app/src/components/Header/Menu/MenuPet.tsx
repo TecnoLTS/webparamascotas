@@ -54,6 +54,9 @@ const Icon = {
     X,
 } as const
 
+const DASHBOARD_PATH = '/dashboard/'
+const DASHBOARD_SIGN_IN_PATH = '/dashboard/sign-in'
+
 const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], availableCategoryIds }) => {
     const site = useSite()
     const pathname = usePathname()
@@ -511,7 +514,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
             handleLoginPopup()
         }
 
-        router.replace('/login')
+        router.replace(DASHBOARD_SIGN_IN_PATH)
         router.refresh()
     }
 
@@ -670,7 +673,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                     >
                                         {showAuthenticatedMenu ? (
                                             <>
-                                                <Link href={'/my-account'} prefetch={false} className="button-main w-full text-center">Panel</Link>
+                                                <Link href={DASHBOARD_PATH} prefetch={false} className="button-main w-full text-center">Panel</Link>
                                                 <button
                                                     type="button"
                                                     onClick={handleLogout}
@@ -683,11 +686,11 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                             </>
                                         ) : (
                                             <>
-                                                <Link href={'/login'} className="button-main w-full text-center">Iniciar sesión</Link>
+                                                <Link href={DASHBOARD_SIGN_IN_PATH} prefetch={false} className="button-main w-full text-center">Iniciar sesión</Link>
                                                 <div className="text-secondary text-center mt-3 pb-4">¿No tienes una cuenta?
                                                     <Link href={'/register'} className='text-black pl-1 hover:underline'>Regístrate</Link>
                                                 </div>
-                                                <Link href={'/my-account'} prefetch={false} className="button-main bg-white text-black border border-black w-full text-center">Panel</Link>
+                                                <Link href={DASHBOARD_PATH} prefetch={false} className="button-main bg-white text-black border border-black w-full text-center">Panel</Link>
                                                 <div className="bottom mt-4 pt-4 border-t border-line"></div>
                                                 <Link href={'/pages/contact'} className='body1 hover:underline'>Soporte</Link>
                                             </>

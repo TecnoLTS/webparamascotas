@@ -183,7 +183,7 @@ const Footer = ({ categoryIds }: FooterProps) => {
                         <div className="item min-w-0">
                             <div className="pb-5 text-[15px] font-bold uppercase tracking-[0.06em] text-heading">Atención al cliente</div>
                             <div className="flex flex-col items-start gap-3 text-[14px] leading-[1.45]">
-                                <Link className='hover:text-green-600 duration-300' href={'/my-account'} prefetch={false}>Mi cuenta</Link>
+                                <Link className='hover:text-green-600 duration-300' href={'/dashboard/'} prefetch={false}>Mi cuenta</Link>
                                 <Link 
                                     className='hover:text-green-600 duration-300' 
                                     href={'/servicios/envios-productos-para-mascotas-ecuador'}
