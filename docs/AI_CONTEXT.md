@@ -51,7 +51,8 @@ Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `gatewa
 Orden del despliegue completo: DB -> Backend -> Frontend -> gatewayapisix.
 Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`). QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
 Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
-Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; el prefijo `qa-` o `production-` del archivo es solo etiqueta de seguridad derivada de `ENTORNO_MODE`, no un flujo separado.
+En restore, el ambiente activo define solo el destino (`POSTGRES_DATA_DIR`); el archivo origen puede ser cualquier `.sql.enc` valido y la clave debe corresponder al backup origen.
+Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
 - Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas por modulo.
@@ -255,6 +256,42 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-28 - Backups DB con nombres neutrales
+
+Objetivo: evitar que los comandos y nombres de backups sugieran un flujo separado por ambiente.
+
+Cambios:
+- `default_backup_file_for_mode` genera `basesdedatos/backups/backup-YYYYMMDDTHHMMSSZ.sql.enc` sin prefijo de ambiente.
+- `latest_backup_file_for_mode` actualiza `basesdedatos/backups/latest.sql.enc`; el restore conserva compatibilidad para encontrar alias legacy.
+- `export-for-git.sh` genera paquetes `git-transfer/backup-<label>-YYYYMMDDTHHMMSSZ.sql.enc`, sin origen/destino en el nombre.
+- Documentacion operativa actualizada para expresar que el archivo no define ambiente; el destino lo define solo `basesdedatos/entorno/.env`.
+
+Verificacion:
+- Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh`.
+- Pasaron ayudas `--help` de backup, restore, transfer, export e import sin publicar comandos con ambiente en el flujo DB.
+- `default_backup_file_for_mode` devuelve `basesdedatos/backups/backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest_backup_file_for_mode` devuelve `basesdedatos/backups/latest.sql.enc`.
+- Dry-run con un `.sql.enc` temporal neutral en `/tmp` descifra correctamente y se detiene antes de tocar datos por falta de `--yes`.
+- Las variantes con ambiente posicional o `--mode` siguen fallando antes de tocar Docker o datos y el mensaje indica que el ambiente se lee desde `entorno/.env`.
+- Pasaron `git diff --check` en `basesdedatos` y `webparamascotas`; docs raiz sin espacios finales.
+
+### 2026-06-28 - Restore DB portable entre QA y produccion
+
+Objetivo: corregir la interpretacion de backups por ambiente para permitir restaurar snapshots QA en production y snapshots production en QA sin depender del prefijo del archivo.
+
+Cambios:
+- `restore-from-backup.sh` ya no busca por defecto solo backups del ambiente activo; usa el `.sql.enc` local mas reciente disponible si no se indica archivo.
+- El restore valida checksum si existe y prueba claves disponibles en este orden flexible: `BACKUP_DECRYPTION_PASSPHRASE`, `TRANSFER_BACKUP_PASSPHRASE`, `BACKUP_ENCRYPTION_PASSPHRASE_OVERRIDE`, `BACKUP_PASSPHRASE_FILE`, passphrase local en `transfer-secrets/` y `BACKUP_ENCRYPTION_PASSPHRASE` del `.env` activo.
+- `transfer-db restore` e `import-from-git-transfer.sh` delegan la resolucion de clave al restore comun para evitar doble prompt y permitir paquetes portables.
+- `README.md`, `COMANDOS-RAPIDOS.md` y `basesdedatos/README.md` documentan que el destino sale del `.env` activo y el origen del backup no se filtra por `qa`/`production`.
+
+Verificacion:
+- Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh`.
+- Pasaron ayudas `--help` de `restore-from-backup.sh`, `transfer-db.sh` e `import-from-git-transfer.sh`.
+- Dry-run de `restore-from-backup.sh backups/qa-20260628T183627Z.sql.enc` con `BACKUP_DECRYPTION_PASSPHRASE='OrAcle10$'` valida checksum, ignora la clave incorrecta, abre el backup con la clave activa del `.env` y se detiene antes de tocar datos por falta de `--yes`.
+- Dry-run sin archivo toma el ultimo `.sql.enc` disponible sin filtrar por ambiente y se detiene antes de tocar datos.
+- La variante legacy `restore-from-backup.sh qa` sigue fallando antes de tocar Docker o datos.
+- Pasaron `git diff --check` en `basesdedatos` y `webparamascotas`; docs raiz sin espacios finales.
+
 ### 2026-06-28 - Backups DB sin argumentos de ambiente
 
 Objetivo: alinear backups/restores de PostgreSQL con el contrato general QA/produccion por `.env`, sin comandos separados por ambiente.
@@ -262,7 +299,7 @@ Objetivo: alinear backups/restores de PostgreSQL con el contrato general QA/prod
 Cambios:
 - `basesdedatos/scripts/backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh` leen el modo activo desde `basesdedatos/entorno/.env`.
 - Los argumentos `qa|production` y `--mode` quedan rechazados en los scripts de backup/transferencia DB con mensaje de uso canonico.
-- Los snapshots locales nuevos quedan en `basesdedatos/backups/<ENTORNO_MODE>-YYYYMMDDTHHMMSSZ.sql.enc` con alias `<ENTORNO_MODE>-latest.sql.enc`; el restore conserva compatibilidad de lectura con backups legacy generados antes de unificar la carpeta.
+- Los snapshots locales quedaron en carpeta unica `basesdedatos/backups/`; esta entrada fue supersedida despues por nombres neutrales sin ambiente, manteniendo compatibilidad de lectura con backups legacy.
 - `README.md`, `COMANDOS-RAPIDOS.md` y `basesdedatos/README.md` publican comandos unicos: `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo] --yes` y `./scripts/transfer-db.sh export|restore`.
 
 Verificacion:
