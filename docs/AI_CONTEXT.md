@@ -50,6 +50,8 @@ RUN_DB_SETUP=1 ./scripts/deploy.sh backend
 Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `gateway`. Billing SRI vive dentro de `backend`; `billing` y `facturador` no son servicios desplegables del workspace.
 Orden del despliegue completo: DB -> Backend -> Frontend -> gatewayapisix.
 Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`). QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
+Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
+Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; el prefijo `qa-` o `production-` del archivo es solo etiqueta de seguridad derivada de `ENTORNO_MODE`, no un flujo separado.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
 - Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas por modulo.
@@ -252,6 +254,23 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-28 - Backups DB sin argumentos de ambiente
+
+Objetivo: alinear backups/restores de PostgreSQL con el contrato general QA/produccion por `.env`, sin comandos separados por ambiente.
+
+Cambios:
+- `basesdedatos/scripts/backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh` leen el modo activo desde `basesdedatos/entorno/.env`.
+- Los argumentos `qa|production` y `--mode` quedan rechazados en los scripts de backup/transferencia DB con mensaje de uso canonico.
+- Los snapshots locales nuevos quedan en `basesdedatos/backups/<ENTORNO_MODE>-YYYYMMDDTHHMMSSZ.sql.enc` con alias `<ENTORNO_MODE>-latest.sql.enc`; el restore conserva compatibilidad de lectura con backups legacy generados antes de unificar la carpeta.
+- `README.md`, `COMANDOS-RAPIDOS.md` y `basesdedatos/README.md` publican comandos unicos: `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo] --yes` y `./scripts/transfer-db.sh export|restore`.
+
+Verificacion:
+- Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `restore-from-backup.sh`, `transfer-db.sh`, `export-for-git.sh` e `import-from-git-transfer.sh`.
+- Pasaron ayudas `--help` de los scripts modificados.
+- Las variantes antiguas con modo posicional `qa|production` o flag `--mode` fallan antes de tocar Docker o datos.
+- `rg` no encuentra comandos activos de backup/restore DB con modo posicional ni rutas documentadas legacy por ambiente.
+- Pasaron `git diff --check` en `basesdedatos` y `webparamascotas`; la raiz no es repo Git, se valido sin espacios finales en docs raiz.
 
 ### 2026-06-28 - Facturas SRI sin lista duplicada
 
