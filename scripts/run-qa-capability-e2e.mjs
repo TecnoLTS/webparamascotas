@@ -64,7 +64,7 @@ const addResult = (name, outcome, details = {}) => {
   report.results.push({ name, outcome, ...details })
 }
 
-const curlStatus = (urlPath, method = 'GET') => {
+const curlProbe = (urlPath, method = 'GET') => {
   const url = `${scheme}://${domain}${urlPath}`
   const args = [
     '-k',
@@ -73,7 +73,7 @@ const curlStatus = (urlPath, method = 'GET') => {
     '--output',
     '/dev/null',
     '--write-out',
-    '%{http_code}',
+    '%{http_code}\\t%{redirect_url}',
     '--max-time',
     '25',
     '--request',
@@ -83,17 +83,83 @@ const curlStatus = (urlPath, method = 'GET') => {
     args.push('--resolve', `${domain}:443:${resolveIp}`)
   }
   args.push(url)
-  return execFileSync('curl', args, { encoding: 'utf8' }).trim()
+  const [status, redirectUrl = ''] = execFileSync('curl', args, { encoding: 'utf8' }).trim().split('\t')
+  return { status, redirectUrl }
 }
 
-const expectStatus = (name, urlPath, expectedStatuses, method = 'GET') => {
-  const status = curlStatus(urlPath, method)
+const expectStatus = (name, urlPath, expectedStatuses, method = 'GET', options = {}) => {
+  const { status, redirectUrl } = curlProbe(urlPath, method)
   const expected = new Set(expectedStatuses.map(String))
   if (!expected.has(status)) {
-    addResult(name, 'failed', { urlPath, method, httpStatus: status, expected: [...expected] })
+    addResult(name, 'failed', { urlPath, method, httpStatus: status, redirectUrl, expected: [...expected] })
     return false
   }
-  addResult(name, 'passed', { urlPath, method, httpStatus: status })
+
+  if (options.expectedRedirectPath) {
+    const redirectPath = redirectUrl ? new URL(redirectUrl, `${scheme}://${domain}`).pathname : ''
+    if (redirectPath !== options.expectedRedirectPath) {
+      addResult(name, 'failed', {
+        urlPath,
+        method,
+        httpStatus: status,
+        redirectUrl,
+        expectedRedirectPath: options.expectedRedirectPath,
+      })
+      return false
+    }
+  }
+
+  addResult(name, 'passed', {
+    urlPath,
+    method,
+    httpStatus: status,
+    ...(redirectUrl ? { redirectUrl } : {}),
+  })
+  return true
+}
+
+const expectedPageStatuses = (sample) => {
+  if (Array.isArray(sample.e2e?.expectedStatuses)) {
+    return sample.e2e.expectedStatuses
+  }
+  if (Array.isArray(sample.expectedStatuses)) {
+    return sample.expectedStatuses
+  }
+
+  return [200]
+}
+
+const expectedPageOptions = (sample) => {
+  const expectedRedirectPath = sample.e2e?.expectedRedirectPath ?? sample.expectedRedirectPath
+  return expectedRedirectPath ? { expectedRedirectPath } : {}
+}
+
+const assertValidPageProbe = (page, capabilityId) => {
+  const e2e = page.e2e ?? {}
+  if (!e2e.expectedStatuses && !page.expectedStatuses) {
+    return
+  }
+
+  const expectedStatuses = expectedPageStatuses(page).map(String)
+  const hasRedirectStatus = expectedStatuses.some((status) => status.startsWith('3'))
+  if (hasRedirectStatus && !expectedPageOptions(page).expectedRedirectPath) {
+    throw new Error(`${capabilityId}:${page.samplePath ?? page.path} declara redireccion E2E sin expectedRedirectPath.`)
+  }
+}
+
+for (const capability of manifest.capabilities) {
+  for (const page of capability.frontend?.pages ?? []) {
+    assertValidPageProbe(page, capability.id)
+  }
+}
+
+const expectPageStatus = (sample) => {
+  const statuses = expectedPageStatuses(sample)
+  const options = expectedPageOptions(sample)
+  const passed = expectStatus(`page:${sample.capabilityId}:${sample.path}`, sample.path, statuses, 'GET', options)
+  if (!passed) {
+    return false
+  }
   return true
 }
 
@@ -117,7 +183,7 @@ for (const capability of manifest.capabilities) {
 
   for (const page of capability.frontend?.pages ?? []) {
     if (page.samplePath) {
-      publicPageSamples.push({ capabilityId: capability.id, path: page.samplePath, seo: page.seo })
+      publicPageSamples.push({ capabilityId: capability.id, path: page.samplePath, seo: page.seo, e2e: page.e2e })
     }
   }
   for (const handler of capability.frontend?.handlers ?? []) {
@@ -129,7 +195,7 @@ for (const capability of manifest.capabilities) {
 
 let failed = false
 for (const sample of publicPageSamples) {
-  failed = !expectStatus(`page:${sample.capabilityId}:${sample.path}`, sample.path, [200]) || failed
+  failed = !expectPageStatus(sample) || failed
 }
 
 for (const sample of publicHandlerSamples) {

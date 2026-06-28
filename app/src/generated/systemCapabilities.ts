@@ -566,6 +566,36 @@ export const backendApiRoutes = [
     "capabilityId": "admin.quotes"
   },
   {
+    "id": "backend:GET:/api/admin/ecommerce-users",
+    "method": "GET",
+    "path": "/api/admin/ecommerce-users",
+    "capabilityId": "admin.ecommerce-users"
+  },
+  {
+    "id": "backend:POST:/api/admin/ecommerce-users",
+    "method": "POST",
+    "path": "/api/admin/ecommerce-users",
+    "capabilityId": "admin.ecommerce-users"
+  },
+  {
+    "id": "backend:POST:/api/admin/ecommerce-users/{id}/unlock",
+    "method": "POST",
+    "path": "/api/admin/ecommerce-users/{id}/unlock",
+    "capabilityId": "admin.ecommerce-users"
+  },
+  {
+    "id": "backend:PUT:/api/admin/ecommerce-users/{id}",
+    "method": "PUT",
+    "path": "/api/admin/ecommerce-users/{id}",
+    "capabilityId": "admin.ecommerce-users"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/ecommerce-users/{id}",
+    "method": "PATCH",
+    "path": "/api/admin/ecommerce-users/{id}",
+    "capabilityId": "admin.ecommerce-users"
+  },
+  {
     "id": "backend:GET:/api/shipments",
     "method": "GET",
     "path": "/api/shipments",

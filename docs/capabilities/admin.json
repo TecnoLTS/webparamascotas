@@ -34,6 +34,14 @@
       "e2e": { "mode": "generic", "fixture": "e2e-discount-code", "assertDb": true, "cleanup": true }
     },
     {
+      "id": "admin.ecommerce-users",
+      "summary": "Lectura de clientes y equipo operativo propios del ecommerce sin habilitar el modulo global de usuarios.",
+      "auth": "admin",
+      "gateway": { "exposure": "tenant-api" },
+      "data": { "fixture": "existing-ecommerce-users", "assertions": ["ecommerce-users-readable"] },
+      "e2e": { "mode": "generic", "fixture": "existing-ecommerce-users", "assertDb": true, "cleanup": true }
+    },
+    {
       "id": "admin.finance",
       "summary": "Gastos, recurrencias, periodos financieros y ajustes.",
       "auth": "admin",

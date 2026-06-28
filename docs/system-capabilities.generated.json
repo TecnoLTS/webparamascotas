@@ -79,6 +79,71 @@
     {
       "domain": "admin",
       "source": "webparamascotas/docs/capabilities/admin.json",
+      "id": "admin.ecommerce-users",
+      "summary": "Lectura de clientes y equipo operativo propios del ecommerce sin habilitar el modulo global de usuarios.",
+      "auth": "admin",
+      "gateway": {
+        "exposure": "tenant-api"
+      },
+      "data": {
+        "fixture": "existing-ecommerce-users",
+        "assertions": [
+          "ecommerce-users-readable"
+        ]
+      },
+      "e2e": {
+        "mode": "generic",
+        "fixture": "existing-ecommerce-users",
+        "assertDb": true,
+        "cleanup": true
+      },
+      "backendRoutes": [
+        {
+          "id": "backend:GET:/api/admin/ecommerce-users",
+          "method": "GET",
+          "path": "/api/admin/ecommerce-users",
+          "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@ecommerceUsers",
+          "capabilityId": "admin.ecommerce-users",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/ecommerce-users",
+          "method": "POST",
+          "path": "/api/admin/ecommerce-users",
+          "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@store",
+          "capabilityId": "admin.ecommerce-users",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/ecommerce-users/{id}/unlock",
+          "method": "POST",
+          "path": "/api/admin/ecommerce-users/{id}/unlock",
+          "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@unlock",
+          "capabilityId": "admin.ecommerce-users",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/ecommerce-users/{id}",
+          "method": "PUT",
+          "path": "/api/admin/ecommerce-users/{id}",
+          "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@update",
+          "capabilityId": "admin.ecommerce-users",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/admin/ecommerce-users/{id}",
+          "method": "PATCH",
+          "path": "/api/admin/ecommerce-users/{id}",
+          "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@patch",
+          "capabilityId": "admin.ecommerce-users",
+          "source": "backend/config/routes.php"
+        }
+      ],
+      "billingApiRoutes": []
+    },
+    {
+      "domain": "admin",
+      "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "admin.finance",
       "summary": "Gastos, recurrencias, periodos financieros y ajustes.",
       "auth": "admin",
@@ -2096,6 +2161,15 @@
               "follow": true,
               "canonical": "self",
               "sitemap": false
+            },
+            "e2e": {
+              "expectedStatuses": [
+                301,
+                302,
+                307,
+                308
+              ],
+              "expectedRedirectPath": "/dashboard/sign-in"
             }
           },
           {
@@ -2253,6 +2327,15 @@
               "follow": true,
               "canonical": "self",
               "sitemap": false
+            },
+            "e2e": {
+              "expectedStatuses": [
+                301,
+                302,
+                307,
+                308
+              ],
+              "expectedRedirectPath": "/dashboard/sign-in"
             }
           }
         ]
@@ -3068,6 +3151,46 @@
         "path": "/api/admin/quotes/{id}/convert",
         "handler": "App\\Modules\\Commerce\\Controllers\\QuotationController@convert",
         "capabilityId": "admin.quotes",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/ecommerce-users",
+        "method": "GET",
+        "path": "/api/admin/ecommerce-users",
+        "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@ecommerceUsers",
+        "capabilityId": "admin.ecommerce-users",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/ecommerce-users",
+        "method": "POST",
+        "path": "/api/admin/ecommerce-users",
+        "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@store",
+        "capabilityId": "admin.ecommerce-users",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/ecommerce-users/{id}/unlock",
+        "method": "POST",
+        "path": "/api/admin/ecommerce-users/{id}/unlock",
+        "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@unlock",
+        "capabilityId": "admin.ecommerce-users",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/ecommerce-users/{id}",
+        "method": "PUT",
+        "path": "/api/admin/ecommerce-users/{id}",
+        "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@update",
+        "capabilityId": "admin.ecommerce-users",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/admin/ecommerce-users/{id}",
+        "method": "PATCH",
+        "path": "/api/admin/ecommerce-users/{id}",
+        "handler": "App\\Modules\\Commerce\\Controllers\\CustomerController@patch",
+        "capabilityId": "admin.ecommerce-users",
         "source": "backend/config/routes.php"
       },
       {

@@ -86,6 +86,8 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 ## Modularidad orquestada
 
 - El dashboard es el orquestador visual y operativo; no es duenio de catalogo, pedidos, clientes ni facturas.
+- Regla de menu: solo `ecommerce` y `billing-sri` son modulos producto contratables. `dashboard` y `users` son base interna obligatoria del tenant; `tenant-admin` es consola exclusiva de plataforma. Ecommerce no debe mezclar opciones fiscales; Facturacion no debe aparecer si `billing-sri` no esta activo.
+- `products`, `inventory`, `monitoring`, `invoicing`, `ui-kit`, `workspace`, `email-service` y `medical-office` no son modulos tenant activos ni opciones contratables. Si existen pantallas legacy o codigo de compatibilidad, no se publican en topologia, menus ni entitlements; todo acceso queda negado salvo rutas explicitamente permitidas por `ecommerce`, `billing-sri`, `users` o plataforma.
 - Cada modulo real debe soportar dos modos: `individual` y `orquestado`.
 - El registro canonico del orquestador vive en `dashboard/public/module-registry.json`.
 - Cada modulo real publica su contrato en `module.json`.
@@ -97,6 +99,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - El contrato publico APISIX `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` reescribe a `platform-core/Billing` (`/api/{test|production}/v1/*`) y queda protegido por `X-API-Key` o `Authorization: Bearer`.
 - Regla vigente de persistencia: un solo servicio PostgreSQL y una base logica por modulo/servicio; multiples tenants del mismo modulo comparten esa base logica bajo aislamiento por `tenant_id` o equivalente del owner.
 - Regla vigente de identidad: los usuarios humanos pertenecen al tenant, no al modulo. `IdentityPlatform` es el owner unico de auth, sesiones, recovery, tenants, membresias, roles y permisos; los modulos solo consumen `tenant_id`, `user_id` y permisos `module.action`.
+- Ecommerce puede leer sus clientes (`customer`) y equipo operativo del tenant (`tenant_staff`) desde el bloque `Clientes y equipo` sin crear un modulo producto adicional. `users` es base IAM del tenant para roles, permisos y administracion global de usuarios operativos.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
 - Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
@@ -162,10 +165,10 @@ npm run test         # lint + typecheck
 - Fragil para SSL, perfiles y reglas dinamicas: nunca levantar manualmente con `docker compose up`.
 - Usar `./scripts/deploy.sh gateway` desde la raiz del workspace, o `gatewayapisix/scripts/deploy.sh` desde el repo del componente.
 - APISIX se configura desde `gatewayapisix/entorno/.env`; no hardcodear dominio, tenant, base path ni upstream en rutas.
-- Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
+- Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend generico registrado `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; ecommerce webparamascotas `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
 - En QA local actual, probar ese contrato por `https://paramascotasec.com/` y, si el DNS/hosts del cliente no resuelve al host virtualizado, usar `--resolve paramascotasec.com:443:192.168.100.229` en `curl`.
 - Certificados QA locales: `gatewayapisix/scripts/setup-ssl-local.sh` genera una CA local `gatewayapisix/entorno/certs/local-ca.crt` y un certificado de servidor para `paramascotasec.com`; instalar solo `local-ca.crt` en PCs cliente. Nunca copiar `local-ca.key`; copiar certificados de production a QA requiere decision explicita porque implica mover `privkey.pem` de production.
-- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
+- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_ECOMMERCE_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
 - Rutas legacy publicas `/api/*`, `/facturador/*` y `/uploads-api/*` quedan bloqueadas por APISIX.
 - `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed. Para APIs backend lee `config/routes.php` y `src/Modules/*/routes.php`; excluye `/api/{apiMode}/v1/*` porque Billing publico tiene rutas APISIX explicitas hacia `platform-core`.
 - UI local de APISIX: `http://${APISIX_ADMIN_BIND_IP}:${APISIX_ADMIN_PORT}/ui/` (QA actual: `127.0.0.1:9180`).
@@ -249,6 +252,158 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-06-28 - Facturas SRI sin lista duplicada
+
+Objetivo: corregir la vista `Facturas SRI` para que las facturas se muestren una sola vez.
+
+Cambios:
+- Se elimino la seccion superior de tarjetas RIDE en `invoice-list`; queda solo la `Bandeja de facturas` como lista operativa.
+- Se retiro la carga separada `BillingServicesFacade.rides(...)` de esa pantalla y el codigo/estilos asociados a la lista duplicada.
+- El test del componente valida positivamente una unica coleccion de facturas basada en `.invoice-table-list`.
+
+Verificacion:
+- La busqueda focal en `invoice-list` no devuelve referencias a la seccion superior retirada.
+- Pasaron `npm run type:check` y el test focal `invoice-list.component.spec.ts`.
+
+### 2026-06-28 - Limpieza de pruebas del flujo retirado
+
+Objetivo: corregir la limpieza incompleta del bloque retirado y dejar los tests expresados solo contra el flujo vigente.
+
+Cambios:
+- Se eliminaron pruebas negativas que mencionaban el flujo retirado; las expectativas ahora validan positivamente secciones y modulos activos.
+- Se borraron componentes y specs de las pantallas retiradas de empresa, monedas y pasarelas.
+- Las rutas fiscales del dashboard usan metadata `feature: billing-sri`; no queda `businessRoutes` vacio ni enlace interno hacia rutas retiradas.
+
+Verificacion:
+- La busqueda estricta en `dashboard/src/app`, `dashboard/tests` y `dashboard/public` no devuelve referencias a las pantallas retiradas ni a sus rutas.
+- Pasaron `npm run type:check`, tests focales de modulos/navegacion/API catalog/tenant-admin/roles/rutas billing, `node dashboard/tools/check-module-manifests.mjs` y diff-checks.
+
+### 2026-06-28 - Retiro de Empresa y cobros del dashboard activo
+
+Objetivo: quitar el bloque `Empresa y cobros` porque eran pantallas de ejemplo/no operativas y no deben publicarse como modulo asignable.
+
+Cambios:
+- `billing-sri` queda con route source activo solo `billing-services`; el route source `business` deja de registrarse en el router privado.
+- El menu ya no publica `Empresa y cobros`, `Empresa`, `Monedas` ni `Pasarelas de pago`.
+- `invoicing` se elimina del catalogo operativo de modulos y de las capacidades ecommerce; `businessRoutes` queda vacio y no se importa desde `app-route-sources`.
+- `tenant-module-topology.json` documenta que `Empresa y cobros` no se publica como modulo ni pantalla activa; la configuracion fiscal real vive en `Configuracion SRI`.
+
+Verificacion:
+- Pasaron `npm run type:check`, tests focales de modulos/navegacion/API catalog/tenant-admin/roles/rutas billing, `node dashboard/tools/check-module-manifests.mjs`, `npm run docker:health` y `./scripts/check-container-connectivity.sh qa`.
+- Se redeployo `dashboard` con `npm run docker:up`; APISIX sirve el bundle actualizado del dashboard.
+
+### 2026-06-28 - Paramascotas con Facturacion activa y Usuarios al final
+
+Objetivo: aplicar la asignacion fiscal solicitada para `paramascotasec` y corregir que `Usuarios` apareciera antes de los reportes del ecommerce.
+
+Cambios:
+- `identity_platform.tenant_module_entitlements` queda con `dashboard`, `users`, `ecommerce` y `billing-sri` activos para `paramascotasec`; la seleccion fiscal previa estaba pendiente de guardar y no figuraba en DB.
+- La navegacion del dashboard ordena las secciones finales por `DASHBOARD_NAVIGATION_BLUEPRINT`, no por el orden interno de modulos, para que `Administracion > Usuarios` quede al final.
+- `dashboard/src/app/core/modules/dashboard-navigation.config.ts` mueve `Administracion` despues de los bloques de negocio y plataforma.
+- Se agregaron expectativas de regresion en `navigation.service.spec.ts` y `dashboard-modules.config.spec.ts` para verificar `Integraciones reales -> SRI Ecuador -> Administracion` cuando ecommerce, facturacion y usuarios estan activos.
+
+Verificacion:
+- DB verificada: `billing-sri`, `dashboard`, `ecommerce` y `users` activos para `paramascotasec`.
+- Pasaron `npm run type:check`, tests focales de navegacion/modulos, `node dashboard/tools/check-module-manifests.mjs`, `npm run docker:health`, Playwright sobre `/dashboard/sign-in` y `./scripts/check-container-connectivity.sh qa`.
+
+### 2026-06-28 - Fix dashboard sign-in en blanco
+
+Objetivo: corregir pantalla blanca en `https://paramascotasec.com/dashboard/sign-in` despues de la limpieza modular.
+
+Cambios:
+- `dashboard/src/app/core/modules/dashboard-route-access.config.ts` declara `LEGACY_ROUTE_SOURCE_MODULES` antes de construir `DASHBOARD_ROUTE_SOURCE_MODULES`; el build Angular transpila a `var`, y el orden anterior dejaba `dashboard-templates` sin modulo durante el bootstrap.
+- Se agrego prueba regresiva `dashboard-route-access.config.spec.ts` para asegurar que `dashboard-templates`, `ui-kit`, `inventory`, `monitoring` y `products` sigan resolviendo al modulo canonical permitido mientras existan rutas legacy internas.
+- Se reconstruyo y recreo el contenedor `dashboard` con `npm run docker:up`.
+
+Verificacion:
+- Playwright por APISIX en `https://paramascotasec.com/dashboard/sign-in` renderiza el formulario `Acceso ParaMascotasEC` sin errores de consola.
+- Pasaron `npm run type:check`, test focal `dashboard-route-access.config.spec.ts`, `node dashboard/tools/check-module-manifests.mjs` y `npm run docker:health`.
+
+### 2026-06-28 - Contrato final QA: base interna + Ecommerce/Facturacion
+
+Objetivo: cerrar el desorden de modulos visibles y dejar Paramascotas QA con contrato claro: base interna del tenant, Ecommerce como unico modulo producto activo y Facturacion solo cuando el superadmin la asigne.
+
+Cambios:
+- El dashboard publica y valida solo `dashboard`, `users`, `ecommerce`, `billing-sri` y `tenant-admin`; los modulos retirados (`products`, `inventory`, `monitoring`, `invoicing`, `ui-kit`, `workspace`, `email-service`, `medical-office`) ya no se publican en `tenant-module-topology.json` ni en `dashboardProjection`.
+- `users` queda como base IAM obligatoria del tenant, no como modulo producto contrat-able; `tenant-admin` queda solo para identidades `platform`.
+- `billing-sri` expone solo `SRI Ecuador`; `invoicing`/`Empresa y cobros` deja de existir como modulo separado y luego fue retirado del catalogo operativo.
+- `TenantAccessService` mapea ajustes comerciales `admin.settings` a `ecommerce` y ajustes de sesion a `users`; catalogo, inventario, compras y reportes operativos quedan bajo `ecommerce`.
+- En `identity_platform.tenant_module_entitlements`, `paramascotasec` queda solo con `dashboard`, `users` y `ecommerce` activos; se eliminaron entitlements residuales de modulos retirados para ese tenant.
+- `backend/entorno/.env` queda con `DASHBOARD_ENABLED_MODULES=dashboard,users,ecommerce`.
+- Los probes E2E aceptan y verifican que `/login` y `/my-account` redirijan a `/dashboard/sign-in`.
+
+Verificacion:
+- Pasaron `npm run type:check` en `dashboard`, pruebas focales de modulos/navegacion/tenant-admin/roles, `php -l` en backend, `node dashboard/tools/check-module-manifests.mjs`, `jq` de manifiestos, `npm run docker:health` en `dashboard`, `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh` y `./scripts/e2e-qa.sh`.
+- `docker ps -a` queda sin contenedores legacy `billing-*`, `facturador-*`, `paramascotasec-app*`, `backend-app`, `backend-web` ni `backend-billing-worker`.
+- El reporte E2E confirma `GET /login` y `GET /my-account` con `301` hacia `https://paramascotasec.com/dashboard/sign-in`.
+
+### 2026-06-28 - Contrato publico ecommerce por tenant y servicio
+
+Objetivo: corregir la frontera publica APISIX para que la gestion de clientes/equipo ecommerce no se publique como ruta generica de backend.
+
+Cambios:
+- `gatewayapisix` agrega `PUBLIC_ECOMMERCE_SERVICE_SEGMENT=webparamascotas` y publica `/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/users` como alias tenantizado de servicio.
+- El alias APISIX reescribe internamente a `/api/admin/ecommerce-users`; esa ruta queda como implementacion backend/proxy dashboard, no como contrato publico preferido.
+- Las rutas no registradas bajo `/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}` devuelven 404 JSON desde APISIX, sin caer al frontend.
+- El catalogo del dashboard soporta `publicPath`, manteniendo `basePath=/dashboard/api` para uso interno y mostrando `/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/users` como contrato publico.
+- `scripts/check-container-connectivity.sh qa` valida que el alias exista/proteja con 401 o 403 sin sesion, y que rutas ecommerce no registradas queden bloqueadas con 404.
+
+Verificacion:
+- `GET /paramascotasec/webparamascotas/users` sin sesion responde `401 AUTH_REQUIRED`; con sesion admin del tenant debe devolver usuarios ecommerce.
+- `GET /paramascotasec/webparamascotas/__not_registered_probe` responde 404 con codigo `GATEWAY_WEBPARAMASCOTAS_ROUTE_NOT_REGISTERED`.
+- Pasaron `gatewayapisix/scripts/check-apisix-security.sh`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh`, `./scripts/check-env-secrets.sh qa`, `npm run type:check`, `npm run lint`, tests focales del catalogo dashboard y `npm run docker:health`.
+
+### 2026-06-28 - Menu modular separado por modulo contratado
+
+Objetivo: aclarar la asignacion de modulos y evitar que opciones fiscales o administrativas aparezcan mezcladas dentro del bloque ecommerce.
+
+Cambios:
+- El preset `Ecommerce base` queda como `dashboard + ecommerce`; no activa `users`, `tenant-admin`, inventario ni Billing SRI.
+- En el modal de asignacion, `dashboard` se muestra como base obligatoria y los modulos contratables se cuentan aparte.
+- Los paquetes ahora explican el bloque de menu que agregan: Ecommerce, Facturacion SRI, Operacion e inventario, Administracion/Plataforma o Recursos UI.
+- `Facturas PDF` deja de publicarse dentro de `Operacion` del panel ecommerce. Las facturas fiscales visibles pasan al bloque propio `SRI Ecuador` como `Facturas, RIDE y XML`.
+- Las entradas de usuarios, inventario y monitoreo que pertenecen a modulos separados dejan de heredarse visualmente desde ecommerce.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, tests focales de navegacion/modulos/tenant-admin y `node dashboard/tools/check-module-manifests.mjs`.
+- Se redeployo `dashboard` con `npm run docker:up` y paso `npm run docker:health`.
+- Validacion headless por APISIX en `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec`: ecommerce-only muestra `Integraciones reales` y oculta `SRI Ecuador`, `Facturas, RIDE y XML`, `Facturas PDF`, `Empresa y cobros`, `Administracion`, `Usuarios`, `Inventario` y `Monitoreo`.
+
+### 2026-06-28 - Clientes y equipo dentro de ecommerce
+
+Objetivo: corregir la frontera de usuarios para que un tenant ecommerce pueda ver compradores y operadores propios sin contratar el modulo global `users`.
+
+Cambios:
+- Se agrego `/api/admin/ecommerce-users` como contrato ecommerce para leer clientes `customer` y equipo `tenant_staff`, y administrar equipo operativo sin abrir `/api/users`.
+- APISIX publica ese contrato con alias tenantizado de servicio `/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/users`; el path `/api/admin/ecommerce-users` queda como implementacion interna del backend/proxy dashboard.
+- El endpoint queda protegido por modulo/permisos `ecommerce` mediante capability `admin.ecommerce-users`; `/api/users` y `/api/roles` siguen protegidos por el modulo global `users`.
+- El menu ecommerce muestra `Catalogo > Clientes y equipo` con permiso `ecommerce.update`, sin exigir `users.read`.
+- La pantalla `Clientes y equipo ecommerce` muestra filtro `Todos/Clientes/Equipo`, resumen separado y contactos/compras del dominio ecommerce.
+- Se registro `admin.ecommerce-users` en el catalogo maestro de capacidades y se regeneraron `system-capabilities.generated.json` y `systemCapabilities.ts`.
+
+Verificacion:
+- Por APISIX, `GET /paramascotasec/webparamascotas/users` queda como ruta publica protegida del servicio ecommerce; `GET /paramascotasec/api/admin/ecommerce-users` sigue siendo compatibilidad registrada del backend.
+- Por APISIX, `GET /paramascotasec/api/users` sigue respondiendo 403 con el tenant ecommerce-only, confirmando que no se habilito IAM global.
+- Validacion headless por `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/users?tenant=paramascotasec`: aparecen `Clientes y equipo ecommerce`, tarjetas de `Clientes` y `Equipo`; no aparecen `SRI Ecuador`, `Facturas, RIDE y XML` ni una linea global `Usuarios`.
+- Pasaron PHP lint focal, `npm run type:check`, `npm run lint`, tests focales, `node dashboard/tools/check-module-manifests.mjs`, `./scripts/check-container-connectivity.sh qa` y `./scripts/check-paramascotas.sh`.
+
+### 2026-06-28 - Tenant Paramascotas ecommerce-only y menu filtrado
+
+Objetivo: corregir que el menu del dashboard mostrara modulos fiscales, usuarios, inventario y monitoreo aunque el tenant `paramascotasec` solo debe tener ecommerce contratado.
+
+Cambios:
+- En `identity_platform`, el tenant `paramascotasec` queda con entitlements activos solo para `dashboard` y `ecommerce`.
+- Quedan inactivos para ese tenant `billing-sri`, `invoicing`, `products`, `inventory`, `users` y `tenant-admin`.
+- El rol operativo `paramascotasec_admin` queda limitado a `dashboard.read` y `ecommerce.*`; `paramascotasec_reader` queda con `dashboard.read` y `ecommerce.read`.
+- El menu del dashboard ahora aplica permisos por item del `paramascotas-panel`; rutas como `operations/billing-rides` exigen `billing-sri.read` y no aparecen ni cargan para ecommerce-only.
+- No se tocaron facturas, XML, RIDE, certificados, llaves fiscales ni datos de `billing_service`.
+
+Verificacion:
+- `GET /paramascotasec/api/tenant/context` por APISIX devuelve `enabledModules=["dashboard","ecommerce"]` para el usuario operativo.
+- `GET /paramascotasec/api/admin/billing/rides?limit=1` por APISIX devuelve `403 TENANT_MODULE_NOT_ENABLED` con modulo `billing-sri`, que es el bloqueo esperado.
+- Validacion headless por `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec`: no aparecen `SRI Ecuador`, `Empresa y cobros`, `Administracion`, `Operacion e inventario`, `Monitoreo`, `Usuarios`, `Inventario` ni `Facturas PDF`.
+- Pasaron `npm run type:check`, `npm run lint`, pruebas focales de navegacion/rutas, `npm run docker:up` y `npm run docker:health` en `dashboard`.
 
 ### 2026-06-28 - Gateway QA: CA local instalable para navegador
 
@@ -2684,8 +2839,9 @@ Operacion y verificacion:
 Objetivo: corregir el caso donde el superadmin guardaba Facturacion/Facturador SRI, refrescaba la pantalla y no veia el modulo en el menu ni en la ficha del tenant.
 
 Cambios:
-- `paramascotasec-backend/entorno/.env` y el fallback de `config/tenants.php` dejan Paramascotas con `dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri` como contrato base del QA.
-- Se redeployo solo el backend con `./scripts/deploy-development.sh backend`; el contenedor quedo con `DASHBOARD_ENABLED_MODULES=dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri`.
+- Decision supersedida el 2026-06-28: Paramascotas ya no usa `tenant-admin`, `invoicing` ni `billing-sri` como contrato base; el contrato vigente es `dashboard,users,ecommerce`.
+- En ese momento, `paramascotasec-backend/entorno/.env` y el fallback de `config/tenants.php` dejaban Paramascotas con `dashboard,ecommerce,users,tenant-admin,invoicing,billing-sri` como contrato base del QA.
+- En ese momento se redeployo solo el backend con `./scripts/deploy-development.sh backend`; el contenedor quedo con el valor legacy supersedido de modulos fiscales/plataforma como base QA.
 - Se confirmo en DB que `Setting.paramascotasec:dashboard_tenant_admin_overrides` queda con `invoicing` y `billing-sri`; asi el estado sobrevive F5 y no depende de un toast en memoria.
 - Se validaron las cuentas reales de plataforma y tenant en QA por APISIX; quedan como admins verificados, sin bloqueo ni OTP pendiente. No guardar claves en documentacion.
 - `users-list` deja de abrir automaticamente el primer usuario y mueve detalle/edicion a modal con bloqueo de scroll de fondo.
