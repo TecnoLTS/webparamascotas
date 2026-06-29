@@ -258,6 +258,129 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-29 - Detalles comerciales consolidados sin variantes duplicadas
+
+Objetivo: hacer que el alta/edicion de producto pida atributos descriptivos sin obligar a crear variantes y sin campos redundantes para contenido, presentacion o etapa.
+
+Cambios:
+- El modal de producto muestra `Detalles del producto` justo despues de `Datos basicos`, independiente del flujo `Nueva variante`.
+- El orden visual del modal queda fijado por clase estable: `Datos basicos` -> `Detalles del producto`/`Caracteristicas comerciales` -> `Venta`; aplica igual en gestion, edicion, nuevo producto y nueva variante.
+- `Contenido / dosis` reemplaza peso/contenido, volumen y dosis; `Presentacion` reemplaza presentacion/empaque; `Etapa / rango recomendado` reemplaza etapa/objetivo, edad y rango.
+- Dashboard y backend guardan las claves canonicas `weight`, `presentation` y `target`; los alias legacy `volume`, `dosage`, `packaging`, `age` y `range` solo se leen para compatibilidad y se limpian al guardar.
+- Los ejes de `Nueva variante` usan la misma lista canonica: contenido/dosis, presentacion, talla, color, sabor, etapa/rango y material.
+- El catalogo auxiliar deja de exponer `Dosis` como lista operativa separada; los valores legacy de `dosages` se fusionan en `Contenido / dosis`.
+- `Catalogos operativos` agrega `Caracteristicas comerciales`: cada tenant puede definir etiqueta visible, clave interna y valores permitidos para sus propios productos.
+- El modal de producto ya no hardcodea campos de mascotas; renderiza las caracteristicas comerciales configuradas. Si el tenant no configura ninguna, muestra estado vacio y no inventa campos de una industria especifica.
+- Para ParamascotasEC, cuando no existe configuracion nueva pero si existen catalogos heredados, se deriva una configuracion inicial desde esos valores para conservar compatibilidad.
+- Backend persiste `commercialAttributes` como registros estructurados en `ProductReferenceCatalog` y acepta valores como array o texto separado por lineas/comas.
+- Backend autocompleta catalogos nuevos con `dosage`/`volume` hacia `weights`, `packaging` hacia `presentations`, y `target`/`age`/`range` hacia `ageRanges`.
+- El ecommerce publico sigue leyendo productos antiguos con alias legacy, pero muestra filas consolidadas de contenido/dosis, presentacion y etapa/rango.
+- El flujo `Nueva variante` queda separado como bloque tecnico despues de Imagenes y SEO; ahi solo se decide grupo, eje, vista en tienda y alcance.
+- El frontend ya no borra atributos descriptivos cuando guarda un producto individual; solo limpia metadatos tecnicos de variante (`variantBaseName`, `variantGroupKey`, `variantAxis`, `catalogDisplayMode`, etc.).
+- El generador de SKU solo agrega el valor de variante cuando hay contexto explicito de variante, no por tener peso/presentacion como detalle comercial.
+- Billing/stock UI del dashboard muestra en el resumen de proveedor el IVA de compra actual de la factura antes que el valor por defecto del proveedor.
+- `ProductVariantMetadata::apply` en backend conserva atributos descriptivos sin generar `variantLabel` ni `variantGroupKey` cuando no hay contexto explicito de variante.
+- Al editar un producto con metadatos de variante heredados, si el payload trae `attributes` limpios, backend ya no hereda `variantLabel`, `variantBaseName` ni `variantGroupKey` del registro anterior para validar o reconstruir variante; esto permite pasar `Contenido / dosis` y `Presentacion` a `No aplica`.
+- `ProductSeoMetadata::effectiveAttributes` ya no mezcla atributos anteriores cuando recibe una edicion completa de producto; evita que SEO/defaults reinyecten `weight` o `presentation` despues de que el operador los puso en `No aplica`.
+- En `Nueva variante`, el selector `Define la variante` sale de `commercialAttributes` configuradas en catalogos operativos; guarda `variantAxis`, `variantDefinitionField` y `variantAxisLabel` para que la tienda muestre la etiqueta del eje comercial seleccionado.
+- Backend y storefront aceptan ejes comerciales custom seguros (`a-z`, numeros y `_`) sin requerir columnas nuevas; campos tecnicos como SKU, SEO, impuestos, precio, stock y metadatos de variante quedan bloqueados como ejes.
+- El ecommerce publico prioriza `variantAxis` sobre `displayAxis` para tarjetas, ficha y selectores: si el eje es `weight` muestra `Contenido / dosis: valor`; si el eje es `presentation` muestra `Presentacion: valor`; si es custom muestra `variantAxisLabel: valor`.
+- No hubo cambio estructural de base de datos para este ajuste; la persistencia sigue en el JSON `Product.attributes` y en los registros existentes de `ProductReferenceCatalog`.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint` y `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` en `dashboard`.
+- Pasaron `npx vitest run src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts`.
+- Pasaron `php -l` en `ProductController.php`, `SettingsController.php`, `ProductVariantMetadata.php` y `ProductFieldValueNormalizer.php`.
+- Paso una prueba directa con `ProductVariantMetadata::apply`: `volume`/`packaging`/`age` se guardan como `weight`/`presentation`/`target` y se eliminan los alias.
+- Paso una prueba directa con `SettingsController::normalizeProductReferenceDataPayload`: `commercialAttributes` guarda clave, etiqueta y valores permitidos estructurados.
+- Paso `npm run typecheck` en `webparamascotas/app`.
+- Se reconstruyo y levanto `dashboard` con `npm run docker:up`; luego se restauro `src/environments/environment.ts` a produccion/fixtures off/guards on/logging error.
+- Pasaron Playwright `keeps normal creation free of variant controls`, `registers every supported variant axis and catalog mode`, `exercises every named input from the browser` y `product management opens as modal with clear feedback labels`.
+- Paso Playwright `keeps normal creation free of variant controls` validando el orden visual `Datos basicos` -> `Detalles del producto` -> `Venta` -> `Stock y compra` dentro del navegador.
+- Paso Playwright `paramascotas product editor clears commercial attributes when set to not applicable`: abre editar, pone `Contenido / dosis` y `Presentacion` en `No aplica` y verifica que el payload elimina `weight`, `volume`, `dosage`, `presentation` y `packaging`.
+- Paso prueba directa PHP contra `ProductController` incluyendo `applyProductSeoDefaults`: un producto actual con `variantLabel`, `weight` y `presentation` heredados ya no bloquea ni reconstruye esos atributos cuando el payload de edicion trae atributos comerciales limpios.
+- Paso prueba directa PHP con `ProductVariantMetadata::apply`: un eje custom `voltaje` conserva `variantAxis`, `variantDefinitionField`, `displayAxis`, `variantAxisLabel` y `variantLabel`.
+- Paso Playwright `paramascotas product editor uses commercial attributes as variant axis options`: valida que el select de eje use `commercialAttributes` y que el payload guarde `variantAxisLabel`.
+- Se desplegaron `backend` con `./scripts/deploy.sh backend`, `frontend` con `./scripts/deploy.sh frontend` y `dashboard` con `npm run docker:up`; `backend-http`, `webparamascotas` y `dashboard` quedaron healthy.
+- `curl -k --resolve paramascotasec.com:443:192.168.100.229 -I https://paramascotasec.com/` y `/dashboard/` respondieron `HTTP/2 200`.
+- Pasaron `git diff --check` en `dashboard`, `backend` y `webparamascotas`.
+
+### 2026-06-29 - Edicion de producto sin alerta ni variante fantasma
+
+Objetivo: corregir el editor de producto para que no pida alerta de vencimiento sin fecha y no bloquee ediciones normales por metadatos viejos de variantes.
+
+Cambios:
+- `Alerta vencimiento dias` solo se muestra cuando existe `Vencimiento`; si se limpia la fecha, tambien se eliminan `expirationAlertDays`/`expiryAlertDays` del formulario.
+- `sanitizeProductForm` ya no envia alerta de vencimiento por defecto cuando no hay fecha; con fecha conserva el default operativo de 30 dias.
+- Al abrir editar o compra de un producto individual, el dashboard limpia metadatos incompletos de variante heredados (`catalogDisplayMode`, `variantDisplayMode`, etc.) antes del checklist y antes de validar.
+- La deteccion de variante real exige un valor diferenciador; `grouped/separate` por si solo ya no convierte un producto en variante.
+- Se agregaron pruebas para el caso de producto existente con `catalogDisplayMode` viejo pero sin variante real.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint` y `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` en `dashboard`.
+- Se reconstruyo y levanto `dashboard` con `npm run docker:up`; luego se restauro `src/environments/environment.ts` a produccion/fixtures off/guards on/logging error.
+- Pasaron Playwright `paramascotas product editor keeps normal creation free of variant controls`, `paramascotas product editor covers purchase and stock movement modes from the browser` y `paramascotas product editor exercises every named input from the browser`.
+- Pasaron `git diff --check` en `dashboard` y `webparamascotas`; `AGENTS.md` y `webparamascotas/docs/AI_CONTEXT.md` quedaron sin espacios finales.
+
+### 2026-06-29 - Variantes solo desde Nueva variante
+
+Objetivo: quitar la confusion de variantes durante el alta normal de productos y dejar ese flujo solo para el boton `Nueva variante`.
+
+Cambios:
+- El alta normal, editar, duplicar y registrar compra de producto ya no muestran el bloque de variantes ni el switch `Tiene variantes`.
+- `Nueva variante` abre el mismo modal en modo variante, con el bloque de ejes visible y obligatorio para esa operacion.
+- El boton `Nueva variante` puede partir de un producto individual; ya no exige editar primero el producto base para definir una variante previa.
+- `Vista en tienda` ahora incluye `Alcance`: `Solo esta variante` o `Toda la familia`; al elegir familia, el dashboard actualiza las variantes hermanas detectadas con el mismo `catalogDisplayMode`.
+- La seccion de imagenes del editor de producto se renderiza de forma directa, sin `@defer`, para que los campos de URL/archivo esten disponibles inmediatamente al abrir el modal.
+- SEO y busqueda queda como tarjeta abierta, antes de la seccion de variantes, y no como detalle replegado.
+- El editor de producto queda con un solo scroll: se elimino el `overflow-y` propio de la columna lateral de estado/checklist para evitar scroll anidado.
+- El guardado separa visibilidad de preservacion: editar o comprar una variante existente no muestra el bloque, pero conserva sus metadatos de familia/eje si ya existian.
+- Las pruebas E2E se ajustaron para que la matriz de variantes use el boton `Nueva variante`, no `Nuevo producto`.
+
+Verificacion:
+- Pasaron `npm run type:check` y `npm run lint` en `dashboard`.
+- Se reconstruyo y levanto `dashboard` con `npm run docker:up`; luego se restauro `src/environments/environment.ts` a produccion/fixtures off/guards on/logging error.
+- Paso Playwright `paramascotas-list-views.spec.ts` con los casos `preserves grouped variant metadata`, `keeps normal creation free of variant controls`, `registers every supported variant axis and catalog mode` y `exercises every named input`.
+- Paso Playwright `paramascotas product editor applies catalog display mode to the whole variant family`; valida que `Toda la familia` genere updates para las variantes hermanas.
+- Paso Playwright `paramascotas product editor shows image uploads and open SEO before variants`; valida campos de archivo visibles/habilitados, orden visual Imagenes -> SEO -> Variantes y columna lateral sin scroll propio.
+- `paramascotas-product-modal-real.spec.ts` quedo con fallo previo antes del modal: espera el texto legacy `Productos x Compra` en una ruta de reportes que actualmente muestra `Ventas vs compras por producto`.
+
+### 2026-06-28 - Alta de producto simplificada en dashboard
+
+Objetivo: hacer que registrar un producto sea mas comodo, con menos campos obligatorios visibles y un modal mas limpio.
+
+Cambios:
+- El modal de `Gestionar producto` en dashboard se reorganizo en flujo: datos basicos, venta, stock/compra, imagenes, variantes opcionales, SEO opcional y publicacion.
+- `PVP` queda como entrada principal; la base sin IVA se muestra como resumen calculado y ya no se edita como campo principal.
+- `Precio de mercado` aparece solo al activar oferta; `costo`, vencimiento y factura aparecen solo cuando entra stock o hay reposicion.
+- Las variantes quedan ocultas por defecto y se activan con switch; al activarlas se agrupan automaticamente sin exponer la clave tecnica de agrupacion.
+- SEO se genera automaticamente al publicar si falta; los campos SEO quedan editables en un detalle opcional y ya no bloquean manualmente el alta rapida.
+- El editor de imagenes deja de pedir ancho/alto manual; las dimensiones se mantienen calculadas/normalizadas por el sistema.
+- Se ajustaron estilos del modal para alto limitado al viewport, scroll interno, panel lateral mas limpio y sin desborde horizontal movil.
+- El panel lateral de `Estado y publicacion` y `Checklist de publicacion` queda como columna conjunta con scroll propio para llegar al final dentro del modal.
+- La vista `Productos` elimina el encabezado superior redundante `Catalogo / Productos` y compacta el resumen de Total/Publicados/Ocultos/Incompletos dentro del header operativo, evitando cuatro tarjetas altas antes de los filtros.
+- El SKU del alta de producto queda automatico y de solo lectura; se regenera al guardar desde marca, categoria, nombre y variante, con sufijo automatico si hay colision.
+- El proveedor de factura de compra en producto deja de ser campo libre/datalist y pasa a `select` desde el catalogo maestro de proveedores; al seleccionar completa documento, IVA de compra y `attributes.supplier`.
+- El editor de variantes expone todos los ejes soportados por la normalizacion: volumen, sabor, etapa/objetivo y edad se suman a peso, presentacion, empaque, talla, color, material, rango y dosis.
+- Las variantes recuperan una decision limpia de `Vista en tienda`: agrupada con su familia o producto independiente.
+- Cuando el operador elige un eje explicito para ropa/accesorios, la variante visible usa el valor de ese eje y no mezcla atributos fijos como talla.
+- El overlay oscuro de los modales Paramascotas dejo de usar el pseudo-elemento global `body.overlay-active::after` con animacion por ancho; ahora entra con fade uniforme en `paramascotasModalBackdropFadeIn`.
+- Apagar `Tiene variantes` limpia metadatos internos y campos del bloque de variantes antes de validar/sanitizar, evitando que la API exija variante en productos individuales.
+- El checklist de publicacion vuelve a reflejar todas las reglas que pueden bloquear el guardado/publicacion: variante si aplica, SEO autogenerado, vencimiento en alimentos con stock y factura de compra cuando ingresa inventario.
+- Se actualizaron pruebas E2E del dashboard para el nuevo contrato visual y operativo del modal.
+
+Verificacion:
+- Pasaron `npm run type:check` y `npm run lint` en `dashboard`.
+- Paso `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` con cobertura para productos individuales sin variante, variante pendiente, SEO autogenerado y sanitizado sin regenerar metadatos de variante.
+- Pasaron E2E puntuales con Playwright: `paramascotas product editor preserves grouped variant metadata in create payload`, `paramascotas product purchase invoice autofills supplier document and tax rate`, `paramascotas product editor saves net base price instead of gross PVP`, `paramascotas product editor blocks initial stock without purchase invoice`, `paramascotas product editor registers every supported variant axis and catalog mode from the browser` y `paramascotas product editor covers purchase and stock movement modes from the browser`.
+- Paso Playwright `paramascotas product editor clears variant metadata when variants are disabled before save`; el payload final conserva SKU/especie y no envia `variantAxis`, `variantBaseName`, `catalogDisplayMode` ni `weight`.
+- Paso Playwright `paramascotas catalog products uses list view instead of cards`; tambien valida que el overlay del modal de producto usa fade y no el barrido lateral del `body`.
+- Inspeccion Playwright del checklist con alimento y stock inicial confirma SEO autogenerado en verde y `Vencimiento`/`Factura compra` pendientes cuando faltan, por lo que el panel ya no queda falsamente "todo verde".
+- La matriz Playwright registra 42 altas de producto desde navegador cubriendo alimento, cuidado, ropa y accesorios con ejes peso, volumen, presentacion, empaque, sabor, etapa/objetivo, edad, dosis, rango, talla, color y material, cada uno en modo agrupado y producto independiente.
+- La matriz de compras/stock valida alta sin stock ni factura, compra inicial con factura, edicion sin movimiento de inventario, ajuste manual con motivo y compra/reposicion con factura heredada.
+- La auditoria Playwright `paramascotas product editor exercises every named input from the browser` toca o verifica cada control nombrado del modal: datos basicos, venta, oferta, variantes, stock/compra, factura, imagenes, SEO y publicacion.
+- Revision visual con Playwright en desktop y movil contra servidor local Angular; el panel movil quedo sin overflow horizontal (`documentWidth` 390 en viewport 390).
+
 ### 2026-06-28 - Backup/restore DB con clave siempre interactiva
 
 Objetivo: evitar claves implicitas en `.env` y hacer que el operador defina explicitamente la clave de cada backup/restauracion.

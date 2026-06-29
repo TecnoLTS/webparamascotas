@@ -193,7 +193,28 @@ const parseBooleanLike = (value: unknown) => {
 }
 
 const CARE_VARIANT_FIELDS = new Set(['range', 'weight', 'presentation', 'dosage', 'volume', 'packaging'])
+const VARIANT_AXIS_ALIASES: Record<string, string> = {
+  volume: 'weight',
+  dosage: 'weight',
+  packaging: 'presentation',
+  age: 'target',
+  range: 'target',
+}
 const STANDALONE_SIZE_LABEL_PATTERN = /^(?:XXXS|XXS|XS|S|M|L|XL|XXL|XXXL|STANDARD|\d+(?:[.,]\d+)?\s?(?:KGS?|KG|K|GR|G|LB|L|ML|MG|OZ|TAB|TABS|DS|UN|UNI|PACK|PZA|PZ|CM)|X?\d+)$/i
+
+const normalizeVariantAxisKey = (value?: string | null) => {
+  const normalized = (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return VARIANT_AXIS_ALIASES[normalized] ?? normalized
+}
+
+const isAllowedVariantAxisKey = (value?: string | null) => {
+  const axis = normalizeVariantAxisKey(value)
+  return Boolean(axis && /^[a-z][a-z0-9_]{1,47}$/.test(axis))
+}
 
 const resolveProductSizeValues = (
   product: ProductWithRelations,
@@ -231,8 +252,14 @@ const normalizeLegacyCareAttributes = (product: ProductWithRelations, attributes
   delete next.size
 
   if (next.variantAxis && !CARE_VARIANT_FIELDS.has(next.variantAxis)) {
-    delete next.variantAxis
-    delete next.variantDefinitionField
+    const normalizedAxis = normalizeVariantAxisKey(next.variantAxis)
+    if (isAllowedVariantAxisKey(normalizedAxis)) {
+      next.variantAxis = normalizedAxis
+      next.variantDefinitionField = normalizedAxis
+    } else {
+      delete next.variantAxis
+      delete next.variantDefinitionField
+    }
   }
 
   return next
@@ -243,11 +270,11 @@ const resolveVariantLabelForProduct = (product: ProductWithRelations, attributes
   const color = typeof attributes.color === 'string' ? attributes.color.trim() : ''
   const size = typeof attributes.size === 'string' ? normalizeMeasurementLabel(attributes.size).trim() : ''
   const variantAxis = typeof attributes.variantDefinitionField === 'string' && attributes.variantDefinitionField.trim()
-    ? attributes.variantDefinitionField.trim().toLowerCase()
+    ? normalizeVariantAxisKey(attributes.variantDefinitionField)
     : typeof attributes.variantAxis === 'string' && attributes.variantAxis.trim()
-      ? attributes.variantAxis.trim().toLowerCase()
+      ? normalizeVariantAxisKey(attributes.variantAxis)
       : typeof attributes.displayAxis === 'string'
-        ? attributes.displayAxis.trim().toLowerCase()
+        ? normalizeVariantAxisKey(attributes.displayAxis)
         : ''
   if (normalizedType === 'accesorios' && color && size) {
     if (variantAxis === 'size') {
@@ -264,7 +291,6 @@ const resolveVariantLabelForProduct = (product: ProductWithRelations, attributes
 
   if (
     variantAxis
-    && (normalizedType !== 'cuidado' || CARE_VARIANT_FIELDS.has(variantAxis))
     && typeof attributes[variantAxis] === 'string'
     && attributes[variantAxis].trim()
   ) {
@@ -274,10 +300,12 @@ const resolveVariantLabelForProduct = (product: ProductWithRelations, attributes
   if (normalizedType === 'cuidado') {
     const careLabel = [
       attributes.weight,
-      attributes.dosage,
       attributes.volume,
+      attributes.dosage,
       attributes.presentation,
       attributes.packaging,
+      attributes.target,
+      attributes.age,
       attributes.range,
     ].find((value) => typeof value === 'string' && value.trim().length > 0)
     if (careLabel) return normalizeMeasurementLabel(careLabel)
@@ -293,6 +321,8 @@ const resolveVariantLabelForProduct = (product: ProductWithRelations, attributes
       attributes.presentation,
       attributes.packaging,
       attributes.dosage,
+      attributes.target,
+      attributes.age,
     ],
     ropa: [
       attributes.variantLabel,
@@ -314,6 +344,8 @@ const resolveVariantLabelForProduct = (product: ProductWithRelations, attributes
     attributes.presentation,
     attributes.packaging,
     attributes.dosage,
+    attributes.target,
+    attributes.age,
   ]
   const resolved = (valuesByType[normalizedType] ?? fallbackValues)
     .find((value) => typeof value === 'string' && value.trim().length > 0)
@@ -451,8 +483,8 @@ export const mapProductToDto = (product: ProductWithRelations): ProductType => {
     variantGroupKey,
     productGroupId,
     variantAxis: typeof normalizedAttributes.variantDefinitionField === 'string' && normalizedAttributes.variantDefinitionField
-      ? normalizedAttributes.variantDefinitionField
-      : (typeof normalizedAttributes.variantAxis === 'string' ? normalizedAttributes.variantAxis : ''),
+      ? normalizeVariantAxisKey(normalizedAttributes.variantDefinitionField)
+      : (typeof normalizedAttributes.variantAxis === 'string' ? normalizeVariantAxisKey(normalizedAttributes.variantAxis) : ''),
     variantPresentation: typeof normalizedAttributes.presentation === 'string' ? normalizeMeasurementLabel(normalizedAttributes.presentation) : '',
     inventory: product.inventory ? {
       onHand: Number(product.inventory.onHand ?? product.quantity ?? 0),

@@ -144,7 +144,22 @@ const looksLikeSizeValue = (value?: string | null) =>
 const looksLikeAccessorySizeValue = (value?: string | null) =>
   /^(?:XXS|XS|S|M|L|XL|XXL|STANDARD|\d+(?:[.,]\d+)?\s?CM|X?\d+)$/i.test((value ?? '').trim())
 
-const CARE_VARIANT_FIELDS = new Set(['range', 'weight', 'presentation', 'dosage', 'volume', 'packaging'])
+const VARIANT_AXIS_ALIASES: Record<string, string> = {
+  volume: 'weight',
+  dosage: 'weight',
+  packaging: 'presentation',
+  age: 'target',
+  range: 'target',
+}
+
+const normalizeVariantAxisKey = (value?: string | null) => {
+  const normalized = (value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return VARIANT_AXIS_ALIASES[normalized] ?? normalized
+}
 
 const getNormalizedProductType = (product: ProductType) =>
   normalizeProductType(product.productType ?? '', product.category)
@@ -153,10 +168,10 @@ const looksLikeContentMeasurementValue = (value?: string | null) =>
   /^\d+(?:[.,]\d+)?\s?(?:KGS?|KG|K|GR|G|LB|LBS?|L|ML|MG|OZ)$/i.test((value ?? '').trim())
 
 const getVariantAxisValue = (product: ProductType) => {
-  const definitionField = getAttributeValue(product, ['variantDefinitionField'])
+  const definitionField = normalizeVariantAxisKey(getAttributeValue(product, ['variantDefinitionField']))
   if (definitionField) return definitionField
 
-  const legacyAxis = getAttributeValue(product, ['variantAxis'])
+  const legacyAxis = normalizeVariantAxisKey(getAttributeValue(product, ['variantAxis']))
   if (
     getNormalizedProductType(product) === 'Alimento'
     && legacyAxis === 'size'
@@ -186,7 +201,9 @@ const isSeparateCatalogDisplayMode = (value?: string | null) =>
 const getAxisAttributeValue = (product: ProductType) => {
   const axis = getVariantAxisValue(product)
   if (!axis) return ''
-  if (getNormalizedProductType(product) === 'cuidado' && !CARE_VARIANT_FIELDS.has(axis)) return ''
+  if (axis === 'weight') return getAttributeValue(product, ['weight', 'volume', 'dosage'])
+  if (axis === 'presentation') return getAttributeValue(product, ['presentation', 'packaging'])
+  if (axis === 'target') return getAttributeValue(product, ['target', 'age', 'range'])
   return getAttributeValue(product, [axis])
 }
 
@@ -413,29 +430,25 @@ const hasColorAndSizeVariant = (product: ProductType) =>
   && looksLikeAccessorySizeValue(getAttributeValue(product, ['size']))
 
 const displayAxisFromRawAxis = (axis?: string | null) => {
-  const normalizedAxis = (axis ?? '').trim()
-  if (['weight', 'volume', 'presentation', 'packaging'].includes(normalizedAxis)) return 'presentation'
-  if (normalizedAxis === 'range') return 'range'
-  if (normalizedAxis === 'dosage') return 'dosage'
+  const normalizedAxis = normalizeVariantAxisKey(axis)
+  if (['weight', 'presentation', 'target'].includes(normalizedAxis)) return normalizedAxis
   if (normalizedAxis === 'color') return 'color'
   if (normalizedAxis === 'size') return 'size'
   if (normalizedAxis === 'flavor') return 'flavor'
-  if (normalizedAxis === 'target') return 'target'
-  if (normalizedAxis === 'age') return 'age'
   if (normalizedAxis === 'material') return 'material'
-  return ''
+  return /^[a-z][a-z0-9_]{1,47}$/.test(normalizedAxis) ? normalizedAxis : ''
 }
 
 const getVariantDisplayAxis = (product: ProductType) => {
   const normalizedType = getNormalizedProductType(product)
   const color = getAttributeValue(product, ['color'])
+  const rawAxis = getVariantAxisValue(product)
+  const explicitVariantAxis = displayAxisFromRawAxis(rawAxis)
+  if (explicitVariantAxis) return explicitVariantAxis
+
   const displayAxis = getVariantDisplayAxisValue(product)
   const explicitPublicDisplayAxis = displayAxisFromRawAxis(displayAxis)
   if (explicitPublicDisplayAxis) return explicitPublicDisplayAxis
-
-  const rawAxis = getVariantAxisValue(product)
-  const explicitDisplayAxis = displayAxisFromRawAxis(rawAxis)
-  if (explicitDisplayAxis) return explicitDisplayAxis
 
   if (
     normalizedType === 'accesorios'
@@ -453,15 +466,13 @@ const getVariantDisplayAxis = (product: ProductType) => {
     values.some((value) => normalizeDisplayIdentity(value) === labelIdentity)
 
   if (matchesAny([getAttributeValue(product, ['color']), ...getVariationColorValues(product)])) return 'color'
-  if (matchesAny([getAttributeValue(product, ['range'])])) return 'range'
-  if (matchesAny([getAttributeValue(product, ['dosage'])])) return 'dosage'
   if (matchesAny([getAttributeValue(product, ['flavor'])])) return 'flavor'
-  if (matchesAny([getAttributeValue(product, ['target'])])) return 'target'
-  if (matchesAny([getAttributeValue(product, ['age'])])) return 'age'
+  if (matchesAny([getAttributeValue(product, ['target']), getAttributeValue(product, ['age']), getAttributeValue(product, ['range'])])) return 'target'
   if (matchesAny([getAttributeValue(product, ['material'])])) return 'material'
   if (matchesAny([
     getAttributeValue(product, ['weight']),
     getAttributeValue(product, ['volume']),
+    getAttributeValue(product, ['dosage']),
     getAttributeValue(product, ['presentation']),
     getAttributeValue(product, ['packaging']),
   ])) return 'presentation'
@@ -488,24 +499,12 @@ const collectVariantDisplayValuesForAxis = (product: ProductType, axis: string):
       return getProductVariantSizeValue(variant) || getAttributeValue(variant, ['size'])
     }
 
-    if (axis === 'range') {
-      return getAttributeValue(variant, ['range'])
-    }
-
-    if (axis === 'dosage') {
-      return getAttributeValue(variant, ['dosage'])
-    }
-
     if (axis === 'flavor') {
       return getAttributeValue(variant, ['flavor'])
     }
 
     if (axis === 'target') {
-      return getAttributeValue(variant, ['target'])
-    }
-
-    if (axis === 'age') {
-      return getAttributeValue(variant, ['age'])
+      return getAttributeValue(variant, ['target', 'age', 'range'])
     }
 
     if (axis === 'material') {
@@ -514,15 +513,20 @@ const collectVariantDisplayValuesForAxis = (product: ProductType, axis: string):
 
     if (axis === 'presentation') {
       const contentKeys = normalizedType === 'Alimento'
-        ? ['weight', 'size', 'volume']
+        ? ['weight', 'size', 'volume', 'dosage']
         : normalizedType === 'cuidado'
-          ? ['weight', 'volume']
+          ? ['weight', 'volume', 'dosage']
           : ['weight', 'volume', 'size']
 
-      return getProductPresentationDisplayValue(variant, contentKeys)
+      return getAttributeValue(variant, ['presentation', 'packaging'])
+        || getProductPresentationDisplayValue(variant, contentKeys)
     }
 
-    return ''
+    if (axis === 'weight') {
+      return getAttributeValue(variant, ['weight', 'volume', 'dosage'])
+    }
+
+    return getAttributeValue(variant, [axis])
   })
 
   return normalizeMeasurementLabels(values.filter(Boolean))
@@ -553,19 +557,27 @@ const getProductPrimaryDisplayAxis = (product: ProductType) => {
     || ''
 }
 
-const getDisplayLabelForAxis = (axis: string, normalizedType: string, valueCount: number) => {
+const getExplicitAxisLabel = (product: ProductType, axis: string) => {
+  const attributes = product.attributes ?? {}
+  const productAxis = normalizeVariantAxisKey(attributes.variantDefinitionField || attributes.variantAxis || product.variantAxis)
+  const label = productAxis === axis ? getAttributeValue(product, ['variantAxisLabel']) : ''
+  return label.trim()
+}
+
+const getDisplayLabelForAxis = (axis: string, normalizedType: string, valueCount: number, product?: ProductType) => {
+  const explicitLabel = product ? getExplicitAxisLabel(product, axis) : ''
+  if (explicitLabel) return explicitLabel
+
   const plural = valueCount !== 1
   if (axis === 'color') return plural ? 'Colores' : 'Color'
-  if (axis === 'range') return 'Rango recomendado'
-  if (axis === 'dosage') return 'Dosis'
   if (axis === 'flavor') return plural ? 'Sabores' : 'Sabor'
-  if (axis === 'target') return plural ? 'Etapas' : 'Etapa'
-  if (axis === 'age') return 'Edad'
+  if (axis === 'target') return plural ? 'Etapas / rangos' : 'Etapa / rango'
   if (axis === 'material') return plural ? 'Materiales' : 'Material'
+  if (axis === 'weight') return 'Contenido / dosis'
   if (['ropa', 'accesorios'].includes(normalizedType) && axis === 'size') return plural ? 'Tallas' : 'Talla'
   if (axis === 'size') return plural ? 'Tamaños' : 'Tamaño'
   if (axis === 'presentation') return plural ? 'Presentaciones' : 'Presentación'
-  return 'Opciones'
+  return axis.replace(/_/g, ' ')
 }
 
 const formatVariantDisplayValues = (axis: string, values: string[]) => {
@@ -1031,13 +1043,14 @@ export const getProductVariantDisplayInfo = (product: ProductType): { label: str
   }
 
   const normalizedType = getNormalizedProductType(product)
-  if (displayAxis === 'presentation') {
+  const hasExplicitAxis = getProductVariants(product).some((variant) => getVariantAxisValue(variant) === displayAxis)
+  if (displayAxis === 'presentation' && !hasExplicitAxis) {
     const presentationRows = getPresentationDisplayRows(
       product,
       normalizedType === 'Alimento'
-        ? ['weight', 'size', 'volume']
+        ? ['weight', 'size', 'volume', 'dosage']
         : normalizedType === 'cuidado'
-          ? ['weight', 'volume']
+          ? ['weight', 'volume', 'dosage']
           : ['weight', 'volume', 'size'],
     )
 
@@ -1056,7 +1069,7 @@ export const getProductVariantDisplayInfo = (product: ProductType): { label: str
   }
 
   return {
-    label: getDisplayLabelForAxis(displayAxis, normalizedType, values.length),
+    label: getDisplayLabelForAxis(displayAxis, normalizedType, values.length, product),
     values: formatVariantDisplayValues(displayAxis, values),
   }
 }
@@ -1064,6 +1077,14 @@ export const getProductVariantDisplayInfo = (product: ProductType): { label: str
 export const getProductVariantDisplayRows = (product: ProductType): Array<{ label: string; values: string[] }> => {
   const variants = getProductVariants(product)
   const normalizedType = getNormalizedProductType(product)
+  const hasExplicitAxis = variants.some((variant) => getVariantAxisValue(variant))
+
+  if (hasExplicitAxis) {
+    const info = getProductVariantDisplayInfo(product)
+    if (info.values.length > 0) {
+      return [info]
+    }
+  }
 
   if (normalizedType === 'cuidado') {
     const collectAttributeValues = (keys: string[]) =>
@@ -1072,9 +1093,9 @@ export const getProductVariantDisplayRows = (product: ProductType): Array<{ labe
       )
 
     const rows = [
-      ...getPresentationDisplayRows(product, ['weight', 'volume']),
-      { label: 'Rango recomendado', values: collectAttributeValues(['range']) },
-      { label: 'Dosis', values: collectAttributeValues(['dosage']) },
+      { label: 'Contenido / dosis', values: collectAttributeValues(['weight', 'volume', 'dosage']) },
+      { label: 'Presentacion', values: collectAttributeValues(['presentation', 'packaging']) },
+      { label: 'Etapa / rango recomendado', values: collectAttributeValues(['target', 'age', 'range']) },
     ].filter((row) => row.values.length > 0)
 
     if (rows.length > 0) {

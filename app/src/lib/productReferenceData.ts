@@ -58,11 +58,20 @@ export type ProductCategoryImageReference = {
   showInImageSection: boolean
 }
 
+export type ProductCommercialAttributeReference = {
+  id: string
+  key: string
+  label: string
+  values: string[]
+  legacyKeys?: string[]
+}
+
 export type ProductReferenceData = {
   categories: string[]
   categoryImages: ProductCategoryImageReference[]
   brands: ProductBrandReference[]
   suppliers: ProductSupplierReference[]
+  commercialAttributes: ProductCommercialAttributeReference[]
   sizes: string[]
   weights: string[]
   materials: string[]
@@ -170,6 +179,7 @@ export const createEmptyProductReferenceData = (): ProductReferenceData => ({
   categoryImages: [],
   brands: [],
   suppliers: [],
+  commercialAttributes: [],
   sizes: [],
   weights: [],
   materials: [],
@@ -299,6 +309,47 @@ export const normalizeProductBrandRecords = (input: unknown): ProductBrandRefere
   })
 
   return normalized.sort((left, right) => left.name.localeCompare(right.name, 'es-EC', { sensitivity: 'base' }))
+}
+
+const normalizeCommercialAttributeKey = (value: unknown, fallback: unknown = '') => {
+  const raw = collapseWhitespace(typeof value === 'string' ? value : String(value ?? ''))
+    || collapseWhitespace(typeof fallback === 'string' ? fallback : String(fallback ?? ''))
+  return createSlug(raw).replace(/-/g, '_').slice(0, 48)
+}
+
+export const normalizeProductCommercialAttributeRecords = (input: unknown): ProductCommercialAttributeReference[] => {
+  if (!Array.isArray(input)) return []
+
+  const seen = new Set<string>()
+  const normalized: ProductCommercialAttributeReference[] = []
+
+  input.forEach((item, index) => {
+    const source: Record<string, unknown> = item && typeof item === 'object' && !Array.isArray(item)
+      ? item as Record<string, unknown>
+      : { label: item }
+    const label = collapseWhitespace(
+      typeof source.label === 'string'
+        ? source.label
+        : typeof source.name === 'string'
+          ? source.name
+          : '',
+    )
+    const key = normalizeCommercialAttributeKey(source.key, label)
+    if (!label || !key || seen.has(key)) return
+
+    seen.add(key)
+    normalized.push({
+      id: collapseWhitespace(typeof source.id === 'string' ? source.id : '') || `attribute-${key}-${index + 1}`,
+      key,
+      label,
+      values: normalizeReferenceList(Array.isArray(source.values) ? source.values : source.options),
+      legacyKeys: normalizeReferenceList(source.legacyKeys)
+        .map((legacyKey) => normalizeCommercialAttributeKey(legacyKey))
+        .filter((legacyKey) => legacyKey && legacyKey !== key),
+    })
+  })
+
+  return normalized
 }
 
 const normalizeAssetUrl = (value: unknown) => collapseWhitespace(typeof value === 'string' ? value : '')
@@ -470,6 +521,7 @@ export const normalizeProductReferenceData = (input?: Partial<Record<ProductRefe
   const defaults = createEmptyProductReferenceData()
   const source = (input || {}) as Partial<Record<ProductReferenceKey, unknown>> & {
     categoryImages?: unknown
+    commercialAttributes?: unknown
   }
 
   PRODUCT_REFERENCE_KEYS.forEach((key) => {
@@ -494,6 +546,7 @@ export const normalizeProductReferenceData = (input?: Partial<Record<ProductRefe
   defaults.dosages = normalizeMeasuredReferenceList([...(defaults.dosages || []), ...migratedDosages])
   defaults.presentations = normalizeReferenceList(defaults.presentations)
   defaults.categoryImages = normalizeProductCategoryImageRecords(source.categoryImages)
+  defaults.commercialAttributes = normalizeProductCommercialAttributeRecords(source.commercialAttributes)
 
   return defaults
 }

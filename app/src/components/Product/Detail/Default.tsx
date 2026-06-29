@@ -339,7 +339,7 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
       const foodRows = [
         { key: 'presentationContent', label: presentationLabel || 'Presentación', value: contentValue },
         { key: 'flavor', label: 'Sabor', value: attributes.flavor },
-        { key: 'target', label: 'Etapa', value: attributes.target || attributes.age },
+        { key: 'target', label: 'Etapa / rango', value: attributes.target || attributes.age || attributes.range },
         { key: 'species', label: 'Especie', value: attributes.species },
       ]
 

@@ -77,19 +77,7 @@ const looksLikeColorValue = (value?: string | null) => {
     .some((part) => COLOR_WORDS.has(part))
 }
 
-export type ProductVariantAxisKey =
-  | 'color'
-  | 'size'
-  | 'presentation'
-  | 'weight'
-  | 'volume'
-  | 'packaging'
-  | 'dosage'
-  | 'range'
-  | 'material'
-  | 'flavor'
-  | 'target'
-  | 'age'
+export type ProductVariantAxisKey = string
 
 export type ProductVariantAxis = {
   axis: ProductVariantAxisKey
@@ -112,10 +100,44 @@ export const PRODUCT_VARIANT_AXIS_ORDER: ProductVariantAxisKey[] = [
   'material',
 ]
 
+const VARIANT_AXIS_ALIASES: Record<string, ProductVariantAxisKey> = {
+  volume: 'weight',
+  dosage: 'weight',
+  packaging: 'presentation',
+  age: 'target',
+  range: 'target',
+}
+
+const RESERVED_VARIANT_AXIS_FIELDS = new Set([
+  'sku',
+  'name',
+  'price',
+  'quantity',
+  'supplier',
+  'taxrate',
+  'taxexempt',
+  'seotitle',
+  'seodescription',
+  'seoimagealt',
+  'seosearchterms',
+  'variantaxis',
+  'variantaxislabel',
+  'variantdefinitionfield',
+  'variantlabel',
+  'variantbasename',
+  'variantgroupkey',
+  'catalogdisplaymode',
+  'variantdisplaymode',
+])
+
 const normalizeVariantAxisKey = (value?: string | null): ProductVariantAxisKey | '' => {
   const normalized = normalizeIdentity(value)
-  return PRODUCT_VARIANT_AXIS_ORDER.includes(normalized as ProductVariantAxisKey)
-    ? normalized as ProductVariantAxisKey
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  const axis = VARIANT_AXIS_ALIASES[normalized] ?? normalized
+  if (!axis || RESERVED_VARIANT_AXIS_FIELDS.has(axis.replace(/_/g, ''))) return ''
+  return PRODUCT_VARIANT_AXIS_ORDER.includes(axis) || /^[a-z][a-z0-9_]{1,47}$/.test(axis)
+    ? axis
     : ''
 }
 
@@ -237,7 +259,7 @@ export const getVariantAxisValue = (variant: ProductType, axis: ProductVariantAx
       case 'presentation':
         return attributes.presentation || attributes.packaging
       case 'weight':
-        return attributes.weight
+        return attributes.weight || attributes.volume || attributes.dosage
       case 'volume':
         return attributes.volume
       case 'packaging':
@@ -251,18 +273,18 @@ export const getVariantAxisValue = (variant: ProductType, axis: ProductVariantAx
       case 'flavor':
         return attributes.flavor || attributes.sabor
       case 'target':
-        return attributes.target
+        return attributes.target || attributes.age || attributes.edad || attributes.range
       case 'age':
         return attributes.age || attributes.edad
       default:
-        return ''
+        return attributes[axis]
     }
   })()
 
   const normalized = normalizeLabel(typeof value === 'string' ? value : String(value ?? ''))
   if (!normalized) return ''
 
-  return ['weight', 'volume', 'dosage', 'range'].includes(axis)
+  return ['weight', 'volume', 'dosage', 'range', 'target'].includes(axis)
     ? (normalizeMeasurementLabels([normalized])[0] ?? normalized)
     : normalized
 }
@@ -333,19 +355,27 @@ const normalizeVariantAxisLabel = (label: string) => {
 
 export const getVariantAxisLabel = (product: ProductType, axis: ProductVariantAxisKey) => {
   const productType = normalizeProductType(product.productType ?? '', product.category)
+  const productAxis = normalizeVariantAxisKey(product.attributes?.variantDefinitionField || product.attributes?.variantAxis || product.variantAxis)
+  const explicitLabel = normalizeLabel(
+    productAxis === axis
+      ? product.attributes?.variantAxisLabel
+      : ''
+  )
+  if (explicitLabel) return normalizeVariantAxisLabel(explicitLabel)
+
   if (axis === 'color') return 'Color'
   if (axis === 'size') return ['ropa', 'accesorios'].includes(productType) ? 'Talla' : 'Tamaño'
-  if (axis === 'presentation') return 'Formato'
-  if (axis === 'weight') return normalizeVariantAxisLabel(getCommonPresentationLabel(product) || 'Peso')
+  if (axis === 'presentation') return 'Presentación'
+  if (axis === 'weight') return normalizeVariantAxisLabel(getCommonPresentationLabel(product) || 'Contenido / dosis')
   if (axis === 'volume') return normalizeVariantAxisLabel(getCommonPresentationLabel(product) || 'Contenido')
   if (axis === 'packaging') return 'Empaque'
   if (axis === 'dosage') return 'Dosis'
   if (axis === 'range') return 'Rango recomendado'
   if (axis === 'material') return 'Material'
   if (axis === 'flavor') return 'Sabor'
-  if (axis === 'target') return 'Etapa'
+  if (axis === 'target') return 'Etapa / rango'
   if (axis === 'age') return 'Edad'
-  return 'Opción'
+  return normalizeVariantAxisLabel(axis.replace(/_/g, ' '))
 }
 
 export const getProductVariantAxes = (product: ProductType): ProductVariantAxis[] => {
