@@ -204,15 +204,7 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
         ? Math.floor((data.sold / data.quantity) * 100)
         : 0
     const showFromPrice = hasVariantChoices && Number(data.priceMax ?? price) > price
-    const familySummaryLabel = hasVariantChoices
-        ? `${variantProducts.length} variantes · ${Number(data.quantity ?? 0).toLocaleString('es-EC')} unidades totales`
-        : ''
     const availabilityLabel = hasVariantChoices ? 'Disponibles total: ' : 'Disponibles: '
-    const renderFamilySummary = () => familySummaryLabel ? (
-        <div className="caption1 text-secondary mt-1">
-            {familySummaryLabel}
-        </div>
-    ) : null
 
     return (
         <>
@@ -369,7 +361,6 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
                                 </div>
                             </div>
                             <div className="product-name pm-product-card__name text-title duration-300">{data.name}</div>
-                            {renderFamilySummary()}
                             {variantDisplayRows.length > 0 && (
                                 <div className="pm-product-card__variants caption1 text-secondary mt-1 space-y-0.5">
                                     {variantDisplayRows.map((row) => (
@@ -487,7 +478,6 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
                                 <div className='flex items-start gap-7 max-lg:gap-4 max-lg:flex-wrap max-lg:w-full max-sm:flex-col max-sm:w-full'>
                                     <div className="product-infor max-sm:w-full flex-1 min-w-[260px]">
                                         <div onClick={handleDetailProduct} className="product-name heading6 inline-block duration-300">{data.name}</div>
-                                        {renderFamilySummary()}
                                         {variantDisplayRows.length > 0 && (
                                             <div className="caption1 text-secondary mt-1 space-y-0.5">
                                                 {variantDisplayRows.map((row) => (
@@ -616,7 +606,6 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
                     </div>
                     <div className="product-infor mt-4">
                         <span className="text-title">{data.name}</span>
-                        {renderFamilySummary()}
                         {variantDisplayRows.length > 0 && (
                             <div className="caption1 text-secondary mt-1 space-y-0.5">
                                 {variantDisplayRows.map((row) => (

@@ -147,6 +147,9 @@ const getPathname = (pathOrUrl: string) => {
 
 const normalizeHeaders = (init?: RequestInit) => {
   const headers = new Headers(init?.headers || {})
+  if (!headers.has('x-auth-surface')) {
+    headers.set('x-auth-surface', 'ecommerce')
+  }
   return headers
 }
 
@@ -170,6 +173,9 @@ const refreshBrowserCsrfToken = async () => {
 
   browserCsrfRefreshPromise = fetch(resolveUrl('/api/auth/session'), {
     method: 'GET',
+    headers: {
+      'x-auth-surface': 'ecommerce',
+    },
     credentials: 'include',
     cache: 'no-store',
   })

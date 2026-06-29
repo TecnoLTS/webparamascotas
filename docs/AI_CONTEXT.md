@@ -5,7 +5,7 @@ Fuente canonica de contexto IA para `/home/admincenter/contenedores`.
 
 ## Proposito del proyecto
 
-ParamascotasEC es un workspace integrado para e-commerce de mascotas en Ecuador. Incluye frontend Next.js, backend PHP modular, base PostgreSQL compartida con bases logicas por dominio, Billing SRI dentro del backend y gateway APISIX/etcd con Certbot oficial.
+ParamascotasEC es un workspace integrado para e-commerce de mascotas en Ecuador. Incluye frontend Next.js, backend PHP modular, PostgreSQL compartido con tres bases logicas de negocio (`dashboard`, `ecommerce`, `facturacion`), Billing SRI dentro del backend y gateway APISIX/etcd con Certbot oficial.
 
 El objetivo operativo es mantener un entorno desplegable por scripts, con reglas de negocio server-side, seguridad admin estricta y contexto suficiente para que una IA o un desarrollador pueda continuar trabajo sin redescubrir decisiones recientes.
 
@@ -57,9 +57,8 @@ Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultim
 Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
-- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas por modulo.
-- Base logica ecommerce actual: `paramascotasec`.
-- Base logica Billing SRI actual: `billing_service`, atendida por `platform-core/Billing`.
+- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con tres bases logicas de negocio: `dashboard`, `ecommerce` y `facturacion`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
+- Base logica Billing SRI actual: `facturacion`, atendida por `platform-core/Billing`.
 - Store de infraestructura gatewayapisix: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
 
 ## Red
@@ -77,7 +76,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 |----------|--------------|-------|
 | Backend API | `http://backend-http:8080/api` | Nginx interno delante de PHP-FPM |
 | Frontend | `http://webparamascotas:3000` | Next.js |
-| DB compartida | `db:5432` | PostgreSQL compartido con bases logicas por modulo |
+| DB compartida | `db:5432` | PostgreSQL compartido con bases logicas por servicio activo |
 
 ## Arquitectura
 
@@ -103,14 +102,15 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - En modo orquestado, `billing-sri` entra por `platform-core/Billing`; no hay runtime fiscal HTTP paralelo ni fallback Facturador.
 - El contrato publico APISIX `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` reescribe a `platform-core/Billing` (`/api/{test|production}/v1/*`) y queda protegido por `X-API-Key` o `Authorization: Bearer`.
 - Regla vigente de persistencia: un solo servicio PostgreSQL y una base logica por modulo/servicio; multiples tenants del mismo modulo comparten esa base logica bajo aislamiento por `tenant_id` o equivalente del owner.
-- Regla vigente de identidad: los usuarios humanos pertenecen al tenant, no al modulo. `IdentityPlatform` es el owner unico de auth, sesiones, recovery, tenants, membresias, roles y permisos; los modulos solo consumen `tenant_id`, `user_id` y permisos `module.action`.
-- Ecommerce puede leer sus clientes (`customer`) y equipo operativo del tenant (`tenant_staff`) desde el bloque `Clientes y equipo` sin crear un modulo producto adicional. `users` es base IAM del tenant para roles, permisos y administracion global de usuarios operativos.
+- Regla vigente de identidad: `dashboard` es owner de plataforma, tenants, admins/operadores (`platform`, `tenant_staff`, `service`), sesiones admin, roles, permisos y entitlements. Los usuarios finales viven en la base del modulo que los atiende.
+- Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
+- Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
 - Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
 - Tipos de identidad vigentes: `platform` para superadmins/recovery TECNOLTS, `tenant_staff` para admins/equipo operativo del tenant, `customer` para compradores ecommerce y `service` para integraciones internas.
-- `/api/users` debe listar solo `tenant_staff` del tenant actual; compradores ecommerce (`customer`) no aparecen como usuarios operativos y superadmins (`platform`) viven en `platform-access`.
-- `backend` sigue siendo un solo runtime `platform-core`, pero sus dominios principales ya resuelven bases logicas dedicadas: `identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance` y `mailer_service`. La base legacy `paramascotasec` puede existir para bootstrap/compatibilidad, pero no es owner funcional de esos dominios.
+- `/api/users` debe listar solo usuarios operativos de `dashboard`; compradores ecommerce (`customer`) no aparecen como usuarios operativos. `/api/admin/ecommerce-users` lista y administra clientes desde `ecommerce."Customer"`.
+- `backend` sigue siendo un solo runtime `platform-core`; IdentityPlatform y Mailer resuelven en `dashboard`, CatalogInventory/Commerce/ReportingFinance resuelven en `ecommerce`, y Billing resuelve en `facturacion`.
 - Regla permanente: no crear foreign keys entre DBs de modulos; integrar por IDs estables, snapshots o contratos API. Las tablas FDW cross-domain son compatibilidad temporal para consultas existentes, no un permiso para crear acoplamientos nuevos.
 - Guia detallada: `dashboard/docs/MODULAR-ORCHESTRATION.md`.
 - En `dashboard`, `npm run verify` debe incluir `npm run module:check` para romper temprano si deriva el contrato modular publicado.
@@ -140,9 +140,9 @@ npm run test         # lint + typecheck
 - Namespace PHP: `App\` -> `src/`.
 - Modularizacion backend en curso: `src/Modules/{IdentityPlatform,CatalogInventory,Commerce,Billing,ReportingFinance,Mailer}` con registries de rutas por dominio en `src/Modules/*/routes.php`.
 - `config/routes.php` ya no debe crecer como lista plana; agrega/ajusta rutas dentro del registro del modulo duenio y deja al agregador central preservar el contrato HTTP actual.
-- `src/Core/ConnectionRegistry.php` resuelve la conexion por dominio usando `config/module-databases.php`; los dominios principales ya apuntan a bases logicas dedicadas (`identity_platform`, `catalog_inventory`, `commerce_orders`, `billing_service`, `reporting_finance`, `mailer_service`). La DB legacy `paramascotasec` queda solo para bootstrap/compatibilidad.
+- `src/Core/ConnectionRegistry.php` resuelve la conexion por dominio usando `config/module-databases.php`; los dominios internos se agrupan en las bases de servicio `dashboard`, `ecommerce` y `facturacion`.
 - `src/Modules/Billing/Native/` contiene la logica fiscal nativa para XML, RIDE, SRI, configuracion, sucursales, certificados, mail y recuperacion.
-- `src/Modules/Mailer/` contiene la frontera tecnica de correo del Core API: contacto, outbox, auditoria de entregas y salud operativa sobre `mailer_service`. La feature comercial visible `email-service` sigue planned hasta tener UI/contratos propios.
+- `src/Modules/Mailer/` contiene la frontera tecnica de correo del Core API: contacto, outbox, auditoria de entregas y salud operativa sobre `dashboard`. La feature comercial visible `email-service` sigue planned hasta tener UI/contratos propios.
 - `src/Modules/Billing/Controllers/PublicBillingController.php` atiende el contrato fiscal publico compatible `/api/{test|production}/v1/*` dentro del backend, sin sesion dashboard y autenticado por API key fiscal.
 - `BillingGatewayFactory` usa solo `BILLING_GATEWAY_DRIVER=native`; `native_fallback` y `facturador_http` deben fallar si reaparecen en configuracion.
 - El worker fiscal del backend vive en `scripts/process_billing_recovery.php` y corre como contenedor `backend-sri-worker`; respeta minimo `3600` segundos entre reintentos.
@@ -155,14 +155,14 @@ npm run test         # lint + typecheck
 
 - Billing SRI vive dentro de `platform-core`; no debe ser llamado como servicio paralelo por frontends, APISIX ni backend.
 - API principal publica por backend: `POST /api/{env}/v1/invoices`, `GET /api/{env}/v1/invoices/{accessKey}/status`, XML/RIDE y configuracion fiscal registrada en rutas del modulo Billing.
-- Auth publica fiscal: `X-API-Key` o `Authorization: Bearer`, usando `BILLING_API_KEY`/keys registradas en `billing_service`.
+- Auth publica fiscal: `X-API-Key` o `Authorization: Bearer`, usando `BILLING_API_KEY`/keys registradas en `facturacion`.
 - Worker: `php scripts/process_billing_recovery.php --limit=50 --min-age-seconds=3600`, ejecutado por `backend-sri-worker`.
-- Base logica propia: `billing_service` en `db:5432`.
+- Base logica propia: `facturacion` en `db:5432`.
 - Certificados `.p12` cargados por Billing nativo se guardan bajo `backend/storage/billing/certs`.
 - Acceso publico fiscal entra por gatewayapisix bajo `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/health` y `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`; APISIX reescribe a `/health` y `/api/{test|production}/v1/*` dentro del backend.
 - SRI por entorno: QA usa `pruebas` (`celcer.sri.gob.ec`) y produccion usa `produccion` (`cel.sri.gob.ec`).
 - En QA puede restaurarse una base de produccion para diagnostico. En ese caso pueden existir facturas con `ambiente=produccion`, pero el entorno debe seguir usando SRI pruebas; no cambiar endpoints a produccion ni consultar SRI produccion desde QA. Las consultas de estado deben preservar la autorizacion local de esas facturas restauradas.
-- Los eventos internos de Billing (`invoice.emitted`, `invoice.authorized`, `invoice.rejected`) se persisten en `billing_service.billing_domain_events` desde el dispatcher nativo; una falla del registro de evento no debe bloquear emision ni consulta de estado.
+- Los eventos internos de Billing (`invoice.emitted`, `invoice.authorized`, `invoice.rejected`) se persisten en `facturacion.billing_domain_events` desde el dispatcher nativo; una falla del registro de evento no debe bloquear emision ni consulta de estado.
 - El correo fiscal puede venir de la configuracion de sucursal en DB; `backend-sri-worker` requiere egreso SMTP cuando haya sucursales con mail activo.
 
 ## gatewayapisix
@@ -221,6 +221,7 @@ El registro maestro de capacidades vive en `webparamascotas/docs/capabilities/*.
 ## Seguridad
 
 - Auth: JWT HS256 en cookie httpOnly y Bearer opcional. Payload: `sub`, `email`, `name`, `role`, `tenant_id`, `jti`.
+- Superficies de auth separadas: dashboard envia/infere `X-Auth-Surface: dashboard` y usa cookie `pm_auth_dashboard`; tienda ecommerce envia `X-Auth-Surface: ecommerce` y usa `pm_auth_ecommerce`. El backend conserva lectura legacy de `pm_auth` solo como compatibilidad.
 - CSRF: requerido para mutaciones API excepto auth/contact/health/quote. Header `X-CSRF-Token` debe coincidir con cookie `pm_csrf`.
 - Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren identidad gestionada (`platform` o `tenant_staff`) y allowlist IP (`ADMIN_IP_MODE=private` por defecto en QA/produccion; usar `custom` para IP publica fija). El acceso funcional se valida despues por permisos `module.action` desde `TenantAccessService`.
 - Bloqueo de cuenta: despues de `AUTH_LOGIN_MAX_ATTEMPTS` (default 5), bloqueo por `AUTH_LOGIN_LOCK_MINUTES` (default 15).
@@ -258,6 +259,125 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-29 - Configuracion manual de secuencial SRI por ambiente
+
+Objetivo: permitir al operador alinear el consecutivo local de facturacion cuando el SRI de QA o produccion ya va en un numero mayor que el sistema.
+
+Cambios:
+- Configuracion SRI muestra `Proximo secuencial pruebas` y `Proximo secuencial produccion` para la sucursal fiscal activa.
+- Cada campo de secuencial vive dentro de su tarjeta de ambiente (`pruebas`/`produccion`) junto con reintentos.
+- Backend expone `sequences.test` y `sequences.production` desde `branch_sequences`.
+- Al guardar, el operador ingresa el proximo numero a emitir; internamente se guarda `current_value = proximo - 1`, porque la emision incrementa antes de generar la clave de acceso.
+- Se valida que el proximo secuencial sea de 1 a 999999999. No se fuerza que sea mayor que el ultimo usado localmente, porque produccion puede necesitar ocupar huecos reales autorizables por SRI.
+- La emision sigue evitando duplicar comprobantes locales bloqueantes: si el secuencial configurado ya existe como autorizado/devuelto/recibido/en procesamiento/etc., lo salta y busca el siguiente libre.
+- No hubo cambio estructural de base de datos; se reutiliza `facturacion.branch_sequences`.
+
+Verificacion:
+- Paso `php -l` para `BillingConfigurationRepository.php`.
+- Paso `npx tsc -p tsconfig.app.json --noEmit` en `dashboard`.
+- Pasaron `git diff --check` en `backend` y `dashboard`.
+- Se desplegaron backend y dashboard; ambos quedaron healthy y `/dashboard/` respondio `HTTP 200`.
+- La API devuelve para Matriz `001-001`: pruebas `current_value=123`, `next_sequential=000000124`; produccion `current_value=132`, `next_sequential=000000133`.
+- Prueba no destructiva guardando el mismo `next_sequential` de pruebas mantuvo `current_value=118`.
+- Produccion tiene facturas locales `000000135` y `000000136`, pero faltan `000000133` y `000000134`; se configuro manualmente produccion en `000000133` para emitir esos huecos y luego continuar en `000000137`.
+
+### 2026-06-29 - Vista agrupada o separada por familia de variantes
+
+Objetivo: hacer evidente como decidir si una familia de variantes aparece en la tienda como una sola ficha agrupada o como productos independientes.
+
+Cambios:
+- La tabla de productos del dashboard muestra `Vista tienda` para familias de variantes.
+- La accion de cada producto con familia ofrece `Separar familia` o `Agrupar familia` segun el estado actual.
+- El cambio se aplica a todos los productos de la familia para evitar configuraciones mezcladas entre variantes.
+- Al agrupar, se conserva la familia (`catalogFamilyKey`/`catalogFamilyBaseName`) y los metadatos de variante necesarios; al separar, cada variante queda como ficha independiente en la tienda.
+- Se corrigio la deteccion del estado separado cuando el backend convierte una variante a `single:<id>` y el producto base conserva solo `catalogFamilyKey`; en ese caso el dashboard ahora muestra `Agrupar familia`.
+
+Verificacion:
+- Paso `npx tsc -p tsconfig.app.json --noEmit` en `dashboard`.
+- Paso `git diff --check` en `dashboard`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy y `/dashboard/` respondio `HTTP 200` por APISIX.
+
+### 2026-06-29 - Publicacion de producto alineada con checklist
+
+Objetivo: corregir el bloqueo donde el frontend marcaba SEO/lista de publicacion en verde, pero el backend rechazaba publicar con `No se puede publicar: faltan mínimos SEO del producto`.
+
+Cambios:
+- Se alineo el minimo de descripcion comercial del backend a 20 caracteres, igual que el formulario/checklist del dashboard.
+- El error backend cambio a `No se puede publicar: faltan requisitos mínimos del producto.` con codigo `PRODUCT_PUBLICATION_REQUIRED`, porque la validacion incluye SEO, descripcion, precio, stock e imagenes, no solo SEO.
+- Se comprobo `Test1`: tenia SEO, imagenes, precio y stock completos; el bloqueo real era descripcion de 47 caracteres contra una regla backend oculta de 50.
+
+Verificacion:
+- Paso `php -l backend/src/Controllers/ProductController.php`.
+- Se desplego backend con `./scripts/deploy.sh backend`; `backend-http` quedo healthy.
+- PUT interno a `/api/products/prod_6a42b21f1c0ef` con `{ "published": true }` respondio `HTTP 200`.
+- Por APISIX, `/paramascotasec/api/products` devuelve `Test1` con `published=true` y `/tienda?query=Test1` renderiza la tarjeta del producto.
+
+### 2026-06-29 - Eje visible comercial independiente de variantes
+
+Objetivo: permitir que cualquier caracteristica comercial configurada pueda ser marcada como eje visible en la tienda, sin depender de tipo de producto, categoria ni del flujo tecnico de variantes.
+
+Cambios:
+- El modal de producto agrega `Caracteristica visible en tienda` dentro de `Detalles del producto`, antes de los campos comerciales.
+- `displayAxis` y sus etiquetas publicas se conservan en productos individuales; ya no se tratan como metadatos tecnicos de variante ni se limpian al guardar sin variantes.
+- Backend y dashboard aceptan el eje visible publico por metadata (`displayAxis`, `displayAxisLabel`, `publicVariantAxis`, `catalogDisplayAxis`) y bloquean solo campos tecnicos/reservados como SKU, SEO, impuestos, precio, stock y metadatos internos.
+- El storefront prioriza el eje visible publico para tarjetas y ficha; si no hay eje explicito, detecta la primera caracteristica comercial real con valor, sin asumir reglas por mascota, alimento, cuidado u otra industria.
+- Productos existentes como `Test1` que ya tienen `color=Verde` pero no tenian `displayAxis` muestran `Color: Verde` por deteccion generica; si el operador elige otro eje, ese eje queda guardado y tiene prioridad.
+
+Verificacion:
+- Pasaron `npm run typecheck` en `webparamascotas/app`.
+- Pasaron `npx tsc -p tsconfig.app.json --noEmit` y `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` en `dashboard`.
+- Paso `php -l backend/src/Support/ProductVariantMetadata.php`.
+- Paso `scripts/check-container-connectivity.sh qa`; APISIX devolvio `126` productos publicos.
+- Verificado por APISIX que `https://paramascotasec.com/tienda?query=Test1` renderiza la tarjeta `Test1` con `Color: Verde`.
+
+### 2026-06-29 - Regeneracion modular de usuarios por base
+
+Objetivo: completar la arquitectura modular de datos para que `dashboard` orqueste tenants/admins/permisos, `ecommerce` sea owner de clientes finales y `facturacion` conserve compradores fiscales sin login.
+
+Cambios:
+- Se creo `ecommerce."Customer"` como tabla owner de clientes ecommerce, junto con `CustomerAuthSecurityEvent` y `CustomerPasswordResetToken`; las rutas de auth ecommerce, perfil, direcciones, pedidos, POS y reseñas usan esa tabla.
+- Se elimino la dependencia FDW de `ecommerce."User"`, `AuthSecurityEvent` y `PasswordResetToken`; el check modular ahora falla si esas tablas de auth aparecen fuera de la base `dashboard`.
+- `dashboard."User"` quedo solo para usuarios operativos/plataforma/servicio; se migraron 26 clientes a `ecommerce."Customer"` y se limpiaron memberships de tipo `customer`.
+- `facturacion.billing_customers` normaliza compradores/receptores fiscales desde `invoice_headers`; 133 facturas quedaron enlazadas a 40 compradores fiscales.
+- `Order.customer_id` y `ProductReview.customer_id` quedan como referencias canonicas nuevas; `user_id` se conserva temporalmente por compatibilidad historica.
+- Auth separa superficies con `X-Auth-Surface`, `aud`/`auth_surface` en JWT y cookies `pm_auth_dashboard` / `pm_auth_ecommerce`; logout limpia cookies nuevas y legacy.
+- `AuthController` usa repositorios de dashboard o ecommerce segun superficie; el registro publico queda prohibido para dashboard.
+- `/api/users` opera solo sobre `dashboard`; `/api/admin/ecommerce-users` opera sobre `ecommerce."Customer"`.
+- `backend/module.json`, `dashboard/public/system-runtime-topology.json` y `dashboard/public/ecosystem-atlas.json` quedaron alineados a las bases `dashboard`, `ecommerce` y `facturacion`; ya no publican stores legacy ni `correos` como base activa.
+- Se agrego el script estructural `basesdedatos/scripts/2026-06-29_regenerar_bases_modulares.sh` para aplicar la migracion con backup previo. En QA genero respaldo en `basesdedatos/backups/regeneracion-modular-20260629T152631Z/`.
+- `bootstrap_schema.php` dejo de depender de `ON CONFLICT` para seeds runtime donde la tabla pueda ser FDW o no tener constraint local disponible.
+
+Verificacion:
+- Se ejecuto `basesdedatos/scripts/2026-06-29_regenerar_bases_modulares.sh` en QA.
+- Se desplego `backend` con `RUN_DB_SETUP=1 ./scripts/deploy.sh backend` y `frontend` con `./scripts/deploy.sh frontend`; `backend-http` y `webparamascotas` quedaron healthy.
+- Paso `docker exec backend-api php scripts/check_module_databases.php`.
+- `/api/health` responde `base_de_datos: conectada`.
+- Por APISIX, `https://paramascotasec.com/` respondio `HTTP 200` y `/paramascotasec/api/products` devolvio `125` productos.
+- Conteos QA despues de migrar: `dashboard."User"` solo `admin=5`; `ecommerce."Customer"=26`; no existe `User/AuthSecurityEvent/PasswordResetToken` en ecommerce; `Order` no tiene pedidos con `user_id` sin `customer_id`; `facturacion.billing_customers=40` y `invoice_headers` con `billing_customer_id=133/133`.
+- Pasaron `php -l` en controladores/repositorios/scripts tocados, `bash -n` del script estructural y `npm run typecheck`/`next build` dentro del deploy frontend.
+- Pasaron `node dashboard/tools/check-module-manifests.mjs`, `scripts/check-container-connectivity.sh qa` y `scripts/check-paramascotas.sh`; se regenero `webparamascotas/docs/system-capabilities.generated.json` con `npm run capabilities:generate`.
+
+### 2026-06-29 - Consolidacion DB a dashboard, ecommerce y facturacion
+
+Objetivo: ordenar la arquitectura de datos para que PostgreSQL muestre solo bases de servicios activos: `dashboard`, `ecommerce` y `facturacion`; `postgres` queda como base administrativa del motor.
+
+Cambios:
+- `dashboard` agrupa IdentityPlatform, tenants, usuarios, permisos y correo tecnico/outbox.
+- `ecommerce` agrupa catalogo, inventario, compras, pedidos, ventas, POS, cotizaciones y reportes financieros operativos.
+- `facturacion` conserva Billing SRI, XML/RIDE, claves API fiscales, secuencias, sucursales y eventos fiscales.
+- Se consolidaron en QA las bases intermedias `identidad`, `catalogo_inventario`, `ventas_pedidos`, `reportes_finanzas` y `correos`; luego se eliminaron junto con residuos legacy.
+- `backend/config/module-databases.php`, constantes de dominio, templates `.env`, scripts de deploy/checks y `basesdedatos/config/module-databases.json` quedaron apuntando a las 3 bases de negocio; el modo activo es `service-group`, sin aliases de bases legacy.
+- Se agrego el script estructural `basesdedatos/scripts/2026-06-29_consolidar_bases_activas_a_3.sh`; respalda las bases, copia datos con `ON CONFLICT DO NOTHING`, materializa tablas locales cuando venian de FDW y borra las bases sobrantes.
+
+Verificacion:
+- Se ejecuto `basesdedatos/scripts/2026-06-29_consolidar_bases_activas_a_3.sh`; dejo respaldo en `basesdedatos/backups/consolidacion-3-bases-20260629T141819Z/`.
+- Se desplego `backend` con `./scripts/deploy.sh backend`.
+- `docker exec backend-api php scripts/bootstrap_module_databases.php` regenero FDW y compatibilidad entre `dashboard` y `ecommerce` usando credenciales admin.
+- Paso `docker exec backend-api php scripts/check_module_databases.php`.
+- `backend-http` y `basesdedatos` quedaron healthy; `/api/health` responde `base_de_datos: conectada`.
+- Por APISIX, `/paramascotasec/api/products` respondio `HTTP/2 200` y devolvio catalogo.
+- Las bases visibles en QA son `dashboard`, `ecommerce`, `facturacion` y `postgres`.
+
 ### 2026-06-29 - Detalles comerciales consolidados sin variantes duplicadas
 
 Objetivo: hacer que el alta/edicion de producto pida atributos descriptivos sin obligar a crear variantes y sin campos redundantes para contenido, presentacion o etapa.
@@ -284,7 +404,8 @@ Cambios:
 - `ProductSeoMetadata::effectiveAttributes` ya no mezcla atributos anteriores cuando recibe una edicion completa de producto; evita que SEO/defaults reinyecten `weight` o `presentation` despues de que el operador los puso en `No aplica`.
 - En `Nueva variante`, el selector `Define la variante` sale de `commercialAttributes` configuradas en catalogos operativos; guarda `variantAxis`, `variantDefinitionField` y `variantAxisLabel` para que la tienda muestre la etiqueta del eje comercial seleccionado.
 - Backend y storefront aceptan ejes comerciales custom seguros (`a-z`, numeros y `_`) sin requerir columnas nuevas; campos tecnicos como SKU, SEO, impuestos, precio, stock y metadatos de variante quedan bloqueados como ejes.
-- El ecommerce publico prioriza `variantAxis` sobre `displayAxis` para tarjetas, ficha y selectores: si el eje es `weight` muestra `Contenido / dosis: valor`; si el eje es `presentation` muestra `Presentacion: valor`; si es custom muestra `variantAxisLabel: valor`.
+- El ecommerce publico prioriza `displayAxis`/eje visible publico para tarjetas y ficha; `variantAxis` queda como fallback de agrupacion tecnica cuando no hay eje visible explicito. Si el eje es `weight` muestra `Contenido / dosis: valor`; si el eje es `presentation` muestra `Presentacion: valor`; si es custom muestra la etiqueta configurada del eje.
+- Correccion posterior: productos de tipo `cuidado` y alimentos ya no pierden `size`/`Talla / tamano` cuando se guarda como caracteristica comercial; solo las medidas de contenido (`kg`, `gr`, `ml`, etc.) se siguen normalizando hacia `weight` cuando corresponde.
 - No hubo cambio estructural de base de datos para este ajuste; la persistencia sigue en el JSON `Product.attributes` y en los registros existentes de `ProductReferenceCatalog`.
 
 Verificacion:
@@ -294,6 +415,7 @@ Verificacion:
 - Paso una prueba directa con `ProductVariantMetadata::apply`: `volume`/`packaging`/`age` se guardan como `weight`/`presentation`/`target` y se eliminan los alias.
 - Paso una prueba directa con `SettingsController::normalizeProductReferenceDataPayload`: `commercialAttributes` guarda clave, etiqueta y valores permitidos estructurados.
 - Paso `npm run typecheck` en `webparamascotas/app`.
+- Paso `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` y prueba directa PHP de `ProductVariantMetadata::apply` conservando `size=22 cm` en producto `cuidado`.
 - Se reconstruyo y levanto `dashboard` con `npm run docker:up`; luego se restauro `src/environments/environment.ts` a produccion/fixtures off/guards on/logging error.
 - Pasaron Playwright `keeps normal creation free of variant controls`, `registers every supported variant axis and catalog mode`, `exercises every named input from the browser` y `product management opens as modal with clear feedback labels`.
 - Paso Playwright `keeps normal creation free of variant controls` validando el orden visual `Datos basicos` -> `Detalles del producto` -> `Venta` -> `Stock y compra` dentro del navegador.

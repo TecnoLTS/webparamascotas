@@ -17,6 +17,7 @@ const forwardedHeaderNames = [
   'referer',
   'user-agent',
   'x-csrf-token',
+  'x-auth-surface',
   'x-requested-with',
   'x-real-ip',
   'x-xsrf-token',
@@ -52,13 +53,18 @@ const buildExpiredCookie = (name: string, options?: { domain?: string; httpOnly?
 const appendLogoutCookies = (headers: Headers) => {
   const authCookie = (process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || process.env.AUTH_COOKIE_NAME || 'pm_auth').trim() || 'pm_auth'
   const csrfCookie = (process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME || process.env.AUTH_CSRF_COOKIE_NAME || 'pm_csrf').trim() || 'pm_csrf'
+  const authCookies = [authCookie, `${authCookie}_ecommerce`, `${authCookie}_dashboard`]
 
   // Host-only cookies.
-  headers.append('Set-Cookie', buildExpiredCookie(authCookie, { httpOnly: true }))
+  for (const cookie of authCookies) {
+    headers.append('Set-Cookie', buildExpiredCookie(cookie, { httpOnly: true }))
+  }
   headers.append('Set-Cookie', buildExpiredCookie(csrfCookie))
 
   for (const domain of getConfiguredCookieDomains()) {
-    headers.append('Set-Cookie', buildExpiredCookie(authCookie, { domain, httpOnly: true }))
+    for (const cookie of authCookies) {
+      headers.append('Set-Cookie', buildExpiredCookie(cookie, { domain, httpOnly: true }))
+    }
     headers.append('Set-Cookie', buildExpiredCookie(csrfCookie, { domain }))
   }
 }
@@ -82,6 +88,7 @@ export const POST = async (req: NextRequest) => {
     headers.set('x-forwarded-host', tenantHost)
   }
   headers.set('x-forwarded-proto', forwardedProto)
+  headers.set('x-auth-surface', 'ecommerce')
   attachInternalProxyToken(headers)
 
   const init: RequestInit = {

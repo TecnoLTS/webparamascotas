@@ -3937,11 +3937,11 @@
       },
       {
         "path": "/api/auth/logout",
-        "source": "webparamascotas/app/src/components/Header/Menu/MenuPet.tsx:507"
+        "source": "webparamascotas/app/src/components/Header/Menu/MenuPet.tsx:510"
       },
       {
         "path": "/api/auth/session",
-        "source": "webparamascotas/app/src/lib/apiClient.ts:171"
+        "source": "webparamascotas/app/src/lib/apiClient.ts:174"
       },
       {
         "path": "/api/orders/{param}/invoice",

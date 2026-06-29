@@ -252,6 +252,16 @@ const getAttributeValue = (product: ProductType, keys: string[]) => {
       return value.trim()
     }
   }
+
+  const normalizedAttributes = new Map(
+    Object.entries(attributes).map(([key, value]) => [normalizeVariantAxisKey(key), value])
+  )
+  for (const key of keys) {
+    const value = normalizedAttributes.get(normalizeVariantAxisKey(key))
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
   return ''
 }
 
@@ -424,6 +434,73 @@ const getVariationColorValues = (product: ProductType) =>
     .map((item) => item.color)
     .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
 
+const RESERVED_COMMERCIAL_DISPLAY_ATTRIBUTE_KEYS = new Set([
+  'action',
+  'archived',
+  'archivedat',
+  'archivedlegacyid',
+  'archivedname',
+  'archivedproductid',
+  'catalogdisplaymode',
+  'description',
+  'catalogdisplayaxis',
+  'catalogdisplayaxislabel',
+  'displayaxis',
+  'displayaxislabel',
+  'expirationalertdays',
+  'expirationdate',
+  'image',
+  'images',
+  'isnew',
+  'issale',
+  'name',
+  'originprice',
+  'price',
+  'producttype',
+  'publicvariantaxis',
+  'publicvariantaxislabel',
+  'quantity',
+  'seodescription',
+  'seoimagealt',
+  'seosearchterms',
+  'seotitle',
+  'sku',
+  'sold',
+  'species',
+  'supplier',
+  'taxexempt',
+  'taxrate',
+  'variantaxis',
+  'variantaxislabel',
+  'variantbasename',
+  'variantdefinitionfield',
+  'variantdisplaymode',
+  'variantgroupkey',
+  'variantlabel',
+])
+
+const isDisplayableCommercialAttribute = (key: string, value: unknown) => {
+  const normalizedKey = key
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '')
+  if (!normalizedKey || RESERVED_COMMERCIAL_DISPLAY_ATTRIBUTE_KEYS.has(normalizedKey)) return false
+
+  const normalizedValue = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (!normalizedValue) return false
+
+  return !['no aplica', 'n/a', 'na', 'null', 'undefined', 'false'].includes(normalizedValue.toLowerCase())
+}
+
+const getDetectedCommercialDisplayAxis = (product: ProductType) => {
+  for (const variant of getProductVariants(product)) {
+    const entries = Object.entries(variant.attributes ?? {})
+    const entry = entries.find(([key, value]) => isDisplayableCommercialAttribute(key, value))
+    if (entry) return normalizeVariantAxisKey(entry[0])
+  }
+  return ''
+}
+
 const hasColorAndSizeVariant = (product: ProductType) =>
   ['ropa', 'accesorios'].includes(getNormalizedProductType(product))
   && getAttributeValue(product, ['color']) !== ''
@@ -442,13 +519,13 @@ const displayAxisFromRawAxis = (axis?: string | null) => {
 const getVariantDisplayAxis = (product: ProductType) => {
   const normalizedType = getNormalizedProductType(product)
   const color = getAttributeValue(product, ['color'])
-  const rawAxis = getVariantAxisValue(product)
-  const explicitVariantAxis = displayAxisFromRawAxis(rawAxis)
-  if (explicitVariantAxis) return explicitVariantAxis
-
   const displayAxis = getVariantDisplayAxisValue(product)
   const explicitPublicDisplayAxis = displayAxisFromRawAxis(displayAxis)
   if (explicitPublicDisplayAxis) return explicitPublicDisplayAxis
+
+  const rawAxis = getVariantAxisValue(product)
+  const explicitVariantAxis = displayAxisFromRawAxis(rawAxis)
+  if (explicitVariantAxis) return explicitVariantAxis
 
   if (
     normalizedType === 'accesorios'
@@ -554,11 +631,18 @@ const getProductPrimaryDisplayAxis = (product: ProductType) => {
   return orderedAxes.find((axis) => axes.includes(axis))
     || axes[0]
     || orderedAxes.find((axis) => collectVariantDisplayValuesForAxis(product, axis).length > 0)
+    || getDetectedCommercialDisplayAxis(product)
     || ''
 }
 
 const getExplicitAxisLabel = (product: ProductType, axis: string) => {
   const attributes = product.attributes ?? {}
+  const displayAxis = normalizeVariantAxisKey(attributes.displayAxis || attributes.publicVariantAxis || attributes.catalogDisplayAxis)
+  if (displayAxis === axis) {
+    const displayLabel = getAttributeValue(product, ['displayAxisLabel', 'publicVariantAxisLabel', 'catalogDisplayAxisLabel'])
+    if (displayLabel) return displayLabel.trim()
+  }
+
   const productAxis = normalizeVariantAxisKey(attributes.variantDefinitionField || attributes.variantAxis || product.variantAxis)
   const label = productAxis === axis ? getAttributeValue(product, ['variantAxisLabel']) : ''
   return label.trim()
