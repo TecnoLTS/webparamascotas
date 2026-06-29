@@ -259,6 +259,86 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-29 - Reporte general ejecutivo y compacto
+
+Objetivo: mejorar `/dashboard/paramascotas-panel/reporting/general` para que sea una vista ejecutiva, densa, elegante y con textos contables correctos, sin cambiar backend ni base de datos.
+
+Cambios:
+- El reporte general carga `GET /api/admin/report` como fuente principal y `GET /api/admin/dashboard/stats` solo para la tendencia financiera.
+- Se agrego grafico de tendencia de venta neta, utilidad bruta y costo producto usando `businessMetrics.financialTrends`.
+- Se corrigieron etiquetas: `Venta bruta` paso a `Total cobrado`, `Gastos por resolver` paso a `Gastos del periodo`, y `Compras registradas` paso a `Compras de inventario`.
+- Los gastos del periodo muestran pagado, pendiente y vencido; la utilidad neta negativa queda explicada por gastos pagados del periodo.
+- Se reemplazo la tabla extensa de pedidos por una lista compacta de 5 pedidos recientes con contador de pedidos adicionales en el Excel.
+- Se ajustaron los paneles de categorias/productos y placeholders de graficos para reducir espacio desperdiciado y evitar que la carga diferida parezca un error.
+- Se fijo el tooltip de la dona de categorias dentro del panel y se permitio overflow visible en ese grafico para que el titulo del hover no se recorte.
+- La grafica ejecutiva de tendencia se cambio a torres agrupadas y ahora renderiza datos para Dia, Semana, Mes, Ano y Total; `dashboard/stats` se consulta sin `scope` para conservar `financialTrends` y el frontend filtra la serie por periodo activo.
+
+Verificacion:
+- Pasaron `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` en `dashboard`.
+- Paso `npx ng test --watch=false --include src/app/features/dashboard/pages/paramascotas-general-report/paramascotas-general-report.component.spec.ts`.
+- Paso ESLint sobre el componente, spec y template del reporte general.
+- Paso `git diff --check` en `dashboard`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy y la ruta por APISIX respondio `HTTP 200`.
+- Playwright verifico desktop 1440 y movil 390: 3 graficos renderizados, 4 KPIs, 4 senales, 4 decisiones, 5 pedidos, sin errores de consola, sin requests fallidos y sin overflow horizontal.
+- Playwright con mocks de sesion/reporte/stats verifico hover sobre la dona de categorias: tooltip visible completo dentro del panel, con captura en `/tmp/paramascotas-donut-tooltip-fixed.png`.
+- Playwright con mocks de sesion/reporte/stats verifico la tendencia por Mes, Dia, Semana, Ano y Total: todos los scopes renderizaron barras, sin series de linea/area, y `dashboard/stats` no recibio `scope`.
+- Contraste API vs SQL para junio 2026 coincidio: 42 pedidos, total USD 526.44, neto USD 511.75, IVA USD 14.69, costo USD 374.51, utilidad bruta USD 137.24 y margen bruto 26.8%.
+
+### 2026-06-29 - Reporte de ventas enfocado en lectura comercial
+
+Objetivo: corregir `/dashboard/paramascotas-panel/reporting/sales` para que muestre informacion relevante y correcta de ventas, no KPIs financieros genericos.
+
+Cambios:
+- La ruta de reporte de ventas mantiene `GET /api/admin/report` como fuente de periodo y usa `GET /api/admin/dashboard/stats` sin `scope` para conservar `businessMetrics.financialTrends`.
+- La tendencia comercial filtra la serie por Dia, Semana, Mes, Ano o Total en frontend y usa fallback agregado desde el reporte si no hay puntos.
+- Los KPIs del reporte de ventas ahora son comerciales: Total cobrado, Venta neta, Unidades vendidas, IVA cobrado, Costo vendido y Utilidad bruta.
+- La tabla de ventas recientes muestra columnas de venta: Pedido, Cliente, Cobrado, Neta, IVA y Utilidad.
+- La grafica de tendencia de ventas usa torres agrupadas; categorias y productos se mantienen como composicion y ranking comercial.
+- Se elimino la grafica horizontal duplicada de productos; en su lugar el bloque muestra lectura comercial de productos: dependencia del lider, concentracion Top 3, margen ponderado y producto a revisar.
+
+Verificacion:
+- Pasaron `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` en `dashboard`.
+- Paso ESLint sobre `paramascotas-transition-host.component.ts/html`.
+- Pasaron specs enfocadas: `dashboard.routes`, `report-period.service`, `paramascotas-financial-analytics.service` y `paramascotas-sales-ranking.component`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy y `/dashboard/paramascotas-panel/reporting/sales` respondio `HTTP 200` por APISIX.
+- Playwright con mocks de sesion/reporte/stats verifico 6 KPIs comerciales, tendencia con 12 barras y 0 series de linea/area, columnas de ventas recientes correctas y que `dashboard/stats` no recibio `scope`; captura en `/tmp/paramascotas-sales-report-fixed.png`.
+- Playwright verifico que `Lectura de productos` renderiza 4 insights y que no existe la grafica duplicada de productos; captura en `/tmp/paramascotas-sales-report-no-duplicate-products.png`.
+
+### 2026-06-29 - Cabeceras compactas en reportes Paramascotas
+
+Objetivo: eliminar cabeceras repetitivas en paginas que ya tenian toolbar interna, alineandolas con el patron del reporte general.
+
+Cambios:
+- Se removio el `app-page-header` redundante del host compartido de reportes financieros (`sales`, `balance`, `traceability`, `balances`).
+- `Ranking de productos vendidos`, `Ventas vs compras por producto` y `Gastos y cierre financiero` ahora usan solo `app-paramascotas-financial-toolbar` como cabecera visible.
+- Las acciones que estaban en la cabecera superior se movieron a la toolbar: actualizar, exportar y exportar CSV segun aplique.
+- Se limpiaron imports de `PageHeaderComponent` en las vistas afectadas.
+
+Verificacion:
+- Pasaron `npx tsc -p tsconfig.app.json --noEmit` y `npx tsc -p tsconfig.spec.json --noEmit` en `dashboard`.
+- Paso ESLint puntual sobre los componentes/templates modificados.
+- Paso `git diff --check` en `dashboard`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy y `/dashboard/paramascotas-panel/reporting/sales` respondio `HTTP 200` por APISIX.
+- Playwright sin sesion confirmo que las rutas protegidas no presentan overflow horizontal antes de autenticacion; la validacion visual autenticada queda pendiente de una sesion valida.
+
+### 2026-06-29 - Cabecera unica en emision SRI
+
+Objetivo: corregir la pantalla `/dashboard/billing-services`, donde se acumulaban cabecera de pagina, mensaje de disponibilidad, banner SRI y navegacion como bloques repetitivos.
+
+Cambios:
+- Se reemplazo `app-page-header` y el banner separado de disponibilidad por una sola cabecera compacta con titulo, descripcion, chip de estado SRI, `Verificar` y `Actualizar`.
+- Se estandarizo el estilo de iconos de cabecera a iconos de linea sobrios, sin bloque de fondo pesado, usando verde discreto y simbolos alusivos a cada pantalla.
+- Productos e Impuestos usan iconos de linea seguros (`solar:box-outline` y `solar:calculator-minimalistic-outline`) tanto en manifiesto/navegacion como en sus cabeceras visibles.
+- `loadHealth()` ya no crea el mensaje verde `SRI disponible` cuando la conexion esta sana; el estado saludable se muestra en el chip de la cabecera.
+- Los mensajes transitorios quedan reservados para acciones reales como guardar configuracion, cargar imagenes, emitir, consultar o errores.
+- Se redujo el espaciado vertical de la pagina y se agrego responsive para que la cabecera compacta no genere overflow en movil.
+- `app-paramascotas-financial-toolbar` ahora acepta `icon` y las cabeceras de reporte general, ventas, balance, trazabilidad, ranking, compras por producto y gastos usan iconos de linea relacionados con su dominio.
+
+Verificacion:
+- Pasaron `npx tsc -p tsconfig.app.json --noEmit`, ESLint puntual y `git diff --check` en `dashboard`.
+- Pasaron specs enfocadas de `billing-services` y `paramascotas-financial-toolbar` con 16 tests.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy y `/dashboard/billing-services`, `/dashboard/paramascotas-panel/reporting/general`, `/dashboard/paramascotas-panel/reporting/sales`, `/dashboard/paramascotas-panel/reporting/sales-ranking`, `/dashboard/paramascotas-panel/catalog/products` y `/dashboard/paramascotas-panel/finance/taxes` respondieron `HTTP 200` por APISIX.
+
 ### 2026-06-29 - Configuracion manual de secuencial SRI por ambiente
 
 Objetivo: permitir al operador alinear el consecutivo local de facturacion cuando el SRI de QA o produccion ya va en un numero mayor que el sistema.
