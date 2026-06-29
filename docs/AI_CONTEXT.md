@@ -259,6 +259,22 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-29 - Tooltips visibles en graficas de dona
+
+Objetivo: evitar que los tooltips de graficas Apex tipo dona/pie se recorten al hacer hover dentro de los paneles Paramascotas.
+
+Cambios:
+- `app-deferred-apex-chart` ahora permite `overflow: visible` en el host, canvas, SVG, capa interna y capa grafica de ApexCharts.
+- `.paramascotas-report-chart-frame` dejo de usar `overflow: hidden` y define estilos compartidos para que los tooltips no se corten ni capturen eventos.
+- El arreglo aplica de forma transversal a las donas de impuestos, reportes, pedidos, gastos, usuarios, envios y demas vistas que usan `paramascotas-report-chart-frame` con `DeferredApexChartComponent`.
+
+Verificacion:
+- Paso `npx tsc -p tsconfig.app.json --noEmit` en `dashboard`.
+- Paso `git diff --check` en `dashboard`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy.
+- Por APISIX respondieron `HTTP 200` `/dashboard/paramascotas-panel/finance/taxes`, `/dashboard/paramascotas-panel/reporting/general` y `/dashboard/paramascotas-panel/reporting/sales`.
+- Playwright directo al contenedor verifico que la dona fiscal renderiza y que `paramascotas-report-chart-frame`, `.apexcharts-canvas` y `.apexcharts-svg` quedan con `overflow: visible`.
+
 ### 2026-06-29 - Reporte general ejecutivo y compacto
 
 Objetivo: mejorar `/dashboard/paramascotas-panel/reporting/general` para que sea una vista ejecutiva, densa, elegante y con textos contables correctos, sin cambiar backend ni base de datos.
