@@ -259,6 +259,29 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-29 - Balance general como balance operativo estimado
+
+Objetivo: corregir `/dashboard/paramascotas-panel/reporting/balance`, que estaba presentado como balance general pero mostraba principalmente ventas, costos, gastos y utilidad del periodo.
+
+Cambios:
+- La vista ahora se presenta como `Balance operativo estimado`, porque con los datos disponibles no hay bancos, cuentas por cobrar externas ni capital aportado para un balance contable auditado completo.
+- Los KPIs principales del balance cambiaron a activos identificados, pasivos operativos, capital operativo, resultado de caja, valor comercial de inventario y resultado del periodo.
+- Se calcula un snapshot usando inventario al costo, valor comercial de inventario, gastos pendientes/vencidos, deficit operativo y utilidad de caja desde endpoints existentes.
+- El panel de composicion ahora muestra estado de posicion por Activo/Pasivo/Patrimonio y un grafico de estructura patrimonial estimada.
+- Las etiquetas del grafico de estructura patrimonial muestran montos completos en formato local (`$2.004,88`) y no abreviaciones tipo `$2.0k`.
+- La tendencia del balance dejo de priorizar venta neta y ahora grafica resultado del periodo, obligaciones, caja neta y ajustes.
+- La tabla por periodo se redujo a columnas relevantes para balance operativo: venta neta como base, utilidad bruta, gastos, obligaciones, ajustes, resultado y caja neta.
+- El toolbar y la primera tira de KPIs ya no muestran textos/KPIs genericos de ventas en esta ruta.
+
+Verificacion:
+- Paso `npx tsc -p tsconfig.app.json --noEmit` en `dashboard`.
+- Paso `npx vitest run src/app/features/dashboard/services/paramascotas-financial-analytics.service.spec.ts`.
+- Paso `git diff --check` en `dashboard`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy.
+- Por APISIX `/dashboard/paramascotas-panel/reporting/balance` respondio `HTTP 200`.
+- Playwright directo al contenedor verifico 2 graficos renderizados, sin overflow horizontal, KPIs de balance visibles en primera pantalla y sin KPIs de ventas repetidos al inicio.
+- Playwright directo al contenedor verifico que el grafico de estructura renderiza `$2.004,88`, `$241,76` y `$1.763,12` sin abreviaciones `k`.
+
 ### 2026-06-29 - Tooltips visibles en graficas de dona
 
 Objetivo: evitar que los tooltips de graficas Apex tipo dona/pie se recorten al hacer hover dentro de los paneles Paramascotas.
