@@ -259,6 +259,25 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-06-29 - Periodos de balance y cuadre de cajas POS
+
+Objetivo: eliminar confusiones entre periodos del reporte de balance y cerrar las cajas abiertas con montos exactos hasta el dia actual.
+
+Cambios:
+- El reporte de balance ya no usa un selector interno independiente de tendencia financiera; ahora la tendencia y los KPIs del balance siguen el filtro principal `Dia`, `Semana`, `Mes`, `Año` o `Total`.
+- El resultado `-241,76` no correspondia al periodo mensual seleccionado; venia de una lectura de tendencia con otro alcance. Para junio 2026 hasta el 29/06/2026, el resultado operativo correcto es `-57,76`.
+- El resumen de caja POS ahora filtra ventas por `payment_details.shift_id` cuando el pedido lo tiene, evitando que turnos abiertos solapados absorban ventas de otro turno.
+- Se cerraron los turnos abiertos:
+  - `SHIFT-20260627092642-BAC7BF`: efectivo esperado `10,20`, cierre `10,20`, diferencia `0,00`.
+  - `SHIFT-20260625095447-59EB31`: efectivo esperado `23,30`, cierre `23,30`, diferencia `0,00`.
+- No habia ventas registradas el 29/06/2026; se cerraron todas las cajas abiertas hasta el dia actual y quedaron `0` turnos abiertos.
+
+Verificacion:
+- Junio 2026 hasta 29/06/2026 en SQL: 42 pedidos, total cobrado `526,44`, venta neta `511,75`, IVA `14,69`, costo vendido `374,51`, utilidad bruta `137,24`, gastos del periodo `195,00`, ajustes `0,00`, resultado `-57,76`.
+- PostgreSQL confirma que los ultimos turnos POS estan cerrados y con `difference_cash = 0,00`.
+- Pasaron `php -l backend/src/Repositories/PosRepository.php`, `npx tsc -p tsconfig.app.json --noEmit`, `npx vitest run src/app/features/dashboard/services/paramascotas-financial-analytics.service.spec.ts` y `git diff --check`.
+- Se desplegaron backend y dashboard; despues del deploy del dashboard se restauro `dashboard/src/environments/environment.ts` con guards activos, fixtures desactivados y logging en `error`.
+
 ### 2026-06-29 - Balance general como balance operativo estimado
 
 Objetivo: corregir `/dashboard/paramascotas-panel/reporting/balance`, que estaba presentado como balance general pero mostraba principalmente ventas, costos, gastos y utilidad del periodo.
