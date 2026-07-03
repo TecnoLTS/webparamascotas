@@ -3,6 +3,7 @@
 import React from 'react'
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import type { LocalSaleLineItem, LocalSaleQuote } from '../types'
 
 type AccountUser = {
@@ -47,7 +48,7 @@ export const useLocalSaleQuote = ({
     setLocalSaleError(null)
 
     const normalizedDiscountCode = localSaleDiscountCode.trim().toUpperCase() || null
-    requestApi<LocalSaleQuote>('/api/orders/quote', {
+    requestApi<LocalSaleQuote>(apiEndpoints.orderQuote, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

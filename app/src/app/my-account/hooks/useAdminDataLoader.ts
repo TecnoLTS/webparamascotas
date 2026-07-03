@@ -3,6 +3,7 @@
 import React from 'react'
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { ADMIN_PRODUCTS_ENDPOINT, RETRYABLE_PANEL_ERROR_PATTERN, withTransientRetry } from '../utils'
 import {
   ADMIN_TABS_WITH_ORDERS,
@@ -263,9 +264,9 @@ export const useAdminDataLoader = ({
           if (!cancelled) current.setDashboardStats(cachedStats)
         }
         if (!cachedStats || isPassive || adminNonceChanged) {
-          const dateQuery = `?period=${encodeURIComponent(salesRankingMonth)}&include_report=0`
+          const dateQuery = { period: salesRankingMonth, include_report: 0 }
           tasks.push(
-            withTransientRetry(() => requestApi<DashboardStats>(`/api/admin/dashboard/stats${dateQuery}`, { headers })).then((res) => {
+            withTransientRetry(() => requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(dateQuery), { headers })).then((res) => {
               const stats = withoutReport(res.body)
               setCached(statsCacheKey, stats)
               if (!cancelled) current.setDashboardStats(stats)
@@ -304,7 +305,10 @@ export const useAdminDataLoader = ({
           if (!cancelled) current.setInventoryIntelligence(cachedInventory)
         } else {
           tasks.push(
-            withTransientRetry(() => requestApi<InventoryIntelligence>('/api/admin/inventory/intelligence?window_days=30&target_days=30', { headers })).then((res) => {
+            withTransientRetry(() => requestApi<InventoryIntelligence>(
+              apiEndpoints.adminInventoryIntelligence({ window_days: 30, target_days: 30 }),
+              { headers }
+            )).then((res) => {
               setCached(inventoryCacheKey, res.body)
               if (!cancelled) current.setInventoryIntelligence(res.body)
             }),
@@ -326,7 +330,7 @@ export const useAdminDataLoader = ({
           if (!cancelled) current.setAdminUsersList(cachedUsers)
         } else {
           tasks.push(
-            withTransientRetry(() => requestApi<AdminUserSummary[]>('/api/users', { headers })).then((res) => {
+            withTransientRetry(() => requestApi<AdminUserSummary[]>(apiEndpoints.users, { headers })).then((res) => {
               const users = Array.isArray(res.body) ? res.body : []
               setCached('users', users)
               if (!cancelled) {
@@ -343,7 +347,7 @@ export const useAdminDataLoader = ({
           if (!cancelled) current.setAdminOrdersList(cachedOrders)
         } else {
           tasks.push(
-            withTransientRetry(() => requestApi<Order[]>('/api/orders', { headers })).then((res) => {
+            withTransientRetry(() => requestApi<Order[]>(apiEndpoints.orders, { headers })).then((res) => {
               setCached('orders', res.body)
               if (!cancelled) current.setAdminOrdersList(res.body)
             }),
@@ -385,7 +389,7 @@ export const useAdminDataLoader = ({
           }
         } else {
           tasks.push(
-            withTransientRetry(() => requestApi<{ providers?: ShippingProvider[]; pickups?: ShippingPickup[] }>('/api/shipments', { headers })).then((res) => {
+            withTransientRetry(() => requestApi<{ providers?: ShippingProvider[]; pickups?: ShippingPickup[] }>(apiEndpoints.shipments, { headers })).then((res) => {
               const shipments = {
                 providers: Array.isArray(res.body.providers) ? res.body.providers : [],
                 pickups: Array.isArray(res.body.pickups) ? res.body.pickups : [],

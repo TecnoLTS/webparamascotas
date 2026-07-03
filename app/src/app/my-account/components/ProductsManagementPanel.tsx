@@ -4,6 +4,7 @@ import React from 'react'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import type { ProductPublicationFilter } from '../types'
 import { getAdminProductEntityId, resolveProductVariantLabel } from '../productFormUtils'
 import { withTransientRetry } from '../utils'
@@ -372,7 +373,7 @@ export default React.memo(function ProductsManagementPanel({
         setMovementError(null)
 
         withTransientRetry(() => requestApi<ProductMovementDetail>(
-            `/api/products/${encodeURIComponent(movementProductId)}/movement?period=${encodeURIComponent(movementPeriod)}`
+            apiEndpoints.productMovement(movementProductId, { period: movementPeriod })
         ))
             .then((res) => {
                 if (!active) return

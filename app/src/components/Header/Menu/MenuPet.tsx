@@ -31,6 +31,7 @@ import { buildProductSearchIndex, filterProductsBySearch, sanitizeProductSearchQ
 import { ProductType } from '@/type/ProductType'
 import { clearStoredSession, getStoredSessionUser } from '@/lib/authSession'
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 
 type MenuPetProps = {
     props?: string;
@@ -507,7 +508,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
 
         try {
             // Must go through requestApi so CSRF/cookies behave exactly like the panel lateral logout.
-            await requestApi('/api/auth/logout', { method: 'POST' })
+            await requestApi(apiEndpoints.auth.logout, { method: 'POST' })
         } catch {}
 
         if (openLoginPopup) {

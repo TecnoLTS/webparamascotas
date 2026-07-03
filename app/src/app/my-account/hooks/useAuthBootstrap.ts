@@ -3,6 +3,7 @@
 import React from 'react'
 import type { AppRouterInstance } from 'next/dist/shared/lib/app-router-context.shared-runtime'
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import {
   clearStoredSession,
   getStoredSessionUser,
@@ -59,7 +60,7 @@ export const useAuthBootstrap = ({
       setAuthBootstrapping(false)
     }
 
-    requestApi<{ user?: AccountUser }>('/api/auth/session')
+    requestApi<{ user?: AccountUser }>(apiEndpoints.auth.session)
       .then((res) => {
         if (cancelled) return
         const sessionUser = res.body.user

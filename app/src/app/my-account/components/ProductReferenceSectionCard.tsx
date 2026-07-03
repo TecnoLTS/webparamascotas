@@ -3,6 +3,7 @@
 import React from 'react'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
 import type {
     ProductCategoryImageReference,
@@ -346,7 +347,7 @@ export default React.memo(function ProductReferenceSectionCard({
         formData.append('category', categoryName)
         formData.append('variantLabel', requirement.label)
 
-        const response = await fetch(toPublicApiUrl('/api/uploads/images'), {
+        const response = await fetch(toPublicApiUrl(apiEndpoints.uploads.images), {
             method: 'POST',
             body: formData,
             credentials: 'include',

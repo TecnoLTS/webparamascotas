@@ -3,6 +3,7 @@
 import React from 'react'
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import type { PosMovement, PosShift } from '../types'
 
 type UsePosShiftParams = {
@@ -41,7 +42,7 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
   }, [])
 
   const loadPosSnapshot = React.useCallback(async (_token?: string) => {
-    const res = await requestApi<any>('/api/admin/pos/shift/active')
+    const res = await requestApi<any>(apiEndpoints.adminPos.activeShift)
     syncPosState(res.body)
   }, [syncPosState])
 
@@ -53,7 +54,7 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
     }
     try {
       setPosActionLoading(true)
-      const res = await requestApi<any>('/api/admin/pos/shift/open', {
+      const res = await requestApi<any>(apiEndpoints.adminPos.openShift, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,7 +86,7 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
     }
     try {
       setPosActionLoading(true)
-      const res = await requestApi<any>('/api/admin/pos/shift/close', {
+      const res = await requestApi<any>(apiEndpoints.adminPos.closeShift, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +117,7 @@ export const usePosShift = ({ showNotification, parseDecimalInput }: UsePosShift
     }
     try {
       setPosActionLoading(true)
-      const res = await requestApi<any>('/api/admin/pos/movements', {
+      const res = await requestApi<any>(apiEndpoints.adminPos.movements, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

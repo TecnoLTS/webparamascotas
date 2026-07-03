@@ -4,6 +4,7 @@ import React from 'react'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
 import { matchesProductSearch, normalizeProductSearch } from '@/lib/productSearch'
 import {
@@ -39,7 +40,7 @@ const uploadBrandLogo = async (file: File, brandName: string) => {
     formData.append('kind', 'brandLogo')
     formData.append('brandName', brandName)
 
-    const res = await requestApi<UploadLogoResponse>(toPublicApiUrl('/api/uploads/images'), {
+    const res = await requestApi<UploadLogoResponse>(toPublicApiUrl(apiEndpoints.uploads.images), {
         method: 'POST',
         body: formData,
         timeoutMs: 60000,

@@ -21,7 +21,7 @@ export const createOrder = async (data: CreateOrderData) => {
     const headers: Record<string, string> = {
         'Content-Type': 'application/json'
     };
-    return fetchJson<any>(apiEndpoints.orders, {
+    return fetchJson<any>(apiEndpoints.orderCreate, {
         method: 'POST',
         timeoutMs: 30000,
         headers: {
@@ -38,7 +38,7 @@ export const getQuote = async (data: {
     discount_code?: string | null,
     shipping_address?: Record<string, unknown> | null,
 }) => {
-    const res = await fetch('/quote', {
+    const res = await fetch(apiEndpoints.internal.quote, {
         method: 'POST',
         cache: 'no-store',
         headers: {

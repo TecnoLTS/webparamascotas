@@ -128,6 +128,12 @@ export const backendApiRoutes = [
     "capabilityId": "users.auth"
   },
   {
+    "id": "backend:POST:/api/auth/access-requests",
+    "method": "POST",
+    "path": "/api/auth/access-requests",
+    "capabilityId": "users.auth"
+  },
+  {
     "id": "backend:POST:/api/auth/password-reset/request",
     "method": "POST",
     "path": "/api/auth/password-reset/request",
@@ -234,6 +240,36 @@ export const backendApiRoutes = [
     "method": "GET",
     "path": "/api/products/{id}",
     "capabilityId": "catalog.public"
+  },
+  {
+    "id": "backend:GET:/api/admin/products",
+    "method": "GET",
+    "path": "/api/admin/products",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/products",
+    "method": "POST",
+    "path": "/api/admin/products",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/products/{id}",
+    "method": "GET",
+    "path": "/api/admin/products/{id}",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:PUT:/api/admin/products/{id}",
+    "method": "PUT",
+    "path": "/api/admin/products/{id}",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:DELETE:/api/admin/products/{id}",
+    "method": "DELETE",
+    "path": "/api/admin/products/{id}",
+    "capabilityId": "catalog.admin"
   },
   {
     "id": "backend:POST:/api/products",

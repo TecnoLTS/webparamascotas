@@ -125,10 +125,12 @@ npm run dev          # hot reload local; webpack por defecto, FRONTEND_QA_BUNDLE
 npm run build        # build produccion
 npm run lint         # ESLint --max-warnings=0
 npm run typecheck    # tsc --noEmit
-npm run test         # lint + typecheck
+npm run api:contracts:check # bloquea literales `/api/...` fuera del catalogo central
+npm run test         # lint + typecheck + api:contracts:check
 ```
 
 - Prebuild: `npm run images:manifest` antes de dev/build/lint/start; `images:home-performance` e `images:upload-variants` antes de build.
+- El contrato HTTP del frontend publico se centraliza en `webparamascotas/app/src/lib/api/endpoints.ts`; los handlers SSR y proxies internos reutilizan `webparamascotas/app/src/lib/api/backendBase.ts`. No introducir literales `'/api/...'` ni `'/quote'` fuera de esa capa.
 - El contenedor visible del frontend siempre se llama `webparamascotas`; `COMPOSE_PROFILES=qa|production` solo elige el runtime interno de Docker Compose desde `.env`.
 - Runtime estable QA via `FRONTEND_QA_RUNTIME=stable`: precompila bajo `APP_ENV=qa` detras del gateway con CSP estricta. `hot`/HMR no es un modo valido para el deploy del ambiente; usarlo solo como herramienta local explicita fuera de la validacion por gateway.
 - `webparamascotas/app/package.json` expone `npm run deploy` como alias al deploy real del frontend.
@@ -192,6 +194,7 @@ scripts/check-paramascotas.sh    # capability registry + frontend lint/typecheck
 php backend/scripts/check_modular_routes.php # handlers HTTP bajo src/Modules sin App\Controllers legacy
 docker exec backend-api php scripts/check_module_databases.php # ownership real de bases logicas
 node dashboard/tools/check-module-manifests.mjs
+node dashboard/tools/check-dashboard-api-contracts.mjs # catalogo dashboard-api/paramascotas-api alineado a rutas backend reales
 scripts/check-env-secrets.sh all # preflight .env/secrets sin imprimir valores
 scripts/check-container-connectivity.sh qa
 scripts/check-container-connectivity.sh production
@@ -200,6 +203,7 @@ scripts/e2e-qa.sh                # suite QA: contracts, checks, SEO, Billing y p
 cd webparamascotas/app
 npm run capabilities:check       # valida registro maestro de capacidades
 npm run capabilities:generate    # regenera docs/system-capabilities.generated.json y helper TS
+npm run api:contracts:check      # bloquea rutas API hardcodeadas fuera del catalogo central
 ```
 
 `check-container-connectivity.sh` tambien valida que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelva productos publicos y que las rutas legacy `/api/*`, `/facturador/*` y `/uploads-api/*` respondan 404. Un deploy QA/production debe fallar si el catalogo publico queda vacio; en QA solo se permite sembrar datasets demo con `SEED_QA_CATALOG=1`, no por defecto. `check-container-connectivity.sh production` valida el runtime de produccion; no correrlo esperando exito mientras el workspace esta desplegado en QA. Para cambios acotados, correr tambien checks del componente afectado cuando aplique.
@@ -258,6 +262,423 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-02 - Auditoria de endpoints QA: HEAD APISIX y catalogo auth legacy del dashboard
+
+Objetivo: verificar contratos reales por APISIX/QA, eliminar ruido de rutas no respaldadas y dejar checks para evitar que reaparezcan endpoints fantasma o metodos no soportados.
+
+Cambios:
+- `gatewayapisix/scripts/sync-apisix.sh` dejo de agregar `HEAD` automaticamente a toda ruta backend `GET`; ahora solo se publica `HEAD` cuando la ruta existe explicitamente en backend, evitando falsos `404` como el detectado en `HEAD /paramascotasec/api/health`.
+- `scripts/check-container-connectivity.sh` ahora verifica explicitamente que `HEAD ${PUBLIC_API_PREFIX}/health` no quede expuesto por error y acepte solo `404/405`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` elimino del catalogo publico los endpoints fantasma de auth que no existen en backend real (`auth/providers`, `auth/me`, `auth/password`, `auth/password-reset-requests`, `auth/password-reset-completions`, `auth/external/start`, `auth/external/callback`).
+- `dashboard/src/app/core/auth/auth-api.service.ts` movio esos flujos a paths de fixture internos; el catalogo dashboard queda reservado para contratos backend reales y los flujos externos ahora fallan explicitamente fuera de fixture.
+- `dashboard/tools/check-dashboard-api-contracts.mjs` y `scripts/check-paramascotas.sh` agregan un guardrail que valida que el catalogo `dashboard-api`/`paramascotas-api` no publique endpoints sin backend real.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts`, `dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` y `dashboard/src/app/app-fixture-handlers.ts` retiraron bloques compat y handlers de fixture para modulos legacy (`products`, `inventory`, `monitoring`, `workspace`) que ya no pertenecen al catalogo ni a la topologia tenant activa.
+- Se eliminaron los arboles `dashboard/src/app/features/{workspace,products,inventory,monitoring}` y el spec legado `dashboard/tests/e2e/monitoring-workspace.spec.ts` tras confirmar que no quedaban referencias vivas fuera del wiring retirado.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-alerts/*` reemplazo la importacion rota de `monitoring/alerts` con una pantalla propia del panel Paramascotas, construida sobre `ParamascotasAlertAnalyticsService` y fuentes reales (`dashboard stats`, `inventory intelligence`, `admin products`).
+- Las specs/fixtures del dashboard (`api-resource`, `dashboard-api-catalog.service`, `dashboard-api-registry`, `dashboard-api-draft-store`, `tenant-admin/api-catalog`) se alinearon al registro real `ecommerce.*`/`billing-sri.*` para quitar contratos y module keys muertos como `products.*` e `inventory.*`.
+
+Verificacion:
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs` (`110` endpoints reales validados).
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && node tools/check-unused.mjs`.
+- Paso `git -C dashboard diff --check`.
+- Paso `./scripts/check-paramascotas.sh`.
+- Paso `./scripts/check-container-connectivity.sh qa`, incluyendo `GET /paramascotasec/api/health = 200`, `HEAD /paramascotasec/api/health = 404`, bloqueo de rutas legacy y autenticacion Billing por APISIX.
+- Verificacion directa por APISIX el `2026-07-02`: `GET https://paramascotasec.com/paramascotasec/api/health` respondio `200`, mientras `HEAD` sobre la misma ruta dejo de publicarse (`404`) tras sincronizar el gateway.
+
+Pendientes:
+- Mantener la limpieza del catalogo del dashboard conforme se retiren modulos planned/legacy remanentes en fixtures o contenido editorial; el guardrail nuevo ya cubre los contratos backend reales, no el copy de roadmap.
+
+### 2026-07-02 - Frontend: contratos API centralizados y guardrail anti-literales
+
+Objetivo: dejar consistente la afirmacion de centralizacion de comunicaciones en el frontend publico, migrando consumidores importantes a un catalogo unico de endpoints y bloqueando nuevas derivaciones por literales `'/api/...'`.
+
+Cambios:
+- `webparamascotas/app/src/lib/api/endpoints.ts` se amplio como catalogo central para auth, usuarios, pedidos, POS, reportes, gastos, facturacion, uploads y proxys internos; `withQuery()`, `authFreeApiPaths`, `isPublicApiPath()` y `shouldDisableApiPathCache()` quedaron en la misma capa.
+- `webparamascotas/app/src/lib/api/backendBase.ts` centraliza `BACKEND_URL_INTERNAL` y el armado de URLs SSR/intra-contenedor hacia `backend-http`, evitando repetir `http://backend-http:8080/api`.
+- `webparamascotas/app/src/lib/apiClient.ts`, `app/api/[...path]/route.ts`, `app/api/auth/logout/route.ts`, `app/quote/route.ts`, `src/lib/server/suggestions.ts` y `src/lib/server/productImageUpload.ts` quedaron alineados al contrato central en vez de resolver rutas por strings sueltos.
+- Se migraron consumidores criticos del frontend (`CheckoutClient`, `ModalCart`, `MenuPet`, hooks de `my-account`, `ProductsManagementPanel`, `ProductEditorController`, `MyAccountController`, helpers de `orders` y `users`) para quitar literales `'/api/...'` de flujos operativos y admin.
+- `webparamascotas/app/scripts/check-api-contract-usage.mjs` y `npm run api:contracts:check` ahora rompen CI local si reaparecen llamadas con rutas API hardcodeadas fuera del catalogo central.
+
+Verificacion:
+- Paso `cd webparamascotas/app && npm run api:contracts:check`.
+- Paso `cd webparamascotas/app && npm run typecheck`.
+- Paso `cd webparamascotas/app && npm run lint`.
+- Paso `cd webparamascotas/app && npm test`.
+- Paso `git -C webparamascotas diff --check`.
+
+Pendientes:
+- Continuar migrando cualquier consumidor legacy futuro al catalogo central antes de exponer nuevas rutas por APISIX o por proxies internos del frontend.
+
+### 2026-07-01 - Integraciones reales: rutas pesadas, inventario y helpers de corrida larga
+
+Objetivo: continuar el barrido QA real por APISIX cerrando falsos rojos por helper fragil en corridas largas y corrigiendo regresiones reales del tramo final de `paramascotas-real-integrations`.
+
+Cambios:
+- `dashboard/tests/e2e/layout-density.spec.ts` dejo de depender de `page.goto(..., networkidle)` para login profundo; ahora reutiliza un `gotoDashboard()` con `domcontentloaded` + `networkidle` acotado y tolera pantallas ya autenticadas.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` tambien migro su helper `gotoDashboard()` al mismo patron acotado, reduciendo aborts espurios en `catalog/products` durante corridas amplias.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ahora da `45s` al smoke barrido de rutas reales y endurece `signInDashboard()` con `gotoDashboard()` + fast-path para sesiones ya establecidas, evitando timeouts artificiales en rutas pesadas como `products-purchases` y `sales-ranking`.
+- La misma suite ya espera `Reporte de inventario` en el flujo de inventario operativo, alineada con el copy real vigente del workspace y evitando una regresion de test que seguia amarrada al titulo legacy `Inventario operativo`.
+
+Verificacion:
+- Pasaron `git -C dashboard diff --check`.
+- Pasaron focalizadas `npx playwright test tests/e2e/layout-density.spec.ts --grep "desktop keeps compact typography on /billing-services\\?tenant=demo"`, `npx playwright test tests/e2e/paramascotas-list-views.spec.ts --grep "paramascotas product editor keeps normal creation free of variant controls"` y `npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts --grep "platform admin can open every visible sidebar route through APISIX"`.
+- Pasaron focalizadas `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/reporting/products-purchases loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/sales-ranking loads without fatal operational errors"`.
+- En corrida amplia de `tests/e2e/paramascotas-real-integrations.spec.ts` quedaron verdes los primeros `99` casos hasta detectar una unica regresion restante de copy en inventario.
+- Tras alinear el copy, pasaron `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas inventory manages restock and stock adjustments without leaving inventory|paramascotas inventory purchase invoice summary deduplicates repeated rows"` y tambien el tramo final con `billing rides` + cotizaciones (`5 passed`).
+
+Pendientes:
+- Reanudar la corrida amplia multi-archivo desde el siguiente fallo real del dashboard; el bloque `paramascotas-real-integrations` quedo revalidado por segmentos, sin reproducir ya el timeout de `products-purchases` ni la regresion de inventario por titulo legacy.
+
+### 2026-07-01 - QA real: POS, menu SRI y borrador fiscal refinado
+
+Objetivo: cerrar los fallos reales detectados en la pasada amplia QA por APISIX sobre POS local, auditoria del menu y persistencia del borrador fiscal SRI, manteniendo el criterio `ui-ux-pro-max` de feedback visible y flujos sin estados mudos.
+
+Cambios:
+- `backend/src/Controllers/AuthController.php` ahora responde `201` a `requestAccess()` antes de ejecutar correos lentos, usando `finishResponseForBackgroundWork()` para evitar que la UI publica quede pegada en `Enviando...` mientras SMTP termina.
+- `dashboard/src/app/features/monitoring/state/monitoring.facade.ts` ya no trata `404` del backend de monitoreo como error fatal en QA; limpia eventos/resumen y deja la vista operable cuando ese runtime no esta publicado.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-inventory-report/paramascotas-inventory-report.component.ts` consolido el titulo operativo `Reporte de inventario`, alineado con la navegacion real y las expectativas de las pruebas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-sales-workspace/paramascotas-sales-workspace.component.ts` endurecio el resync POS tras rechazos de abrir/cerrar caja: `getPosSnapshot()` ahora usa `timeout(10_000)` y expone error visible si la reconciliacion falla o se cuelga.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` dejo de depender de un `fetch()` interno fragil para inferir el turno POS; ahora toma el estado visible del flujo real y valida la reconciliacion stale con un timeout acorde al caso.
+- `dashboard/tests/e2e/paramascotas-menu-qa.spec.ts` se simplifico para auditar rutas reales del sidebar por `goto()` directo, con `domcontentloaded` + `networkidle` acotado, cierres de contexto tolerantes y restauracion del tenant no-op cuando la pagina ya esta cerrada; esto bajo el barrido completo del menu a ~3 minutos sin perder cobertura.
+- `dashboard/src/app/features/business/pages/billing-services/billing-services.component.ts` ya restaura drafts SRI del mismo tenant aunque el borrador carezca de `userEmail`, cubriendo recreaciones reales del componente donde la metadata del operador puede llegar incompleta pero el flujo no debe perder cliente ni carrito.
+- `dashboard/src/app/features/business/pages/billing-services/billing-services.component.spec.ts` agrega la regresion de draft tenant-scoped sin metadata de operador para fijar ese contrato de restauracion.
+
+Verificacion:
+- Pasaron `php -l backend/src/Controllers/AuthController.php`, `cd dashboard && npm run type:check` y `git -C dashboard diff --check`.
+- Paso `cd dashboard && npm test -- --watch=false --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts` con `15 tests` verdes.
+- Pasaron `cd dashboard && npx playwright test tests/e2e/paramascotas-real-auth.spec.ts --grep "local sales re-syncs stale POS state after an open or close rejection"` y `cd dashboard && npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts` (`2 passed`).
+- Paso `cd dashboard && npx playwright test tests/e2e/invoice-workspace.spec.ts` completo (`4 passed`), incluyendo la persistencia del borrador entre `Clientes`, `Productos` y `Emision`.
+
+Pendientes:
+- Reanudar la suite E2E amplia desde el siguiente fallo real de negocio o interfaz; al momento de cerrar esta entrada, el siguiente barrido ya no reproduce los fallos de POS, menu QA ni borrador fiscal SRI corregidos aqui.
+
+### 2026-07-01 - Auth real QA, gateway DNS y cobertura critica de productos
+
+Objetivo: estabilizar el dashboard QA real por APISIX, sacar auth publica de fixtures legacy y cerrar regresiones funcionales en navegacion/menu y acciones criticas del catalogo de productos.
+
+Cambios:
+- `dashboard/src/app/core/auth/auth-api.service.ts` dejo de forzar fixtures en localhost QA; ahora usa `APP_ENVIRONMENT` inyectado y solo consume auth ficticia cuando `fixtureBackendEnabled` y el tenant fixture estan activos a la vez.
+- `backend/src/Modules/IdentityPlatform/routes.php` y `backend/public/index.php` publican `POST /api/auth/access-requests` sin CSRF, y `backend/src/Controllers/AuthController.php` implementa el flujo real de solicitud de acceso con validacion, rate limit, persistencia tipo `dashboard_access_request`, correo interno y confirmacion al solicitante.
+- `backend/src/Controllers/AuthController.php` ya normaliza `getByEmail()` a `null` en password reset para evitar type errors con correos inexistentes a traves de APISIX.
+- `backend/src/Repositories/PasswordResetTokenRepository.php` dejo de intentar DDL sobre `"PasswordResetToken"` en cada request; ahora verifica `to_regclass(...)`, evita fallar por ownership del esquema y solo crea tabla si realmente falta.
+- `dashboard/nginx.conf` usa `INTERNAL_PROXY_TOKEN_PREVIOUS` para el header interno, resolviendo el restart loop del contenedor `dashboard` cuando Compose no propagaba `INTERNAL_PROXY_TOKEN` al runtime Nginx.
+- `gatewayapisix/scripts/common.sh`, `gatewayapisix/scripts/sync-apisix.sh` y `gatewayapisix/templates/entorno/.env.example` ahora renderizan `discovery.dns` con `APISIX_DNS_SERVERS=127.0.0.11:53` y publican upstreams Docker (`dashboard`, `backend-http`, `webparamascotas`, `apisix-acme-webroot`) como `discovery_type: dns` en vez de `nodes` por hostname simple.
+- `dashboard/tests/e2e/smoke.spec.ts` y `dashboard/tests/e2e/paramascotas-menu-qa.spec.ts` endurecieron `gotoDashboard()`/`signInDashboard()` para tolerar redirects reales, reusar shell autenticado y reestablecer sesion por paso en el barrido del menu.
+- `dashboard/tests/e2e/paramascotas-menu-qa.spec.ts` recibio timeouts acordes al barrido completo por APISIX; la prueba del tenant ya no falla por duracion acumulada cuando el runtime esta sano.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ahora cubre explicitamente `Archivar`: bloquea productos con stock activo sin tocar backend y confirma/elimina productos con stock `0` desde la lista activa.
+
+Verificacion:
+- Pasaron `php -l backend/src/Controllers/AuthController.php`, `php -l backend/src/Modules/IdentityPlatform/routes.php`, `php -l backend/public/index.php` y `php -l backend/src/Repositories/PasswordResetTokenRepository.php`.
+- Paso `cd dashboard && npx tsc -p tsconfig.spec.json --noEmit`.
+- Paso `cd dashboard && npm run docker:health`.
+- Paso `./scripts/deploy.sh backend`.
+- Paso `./scripts/deploy.sh gateway`; los upstreams APISIX quedaron publicados como `discovery_type: dns`.
+- `curl` por APISIX a `POST https://paramascotasec.com/dashboard/api/auth/access-requests` respondio `201` con `status=received`.
+- `curl` por APISIX a `POST https://paramascotasec.com/dashboard/api/auth/password-reset/request` con correo inexistente respondio el mensaje generico exitoso en vez de 500.
+- Paso `cd dashboard && npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts` con `2 passed (12.2m)`.
+- Paso `cd dashboard && npx playwright test tests/e2e/smoke.spec.ts` con `39 passed (2.3m)`.
+- Paso `cd dashboard && npx playwright test tests/e2e/paramascotas-product-modal-real.spec.ts tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas QA product management opens as modal with clear feedback labels|paramascotas duplicate product starts without inherited stock or grouped identity|paramascotas product restock uses purchased units while saving final stock|paramascotas duplicate variant requires a distinct grouped value before saving|paramascotas product publication follows legacy price and stock rule|paramascotas product form blocks invalid margin before create request|paramascotas product editor saves net base price instead of gross PVP|paramascotas product editor keeps legacy Spanish tax exemption without reducing price by VAT"` con `8 passed`.
+- Paso `cd dashboard && npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas product archive blocks products with active stock before calling backend|paramascotas product archive confirms and removes zero-stock products from the active list"` con `2 passed`.
+- Pasaron `git -C dashboard diff --check`, `git -C backend diff --check` y `git -C gatewayapisix diff --check`.
+
+Pendientes:
+- Seguir ampliando la auditoria funcional sobre formularios y calculos de productos/operaciones que aun no tienen recorrido E2E completo, aprovechando que auth publica, shell y gateway QA quedaron estables.
+
+### 2026-07-01 - Estabilizacion QA real de layout-density por APISIX
+
+Objetivo: endurecer la auditoria visual/operativa del dashboard contra el entorno QA real, usando `ui-ux-pro-max` para exigir navegacion consistente, ausencia de scroll traps y superficies legibles sin depender de fixtures ni rutas internas.
+
+Cambios:
+- `dashboard/tests/e2e/layout-density.spec.ts` ahora usa el dominio publico `https://paramascotasec.com/dashboard`, `ignoreHTTPSErrors` y `--host-resolver-rules` hacia `192.168.100.229`, alineando la suite con el contrato APISIX real del entorno QA.
+- La suite crea un admin temporal real en la base logica `dashboard`, resuelve OTP MFA desde PostgreSQL y reutiliza helpers locales (`dashboardUrl`, `signInDashboard`, `waitForOtpCode`, `deleteUserByEmail`, `readDbEnv`) para dejar de depender de sesiones previas o de `about:blank`.
+- `signInDashboard()` volvio a navegar explicitamente antes del MFA y `gotoLayoutRoute()` dejo de exigir solo `.dashboard-main-body` visible; ahora acepta shell real o cuerpo renderizado con texto mientras bloquea recaidas silenciosas a `/dashboard/sign-in`.
+- La prueba `visible operational menu routes...` ya autentica una sola vez, reconoce `module-unavailable|tenant-unavailable|permission-denied` como estados validos y ajusta expectativas de superficie para modulos no contratados como `billing-sri`.
+- Se saco `/users-grid?tenant=demo` del bloque de rutas operativas porque pertenece al bloque especifico de accesos, evitando falsos negativos por cobertura duplicada.
+- La prueba `access management screens...` ahora tambien parte de una sesion MFA real, extiende su timeout y distingue rutas exclusivas de plataforma/no contratadas (`tenant-admin`, `api-catalog`) de las pantallas realmente disponibles para el tenant demo.
+- Las pruebas de tipografia compacta ahora inician sesion por una ruta estable antes de auditar cada pantalla, evitando falsos negativos del redirect post-MFA en deep links de administracion como `/users-list`, `/add-user` y `/roles`.
+- `paramascotas-real-integrations.spec.ts` dejo de depender del label sin tilde `Ano`; los selectores de periodo aceptan `Año|Ano`, alineados con el DOM real del toolbar financiero.
+- `mobile report summary...` ya no depende del viejo `.paramascotas-kpi-strip`; ahora valida el layout mobile real de `paramascotas-general-summary` y `paramascotas-general-signals`.
+- El bloque `ui resources and base dashboard pages...` dejo de auditar rutas `ui-kit` retiradas del route map productivo; ignora 404 de rutas no publicadas y conserva la auditoria solo sobre pantallas base que siguen expuestas en el runtime actual.
+- Se elimino la regresion `external payments base dashboard...` porque `/home-4` ya no forma parte del route map publicado; mantenerla generaba falsos rojos sobre un 404 esperado del runtime actual.
+
+Verificacion:
+- Pasaron `npm run type:check`.
+- Pasaron `npx playwright test tests/e2e/layout-density.spec.ts -g "visible operational menu routes avoid content scroll traps and template leftovers"`.
+- Pasaron `npx playwright test tests/e2e/layout-density.spec.ts -g "access management screens expose separated surfaces and clickable actions"`.
+- Pasaron `npx playwright test tests/e2e/layout-density.spec.ts -g "desktop keeps compact typography on /users-list\\?tenant=demo|desktop keeps compact typography on /add-user\\?tenant=demo|desktop keeps compact typography on /roles\\?tenant=demo"`.
+- Paso `npx playwright test tests/e2e/layout-density.spec.ts` completo: `49 passed (8.8m)`.
+- Paso `npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts`, confirmando que el barrido real del menu por APISIX sigue consistente tras endurecer los helpers de sesion.
+- Pasaron `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas sales ranking requests day week month year and total scopes correctly|paramascotas financial reports keep month as default and remap year and total expense ranges"`.
+- Tambien quedaron verdes `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-pricing-workspace/paramascotas-pricing-workspace.component.spec.ts` y `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas finance submenu shows only relevant pricing blocks|paramascotas discount form validates rules and normalizes payload before saving|paramascotas local sales surfaces server-side discount rejection messages"`.
+- Tambien pasaron por APISIX los bloques reales:
+  `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas quotation conversion validates payment reference and sends payment details|paramascotas quotations keep the commercial workspace readable without nested scroll|paramascotas quotations can close expired quotes without deleting history|paramascotas quotation conversion blocks final consumer over official limit before backend mutation|paramascotas quotations do not request email delivery for invalid customer email|paramascotas quotations prepare WhatsApp on creation without backend delivery fields"`
+  y
+  `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas local sales mirrors the real POS shift state|paramascotas local sales autocompletes customer by document like legacy POS|paramascotas local sales searches grouped aliases and blocks expired products like legacy POS|paramascotas local sales blocks final consumer sales over official limit before creating order|paramascotas local sales stacks cleanly on mobile without horizontal overflow|paramascotas local sales uses overlay menu and clean tablet layout on narrow desktop widths|paramascotas local sales stays readable with fixed sidebar on constrained desktop widths"`.
+
+Pendientes:
+- Seguir recorriendo formularios/calculos reales del bloque financiero y operativo ahora que la capa E2E por APISIX vuelve a ser confiable para rutas operativas y de acceso.
+
+### 2026-07-01 - Billing modal y regresiones reales SRI/inventario
+
+Objetivo: seguir la pasada QA real del dashboard corrigiendo friccion UX en `Facturacion SRI`, estabilizando la suite por APISIX y alineando las pruebas con la topologia/modulos vigentes del runtime.
+
+Cambios:
+- `dashboard/src/app/features/business/pages/billing-services/billing-services.component.html` ya no difiere el render del selector de productos con `@defer`; el modal abre de forma inmediata y consistente despues de cambios de viewport, evitando reopens intermitentes en mobile al volver a usar `Agregar productos`.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` se alineo al contrato actual de modulos base y plataforma: `users` permanece como modulo core del tenant, los casos de platform admin crean usuarios con `roleIds: ['platform_admin']`, la prueba de APIs usa el filtro real de contratos bloqueados y la redireccion legacy `invoice-add` ahora habilita `billing-sri` antes de validar el flujo operativo.
+- La misma suite real de auth dejo de asumir un endpoint bloqueado inexistente (`monitoring.summary`) y ahora valida el panel `api-disabled-contract` contra cualquier contrato efectivamente deshabilitado para el tenant actual.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ya prueba `/dashboard/paramascotas-panel/catalog/users` contra `GET /dashboard/api/admin/ecommerce-users`, que es el contrato vigente del workspace `Clientes y equipo ecommerce`.
+- El caso real de `Inventario operativo` para detalle de factura de compra ahora usa fixtures HTTP deterministas sobre `/dashboard/api/admin/products`, `inventory/intelligence` y `purchase-invoices`, de modo que valida subtotal/IVA/total y ausencia de scroll anidado sin depender del dataset mutable del QA.
+- Los casos de `operations/billing-rides` se reescribieron sobre la superficie real actual (`InvoiceListComponent` en `Facturas SRI`), no sobre el layout viejo de `billing-rides`: ahora validan resumen, estados, detalle, RIDE/XML disponibles o pendientes y ausencia de side effects de `mail-test` o reemision en la bandeja documental.
+- Para esos casos SRI, la suite inyecta contexto tenant con `billing-sri` y permisos derivados solo dentro de Playwright, sin mutar contratos reales del tenant ni requerir cambios permanentes en QA.
+
+Verificacion:
+- Paso `npx playwright test tests/e2e/paramascotas-real-auth.spec.ts -g "platform admin module assignment persists after reload and unlocks billing menus|platform admin keeps tenant recovery routes after removing tenant-admin and users from the active tenant|platform admin API catalog probes products through APISIX with readable feedback|legacy invoice editor routes redirect through APISIX to operational billing screens"` en dos reruns focales: primero `3/4` y luego el caso restante `1/1`, quedando los cuatro verdes.
+- Paso `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas user contact actions use resolved valid channels only|paramascotas inventory purchase invoices open audited detail totals"` con ambos casos verdes.
+- Paso `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas billing rides exposes SRI QA environment safeguards|paramascotas billing rides blocks production reissue in QA before backend mutation|paramascotas billing rides exposes email delivery state without sending test mail"` con `3 passed`.
+
+Pendientes:
+- La suite `tests/e2e/smoke.spec.ts` sigue arrastrando escenarios legacy dependientes de fixtures locales, rutas demo y auth no vigente en QA estable; requiere una limpieza aparte para reflejar el runtime real sin mezclarla con esta tanda de correcciones operativas.
+
+### 2026-07-01 - Rediseño UI/UX de gestion de productos
+
+Objetivo: aplicar la skill `ui-ux-pro-max` para mejorar la pagina `/dashboard/paramascotas-panel/catalog/products` y sus modales de gestion, manteniendo intactos contratos, facades y logica operativa.
+
+Cambios:
+- La pantalla de productos adopta una composicion data-dense profesional: cabecera operativa, KPIs con iconos vectoriales, accesos rapidos, filtros integrados, tabla mas escaneable y acciones por fila con icono + texto.
+- El editor de producto mantiene el modal centrado con backdrop, pero ahora tiene cabecera con resumen de PVP, stock y avance de ficha, cierre accesible, secciones visuales consistentes, footer fijo y estados de foco/touch targets de al menos 44px en controles principales.
+- Segunda pasada especifica del modal: el editor distingue visualmente los flujos `create`, `edit`, `restock`, `duplicate` y `variant` mediante `editorFlow`, masthead con icono/contexto, barra de identidad del producto, chips de estado, navegacion interna de secciones y legends con iconos/descripciones.
+- Correccion del panel lateral de publicacion: la navegacion interna dejo de usar enlaces `href` y ahora usa botones con scroll interno al modal, evitando saltos/rutas incorrectas; `Publicar en tienda` se reemplazo por un toggle compacto con estado, icono, descripcion, switch y disabled claro cuando faltan requisitos.
+- Tercera pasada especifica de la lista: la tabla usa `colgroup` con anchos estables, filas tipo ficha compacta, miniaturas cuadradas, titulo con ellipsis seguro, chips de categoria/variante, metricas compactas de precio/stock/ficha y acciones en grid de tres columnas con `Archivar` separado como accion destructiva de ancho completo.
+- Correccion de UX en `Nueva variante`: familia, eje de variante y vista de tienda ya no se presentan como campos principales; quedan inferidos desde el producto base y disponibles solo en `Configuracion avanzada`. El flujo principal pide solo `Valor nuevo`, con resumen legible del eje (`Contenido / dosis`, etc.). Tambien se corrigio `openEditProduct`, que estaba pisando `editorFlow` de `edit` a `create`.
+- Correcciones funcionales detectadas al probar los 7 botones de fila: editar ya no regenera SKU existente/manual al guardar; `Nueva variante` sincroniza `Valor nuevo` con el eje real de variante (`weight`, etc.) ademas de `variantLabel`; `Archivar` bloquea en UI productos con stock y muestra feedback claro antes de llegar al 409 del backend.
+- La vista previa de producto se presenta como modal real con backdrop propio, no como bloque inline dentro del flujo.
+- El CSS local de `ParamascotasProductsWorkspaceComponent` define tokens de superficie, borde, texto, estados, foco, responsive y reduced-motion, corrigiendo wrap indebido en columnas numericas como `Stock`.
+- Se agrego `CUSTOM_ELEMENTS_SCHEMA` al componente standalone para usar `iconify-icon`, siguiendo el patron existente del dashboard.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run build`, `npm run docker:health` y `curl` por APISIX a `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products` con `HTTP 200`; se repitieron tras la segunda pasada del modal, la pasada de lista y la simplificacion de `Nueva variante`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy.
+- Playwright cargo la ruta por APISIX con usuario QA temporal, abrio el modal de nuevo producto y valido que no hubiera overflow horizontal de `body` en desktop ni mobile; luego valido que los botones del panel lateral no cambian URL/hash, que no quedan anchors dentro de `.editor-section-nav` y que el toggle de publicacion renderiza estado/switch. En la lista final valido 12 filas visibles, acciones con `display: grid`, tres columnas de 132px, 7 botones por fila, cero botones con overflow y chip de estado compacto. En `Nueva variante` valido que solo `Valor nuevo` queda como campo primario, que `Configuracion avanzada` inicia cerrado, que el resumen usa etiqueta legible y que no hay overflow horizontal; los usuarios temporales fueron eliminados al cerrar las pruebas.
+- Playwright ejecuto por APISIX la prueba funcional de los 7 botones de una fila (`Ver`, `Editar`, `Compra`, `Duplicar`, `Variante`, `Publicar/Ocultar`, `Archivar`) creando productos temporales reales y validando persistencia por API. La suite confirmo: vista previa correcta, edicion sin cambio de SKU, duplicado con SKU independiente, variante guardada con eje comercial sincronizado, compra con factura/vencimiento y aumento de stock, toggle publicar/ocultar con estado persistido, bloqueo UX para archivar con stock y archivado correcto de producto sin stock. Se limpiaron productos, facturas, lotes y usuario temporal (`remaining_codex_products=0`, `remaining_codex_invoices=0`, `remaining_temp_users=0`).
+
+Pendientes:
+- La tabla conserva scroll horizontal interno en mobile por densidad de acciones y columnas; si se requiere experiencia mobile primaria, conviene una vista tipo cards o acciones en menu contextual.
+
+### 2026-07-01 - Auditoria QA real del menu Paramascotas y saneamiento E2E
+
+Objetivo: validar el dashboard Paramascotas por APISIX con sesion real, corregir incoherencias visibles de navegacion y actualizar la auditoria automatica para que vuelva a medir el sistema vigente en QA.
+
+Cambios:
+- El manifiesto central `paramascotas-panel` alinea mejor la navegacion con la vista real: `products-purchases` ahora usa `Ventas, compras y stock por producto`, `security-settings` usa `Sesion y seguridad` y `billing-rides` usa `Facturas SRI`.
+- Se agrego `dashboard/tests/e2e/paramascotas-menu-qa.spec.ts`, que crea un admin temporal, inicia sesion MFA real y recorre por APISIX las 28 rutas operativas de `paramascotas-panel`.
+- La auditoria de menu ahora distingue rutas activas del tenant frente a modulos no contratados: si una URL responde `module-unavailable` y no aparece en el sidebar, la suite la trata como exclusión valida del menu actual.
+- Las suites reales `paramascotas-real-auth.spec.ts` y `paramascotas-product-modal-real.spec.ts` dejaron de apuntar a la base inexistente `identity_platform`; en este entorno QA la identidad se lee desde la base logica `dashboard`.
+- Las pruebas de plataforma dejaron de depender del dominio `@tecnolts.com` como heuristica; ahora crean usuarios con `roleIds: ['platform_admin']`, que es el contrato explicito vigente del backend.
+- `paramascotas-product-modal-real.spec.ts` empezo a actualizarse al layout actual de productos: copy nuevo del reporte de compras, `Resumen del catalogo`, `Accesos rapidos`, buscador en grilla y backdrop propio del editor de producto.
+- `paramascotas-real-integrations.spec.ts` ya corre por APISIX con MFA real y host-resolver a `paramascotasec.com`; dejo de depender del `baseURL` HTTP interno para navegar y de `request` sin sesion para validar POS.
+- Se corrigieron aserciones legacy de headings, shells y menus colapsados para que la suite mida la estructura actual (`level=2`, `products-shell`, exclusiones de modulos no contratados y grupos visibles reales del tenant demo).
+- Bug real corregido en `paramascotas-reference-catalog.service.ts`: al editar `Caracteristicas comerciales > Contenido / dosis`, los arrays legacy (`weights`, `presentations`, `sizes`, `colors`, `materials`, `usages`, `flavors`, `ageRanges`) ahora se derivan de `commercialAttributes` cuando estos existen, evitando que la UI muestre el cambio pero el payload siga guardando valores viejos.
+- Las pruebas reales del editor de producto ahora reflejan el flujo vigente: el chequeo de margen invalido evita el bloqueo previo de trazabilidad dejando stock inicial en `0`, y las aserciones de PVP neto/exento leen el texto `Base sin IVA` desde el label actual en vez de depender de clases removidas.
+- El workspace nuevo de productos recupero capacidades que el host anterior si tenia y el rediseño habia perdido: filtros por proveedor e IVA, chips compactos de quick filters sin duplicar los KPIs principales, badge visible de IVA por fila y detalle de `Grupo ... / Variante ...` en productos agrupados.
+- `togglePublication()` en `ParamascotasProductsWorkspaceComponent` volvio a usar la regla operativa correcta de lista (`precio + stock > 0`) en vez de exigir ficha/SEO completos; asi el boton `Publicar` ya no se queda mudo cuando el producto tiene basicos para salir a tienda desde el grid.
+- `paramascotas-product-page.service.ts` ahora agrega cache busting tambien a las imagenes del preview modal, no solo a la miniatura de la tabla.
+- El flujo `Nueva variante` volvio a heredar solo la familia/compra necesarias: limpia inventario y vencimiento, marca el valor fuente para validar duplicados, y vuelve a sincronizar nombre + SKU autogenerado cuando cambia el valor comercial de la variante despues de un intento fallido.
+- Las E2E de productos se ajustaron al contrato vigente del rediseño: el duplicado independiente ya valida que `expirationDate` no se reenvia, y el flujo de variante usa `Valor nuevo` como control primario en lugar de depender del selector legacy.
+
+Verificacion:
+- Paso `npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts` usando `https://paramascotasec.com/dashboard/...` y sesion MFA real.
+- Pasaron `npm run type:check`, `npm run lint` y `git diff --check` en `dashboard`.
+- El barrido de menu confirmo carga sin errores fatales visibles en las rutas auditadas y detecto incoherencias reales de copy antes de corregirlas.
+- Pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas discount form validates...|paramascotas business expenses reconciles...|paramascotas local sales autocompletes...|paramascotas local sales searches grouped aliases...|paramascotas local sales blocks final consumer...|paramascotas quotation conversion validates...|paramascotas quotations can close expired quotes...|paramascotas quotations do not request email delivery...|paramascotas quotations prepare WhatsApp..."`.
+- Tras reconstruir y desplegar `dashboard` con `npm run docker:up`, pasaron `npm run docker:health`, `npm test -- --watch=false --include src/app/features/dashboard/services/paramascotas-reference-catalog.service.spec.ts` y las E2E reales `paramascotas reusable catalog values can be edited without delete and recreate`, `paramascotas product editor saves net base price instead of gross PVP` y `paramascotas product editor keeps legacy Spanish tax exemption without reducing price by VAT`.
+- Tambien quedaron verdes `npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts tests/e2e/paramascotas-real-auth.spec.ts -g "paramascotas menu routes render through APISIX with a real tenant session|tenant admin signs in with MFA and stays tenant-scoped|platform admin module assignment persists after reload and unlocks billing menus"`.
+- Tambien pasaron `npm test -- --watch=false --include src/app/features/dashboard/services/paramascotas-product-page.service.spec.ts`, `npm run docker:health` tras cada redeploy del dashboard y el bloque E2E real por APISIX:
+  `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts -g "paramascotas product catalog filters by legacy selectors and VAT status|paramascotas product catalog quick filters match publication readiness rules|paramascotas product publication follows legacy price and stock rule|paramascotas product catalog appends cache key to uploaded product images|paramascotas duplicate product starts without inherited stock or grouped identity|paramascotas product restock uses purchased units while saving final stock|paramascotas duplicate variant requires a distinct grouped value before saving|paramascotas product search finds grouped variants by group metadata"`.
+
+Pendientes:
+- Seguir actualizando `paramascotas-product-modal-real.spec.ts` y el resto de `paramascotas-real-integrations.spec.ts` para quitar aserciones legacy del host transicional y del layout anterior que aun no fueron recorridas en esta pasada.
+- Continuar la auditoria funcional profunda de formularios, calculos y acciones operativas ahora que el barrido de rutas por APISIX ya es confiable.
+- Siguiente bloque sugerido del audit: descuentos/cupones, impuestos y reglas de precio, donde aun faltan recorridos E2E reales equivalentes a los que ya quedaron cerrados en productos.
+
+### 2026-07-01 - Menu real QA, tenant query y scroll lateral del shell
+
+Objetivo: cerrar regresiones de navegacion y desplazamiento real del dashboard Paramascotas por APISIX, eliminando incoherencias entre sesiones de plataforma, sesiones tenant y el shell visual del admin.
+
+Cambios:
+- `navigation.service.ts` ya no muestra menus operativos de `ecommerce` a sesiones `platform_admin` puras cuando no tienen permisos funcionales del modulo; la consola de plataforma conserva solo superficies administrativas reales.
+- `navigation.service.spec.ts` agrego cobertura para esa regla, evitando que reaparezca el menu de catalogo/productos para un superadmin sin `ecommerce.read` ni `ecommerce.update`.
+- `tenant-resolver.service.ts` dejo de propagar `?tenant=` hacia rutas operativas reales sobre hosts tenant (`/invoice-list`, `/paramascotas-panel/...`, etc.); en esos hosts el query solo se preserva para superficies de alcance plataforma/admin/publicas como `tenant-admin`, `platform-access`, `module-topology`, `api-catalog`, `users-list`, `roles`, `sign-in`, `permission-denied` y rutas de recovery equivalentes.
+- `tenant-resolver.service.spec.ts` cubre tanto el caso nuevo de host real con rutas operativas sin query tenant como la preservacion deliberada del query en rutas administrativas/plataforma.
+- Se agrego `dashboard/tests/e2e/paramascotas-menu-qa.spec.ts` como auditoria dinamica por APISIX: crea admins temporales con MFA, habilita `billing-sri` para el tenant demo y recorre el sidebar visible real tanto para un `platform_admin` como para un `tenant_admin`.
+- La auditoria del menu dejo de depender de indices DOM fragiles y ahora resuelve links visibles por `href` + texto, esperando la URL real del SPA por `expect.poll`, con copies actualizados donde el producto hoy muestra `Clientes ecommerce|Clientes y equipo ecommerce`.
+- El shell del dashboard recupero una superficie principal explicita (`dashboard-main-body`) alrededor del `router-outlet`, permitiendo medir y aislar correctamente el scroll del contenido operativo frente al scroll del sidebar.
+- `side-nav.component.html|ts|css` corrigieron la trampa de scroll doble del sidebar fijo: el area lateral usa altura basada en `100dvh`, gutter estable y reenvia la rueda al scroll principal cuando llega a sus limites en desktop, evitando que el scroll interno "secuestrara" el desplazamiento vertical de la pagina.
+- `side-nav.component.spec.ts` agrego cobertura del reenvio de rueda en el limite inferior del menu lateral para evitar regresiones del shell.
+- `paramascotas-real-integrations.spec.ts` dejo de buscar el boton legacy `Mes a mes` en balance; la pantalla vigente deriva la granularidad diaria/mensual desde `Periodo de reportes financieros`, por lo que la prueba ahora cambia el periodo a `Total` para validar la grilla mensual compacta y confirmar que no aparezca scroll vertical interno.
+- En POS real, `paramascotas-real-integrations.spec.ts` dejo de usar el selector generico `.dashboard-main-body` y paso a validar el contenedor publicado `paramascotas-sales-workspace-page`, evitando falsos negativos desde que el shell tambien envuelve el `router-outlet` en `dashboard-main-body`.
+- El bloque de ventas/reporting quedo alineado al layout actual del producto: el reporte de ventas ya no se prueba con el copy legacy `Productos lideres`, sino con `Lectura de productos` + `paramascotas-sales-insights`; la prueba de compras por producto ya usa el titulo vigente `Ventas, compras y stock por producto`; y la auditoria de identidad interna para variantes agrupadas corrigio la intercepcion del detalle a `/dashboard/api/admin/products/{id}`.
+- La prueba de reporte de ventas que valida ranking por metricas ahora stubbea un dataset explicito para que la verificacion no dependa de si el periodo real en QA tiene ventas o no; con eso sigue cubriendo `ingreso`, `uds`, `utilidad`, `margen` y el bloque de insights sin depender del dataset operativo del dia.
+- Se agregaron E2E reales de settings operativos con payload interceptado y feedback visible, cubriendo los formularios mas sensibles del dashboard publicado: impuestos (`/finance/taxes`), ficha comun de producto (`/catalog/product-page`), seguridad de sesiones (`/monitoring/security-settings`), envios (`/operations/shipments`) y estado comercial (`/operations/store-status`).
+- Las nuevas pruebas validan saneamiento de payload desde la UI, no solo carga de pagina: impuestos clampa IVA/creditos fuera de rango; ficha publica recorta textos y redondea contadores; seguridad clampa horas dentro de min/max tenant; envios sanea tarifas negativas, trimmea direccion y fuerza minimos tecnicos; y estado comercial restaura el mensaje de pausa default al apagar ventas con textarea vacio.
+
+Verificacion:
+- Pasaron `npm test -- --watch=false --include src/app/core/navigation/navigation.service.spec.ts --include src/app/core/tenant/tenant-resolver.service.spec.ts`.
+- Paso `npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts --project=chromium` para el recorrido de `platform_admin` por APISIX y tambien `npx playwright test tests/e2e/paramascotas-menu-qa.spec.ts --project=chromium --grep "tenant admin can open every tenant sidebar route through APISIX"`.
+- Paso `npm test -- --watch=false --include src/app/layout/shell/side-nav/side-nav.component.spec.ts`.
+- Tras redeploy de `dashboard` con `npm run docker:up`, el chequeo manual por navegador sobre `/dashboard/paramascotas-panel/catalog/products` confirmo `nestedVerticalScrolls: []` dentro de `.dashboard-main-body`.
+- Paso `npx playwright test tests/e2e/layout-density.spec.ts --project=chromium --grep "visible operational menu routes avoid content scroll traps and template leftovers"`.
+- Paso `npx playwright test tests/e2e/paramascotas-product-modal-real.spec.ts --project=chromium`, manteniendo verdes las acciones reales del editor/productos despues de los cambios del shell.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas discount form validates rules and normalizes payload before saving|paramascotas business expenses reconciles subtotal tax and total before saving|paramascotas general report period selector requests day week month year and total scopes correctly|paramascotas sales ranking requests day week month year and total scopes correctly|paramascotas financial reports keep month as default and remap year and total expense ranges|paramascotas balance trends keep period metrics visible without internal vertical scroll"`.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas finance submenu shows only relevant pricing blocks|paramascotas route /paramascotas-panel/finance/prices loads without fatal operational errors|paramascotas route /paramascotas-panel/finance/taxes loads without fatal operational errors|paramascotas route /paramascotas-panel/finance/margins loads without fatal operational errors|paramascotas route /paramascotas-panel/finance/calculations loads without fatal operational errors|paramascotas route /paramascotas-panel/finance/pricing-rules loads without fatal operational errors|paramascotas route /paramascotas-panel/finance/discount-codes loads without fatal operational errors|paramascotas route /paramascotas-panel/finance/expenses loads without fatal operational errors"`.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas admin orders print internal invoice in prepared popup|paramascotas admin orders deduplicate repeated rows before counters and totals|paramascotas admin orders refreshes operational data after status change|paramascotas shipments exposes ready pickup orders with detail action|paramascotas inventory purchase invoices open audited detail totals|paramascotas inventory manages restock and stock adjustments without leaving inventory|paramascotas inventory purchase invoice summary deduplicates repeated rows|paramascotas billing rides exposes SRI QA environment safeguards|paramascotas billing rides blocks production reissue in QA before backend mutation|paramascotas billing rides exposes email delivery state without sending test mail"`.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas local sales mirrors the real POS shift state|paramascotas local sales surfaces server-side discount rejection messages|paramascotas local sales stacks cleanly on mobile without horizontal overflow|paramascotas local sales uses overlay menu and clean tablet layout on narrow desktop widths|paramascotas local sales stays readable with fixed sidebar on constrained desktop widths|paramascotas local sales autocompletes customer by document like legacy POS|paramascotas local sales searches grouped aliases and blocks expired products like legacy POS|paramascotas local sales blocks final consumer sales over official limit before creating order|paramascotas quotation conversion validates payment reference and sends payment details|paramascotas quotations keep the commercial workspace readable without nested scroll|paramascotas quotations can close expired quotes without deleting history|paramascotas quotation conversion blocks final consumer over official limit before backend mutation|paramascotas quotations do not request email delivery for invalid customer email|paramascotas quotations prepare WhatsApp on creation without backend delivery fields"`.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas route /paramascotas-panel/reporting/general loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/sales loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/balance loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/inventory-report loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/traceability loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/products-purchases loads without fatal operational errors|paramascotas route /paramascotas-panel/reporting/sales-ranking loads without fatal operational errors|paramascotas panel renders the allowed report and POS content|paramascotas sales report identifies product leaders by metric|paramascotas sales report excludes missing-cost products from margin leader|paramascotas sales ranking joins grouped variant inventory by internal alias|paramascotas sales ranking forwards period scope changes to report and stats|paramascotas general report exports Excel workbook with operational sheets|paramascotas products purchases exposes purchase and margin risk filters|paramascotas products purchases uses internal product identity for grouped variants"`.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas route /paramascotas-panel/catalog/catalogs loads without fatal operational errors|paramascotas route /paramascotas-panel/catalog/users loads without fatal operational errors|paramascotas route /paramascotas-panel/catalog/product-page loads without fatal operational errors|paramascotas supplier catalog validates purchase supplier identity before saving|paramascotas category catalog requires all public image slots before saving|paramascotas category catalog blocks existing partial public image references|paramascotas reusable catalog values can be edited without delete and recreate|paramascotas user contact actions use resolved valid channels only"`.
+- Tambien pasaron por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --project=chromium --grep "paramascotas tax settings clamp fiscal payloads and confirm save feedback|paramascotas product page settings normalize shared catalog copy before saving|paramascotas security settings clamp session hours inside tenant limits before saving|paramascotas shipping settings sanitize logistics payloads and show save feedback|paramascotas store status falls back to the default pause message when sales are disabled"`.
+
+Pendientes:
+- Extender la auditoria real mas alla del sidebar hacia formularios financieros y reglas de precio para cubrir calculos, validaciones y feedback del dashboard completo.
+- Mantener actualizada `paramascotas-menu-qa.spec.ts` cuando cambie el manifiesto o la topologia visible del tenant, para que siga midiendo el menu publicado real y no un snapshot legacy.
+
+### 2026-07-01 - Workspace de precios: guardado visible y payloads saneados
+
+Objetivo: cerrar el siguiente bloque del audit financiero real con `ui-ux-pro-max`, endureciendo el workspace de `Precios`, `Margenes`, `Calculos` y `Reglas de precio` para que el guardado sea claro y los payloads enviados al backend lleguen normalizados.
+
+Cambios:
+- `paramascotas-pricing-workspace.component.html` ahora deshabilita `Actualizar` mientras una mutacion esta en curso y cambia el copy de accion a `Actualizando...`; los CTA primarios de `Margenes`, `Calculos` y `Reglas comerciales` exponen estado explicito `Guardando...` y `aria-busy`, eliminando el feedback mudo durante el submit.
+- `paramascotas-pricing-workspace.component.spec.ts` amplio la cobertura unitaria del workspace: margenes ya verifica que `baseMargin` y `targetMargin` no se persistan por debajo de `minMargin`; calculos ya confirma clamping de `rounding` y `shippingBuffer`; y reglas comerciales valida minimos/maximos de umbrales y descuentos antes de mutar backend.
+- `tests/e2e/paramascotas-real-integrations.spec.ts` suma un helper de stubs financieros (`stubPricingWorkspaceApis`) para los endpoints reales `/dashboard/api/admin/settings/tax`, `/pricing-margins`, `/pricing-calc`, `/pricing-rules` y `/dashboard/api/admin/products`, manteniendo la suite por APISIX alineada con el runtime publicado.
+- Sobre ese helper se agregaron tres E2E reales nuevas: una para `Margenes` que comprueba dependencia `min -> base -> target`, una para `Calculos` que clampa redondeo/buffer e IVA, y una para `Reglas de precio` que limita umbrales y descuentos al rango operativo permitido.
+- Las tres pruebas ya no validan solo el payload; tambien exigen que el boton entre en estado visible de guardado y quede deshabilitado mientras la respuesta sigue pendiente, evitando regresiones UX donde el usuario podia interpretar que el click no hizo nada.
+
+Verificacion:
+- Paso `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-pricing-workspace/paramascotas-pricing-workspace.component.spec.ts` con `5 passed`.
+- Se reconstruyo y redeployo `dashboard` con `npm run docker:up`; luego `npm run docker:health` confirmo `http://127.0.0.1:8081/health -> ok`.
+- Paso por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --grep "pricing margins normalize dependent values|pricing calculations clamp formula inputs|pricing rules clamp commercial thresholds"` con `3 passed`.
+- `git -C dashboard diff --check` siguio limpio despues de los cambios del bloque.
+
+Pendientes:
+- Extender este mismo patron de saneamiento + feedback visible al resto de formularios financieros (`Cupones`, `Gastos`, settings operativos restantes) y continuar la pasada funcional sobre calculos reales del dashboard.
+
+### 2026-07-01 - Cupones y gastos: feedback visible, reset limpio e intervalo recurrente
+
+Objetivo: seguir el audit financiero real de Paramascotas, cerrando huecos UX/funcionales en `Cupones` y `Gastos` para que los formularios no oculten errores, los estados de guardado sean visibles y las recurrencias expongan todo el contrato operativo del backend.
+
+Cambios:
+- `paramascotas-discount-codes.component.ts|html` ahora limpian error/notice al reset manual del formulario y muestran un CTA mas explicito durante el submit (`Guardando cupon...` o `Guardando cambios...`) con `aria-busy`, evitando la sensacion de click mudo en alta/edicion de cupones.
+- En el flujo de guardado de cupones, el mensaje de exito se reordeno para sobrevivir al `resetDiscountForm()` posterior al submit; antes el mismo reset borraba la confirmacion de `Cupon creado.` o `Cupon actualizado.`.
+- `paramascotas-expenses-workspace.component.ts|html` agrega `notice` operativo visible para alta de gastos, cambio de estado, recurrencias, reversos, cierre de periodo y ventas historicas; los CTA principales ahora publican estados `Guardando gasto...`, `Guardando venta...`, `Guardando recurrencia...`, `Cargando preview...` y `Cerrando periodo...` con `aria-busy`.
+- El formulario `Gastos recurrentes` ahora expone `Intervalo`, que ya existia en el payload (`intervalCount -> interval_count`) pero no estaba disponible en la UI; la vista tambien traduce mejor frecuencia e intervalo en el listado (`Mensual cada 2 meses`, `Semanal cada N semanas`).
+- Las pruebas unitarias de `Cupones` y `Gastos` se ampliaron: cupones cubre limpieza de estado residual al reset; gastos cubre confirmacion de notice al crear gasto y persistencia de `interval_count` al guardar recurrencias.
+- `paramascotas-real-integrations.spec.ts` extiende la cobertura real por APISIX: el caso de cupones ahora valida reset limpio del error, estado visible `Guardando cupon...` y confirmacion final; el caso de gastos valida `Guardando gasto...` + `Gasto registrado.`; y se agrega una nueva E2E para recurrencias que comprueba helper visible del intervalo y payload normalizado (`2.4 -> interval_count: 2`).
+
+Verificacion:
+- Paso `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts` con `2 files, 8 tests` verdes.
+- `git -C dashboard diff --check` siguio limpio.
+- Se reconstruyo y redeployo `dashboard` con `npm run docker:up`; luego `npm run docker:health` confirmo `http://127.0.0.1:8081/health -> ok`.
+- Paso por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --grep "discount form validates rules and normalizes payload before saving|business expenses reconciles subtotal tax and total before saving|business expense recurrences expose interval and normalize payload before saving"` con `3 passed`.
+
+Pendientes:
+- Seguir la auditoria del bloque financiero con `ventas historicas`, `cierres financieros`, `reversos` y luego volver sobre operaciones/SRI donde todavia faltan recorridos equivalentes de payload, calculo y feedback visible.
+
+### 2026-07-01 - Venta historica, cierre y reversos del workspace de gastos
+
+Objetivo: cerrar el siguiente sub-bloque del workspace financiero de `Gastos`, endureciendo `Venta historica`, `Cerrar periodo` y `Reversos` para que no permitan mutaciones incoherentes y den feedback correcto en el runtime QA publicado.
+
+Cambios:
+- `paramascotas-historical-sale.service.ts` ya no considera validas lineas con `unit_price_gross = 0`; el payload exige PVP positivo y expone `canSubmit()` para que la UI pueda bloquear ventas historicas inconsistentes antes del submit.
+- `paramascotas-expenses-workspace.component.ts|html` usa ese nuevo `canSubmitHistoricalSale()` para deshabilitar `Registrar venta historica` cuando la venta no tiene total bruto positivo; ademas el error visible ahora explica la condicion real: cantidad y PVP mayor a cero.
+- El cierre financiero ya trimmea `Notas del cierre` antes de enviar el payload de `closeFinancialPeriod`, evitando guardar espacios basura como parte del comentario operativo.
+- Se detecto y corrigio un bug real de interfaz en `paramascotas-workspace-shared.css`: `.paramascotas-expense-card-grid` estaba en `display: none` por defecto, dejando `Gastos del periodo` oculto en desktop y haciendo inaccesibles acciones como `Crear reverso`. La grilla ahora renderiza tambien en desktop con gap estable.
+- `paramascotas-historical-sale.service.spec.ts` amplio cobertura para rechazar payload con PVP cero y validar `canSubmit()`.
+- `paramascotas-expenses-workspace.component.spec.ts` ahora cubre: bloqueo de venta historica sin bruto positivo, trim de notas al cerrar periodo y payload negativo del reverso contable.
+- `tests/e2e/paramascotas-real-integrations.spec.ts` agrega/fortalece cuatro recorridos reales por APISIX: identidad interna de variante agrupada en venta historica, bloqueo UX con PVP cero + feedback visible al guardar, confirmacion de cierre con `notes` saneado, y reverso con montos negativos persistidos despues de confirmar.
+
+Verificacion:
+- Paso `npm test -- --watch=false --include src/app/features/dashboard/services/paramascotas-historical-sale.service.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts` con `2 files, 11 tests` verdes.
+- `git -C dashboard diff --check` siguio limpio despues del ajuste CSS y de los cambios de payload.
+- Se reconstruyo y redeployo `dashboard` con `npm run docker:up`; `npm run docker:health` siguio respondiendo `http://127.0.0.1:8081/health -> ok`.
+- Paso por APISIX `npx playwright test tests/e2e/paramascotas-real-integrations.spec.ts --grep "historical sales submit grouped variant internal product identity|historical sales block zero-price lines and show visible submit feedback|financial close confirmation trims notes and persists visible success feedback|expense reversals persist negative amounts after confirmation"` con `4 passed`.
+
+Pendientes:
+- Continuar la auditoria funcional del dashboard sobre operaciones y SRI con el mismo criterio: payload saneado, calculo correcto, acciones visibles y pruebas reales por APISIX para cada mutacion sensible.
+
+### 2026-07-01 - Facturacion SRI: borrador persistente entre clientes, productos y emision
+
+Objetivo: corregir una regresion operativa del workspace SRI donde el borrador de factura se perdia al cambiar entre `Clientes`, `Productos` y `Emision`, rompiendo el flujo normal de trabajo del tenant.
+
+Cambios:
+- `dashboard/src/app/features/business/state/billing-services.facade.ts` ahora mantiene un `invoiceDraft` root-scoped con cliente, forma de pago, referencia interna, sucursal seleccionada y lineas del carrito, de modo que el borrador no depende del ciclo de vida de cada ruta.
+- `billing-services.component.ts` rehidrata ese draft al crear el componente y sincroniza el estado vivo del formulario fiscal hacia la facade; tambien refresca los productos ya agregados al carrito cuando llega una nueva carga del catalogo para evitar cantidades obsoletas al volver desde otras secciones.
+- El borrador ahora queda acotado al `tenant` y al operador autenticado: si cambia el slug resuelto o el correo del usuario activo, el draft viejo se descarta y el flujo fiscal vuelve al estado base para evitar fugas entre tenants o sesiones.
+- La ruta `Clientes de factura` deja de perder datos al volver a `Emision`, y el flujo `Emision -> Productos -> Emision` conserva el detalle cargado en la factura.
+- `useCustomerSuggestion()` ya no cambia la seccion en memoria dejando la URL en `/billing-clients`; ahora navega realmente a `/billing-services` preservando query params, de modo que el deep-link, el breadcrumb operativo y el refresh del navegador quedan consistentes con la pantalla visible.
+- `BillingSriNavComponent`, la CTA `Ir a emision` y los enlaces equivalentes de `invoice-list` ahora usan `queryParamsHandling="preserve"`, evitando que el `tenant` activo se pierda en el cambio entre pantallas SRI.
+- La navegacion interna `Configuracion SRI` deja de enviar a `/billing-status?section=settings`; ahora usa la ruta canonica `/billing-configuration` preservando `tenant`, consistente con el shell principal y con el entrypoint operativo publicado.
+- Las acciones asicronas visibles del bloque SRI ahora muestran feedback textual en el boton (`Verificando...`, `Actualizando...`, `Buscando...`, `Consultando...`, `Enviando correo...`, `Preparando reemision...`) y exponen `aria-busy`, evitando estados mudos mientras el usuario espera respuesta.
+- `billing-services.component.spec.ts` agrega una regresion directa que destruye/recrea el componente con otra ruta fiscal y confirma que cliente, referencia y carrito siguen presentes.
+- La misma spec agrega una regresion para confirmar que un draft perteneciente a otro tenant u operador se limpia antes de montar la pantalla.
+- Se agrego otra regresion para `Clientes frecuentes`, verificando que al seleccionar un cliente frecuente se actualiza el borrador y se navega a `Emision` en vez de dejar una URL stale.
+- `tests/e2e/invoice-workspace.spec.ts` se reescribio sobre el dominio QA real `https://paramascotasec.com/dashboard`, con login MFA temporal y host-resolver hacia `192.168.100.229`, para validar por APISIX tanto la bandeja de facturas como la persistencia del borrador entre rutas SRI.
+- Esa misma suite ahora cubre tambien que `Clientes frecuentes` redirige de vuelta a `Emision` sin perder `tenant=demo`, y que `Configuracion SRI` aterriza en `/billing-configuration`, cerrando las regresiones de deep-linking del workspace fiscal.
+
+Verificacion:
+- Paso `npm test -- --watch=false --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`.
+- Paso `npm test -- --watch=false --include src/app/features/business/components/billing-sri-document-actions/billing-sri-document-actions.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`.
+- Paso `npm test -- --watch=false --include src/app/features/business/components/billing-sri-nav/billing-sri-nav.component.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts`.
+- Paso `npm run docker:up`.
+- Paso `npm run docker:health`.
+- Paso `npx playwright test tests/e2e/invoice-workspace.spec.ts`.
+
+Pendientes:
+- Seguir el barrido funcional del bloque SRI sobre consultas, configuracion y acciones de comprobante para endurecer feedback visible, permisos y persistencia del contexto tenant en navegaciones profundas.
+
+### 2026-06-30 - Productos fuera del host transicional
+
+Objetivo: completar la fase de productos de la modularizacion del dashboard, removiendo `/dashboard/paramascotas-panel/catalog/products` del flujo operativo de `ParamascotasTransitionHostComponent`.
+
+Cambios:
+- `ParamascotasProductsWorkspaceComponent` ahora es una pantalla standalone real con template y estilos propios; carga solo catalogo admin, referencias, editor, imagenes e inventario necesarios para productos.
+- La ruta de productos consume `CatalogProductsFacade` y el contrato `/dashboard/api/admin/products*`; ya no monta el host transicional ni comparte estado mutable del workspace legacy.
+- El editor conserva alta, edicion, duplicado, compra/reposicion, nueva variante, publicar/ocultar, archivado, SKU, PVP bruto con precio base neto, IVA, vencimiento, factura de compra, SEO, variantes, inventario e imagenes; se mantiene como modal centrado con backdrop, cuerpo scrolleable, columna principal de edicion y footer fijo, no como panel lateral. La distribucion del modal usa clases semanticas por seccion y ya no depende de `fieldset:nth-of-type`.
+- SEO queda en el flujo principal izquierdo al final, despues de imagenes; muestra la base usada para generar metadatos (`nombre`, `marca`, `categoria`, `mascota` y `SKU`), vista previa y contadores. `Generar SEO` regenera titulo, descripcion, ALT y terminos; el guardado solo completa SEO faltante y respeta ediciones manuales existentes.
+- El lateral del modal queda dedicado a `Publicacion`: barra de progreso, pendientes reales y resumen, sin renderizar todos los requisitos como chips verdes/rojos.
+- El bloque `Nueva variante` queda aislado al flujo iniciado desde el boton homonimo; la edicion normal de producto no solicita familia, eje de variante ni vista tienda. La metadata de variantes existentes se conserva al guardar, pero no se presenta como requisito operativo en edicion comun.
+- La seccion de imagenes del editor ocupa el ancho completo del bloque y usa columnas responsivas solo cuando caben, evitando el espacio vacio lateral que dejaba el componente anidado en una sola columna.
+- La subida multiple mantiene `imagesUploading` activo hasta terminar realmente.
+- `arch:check` ya no permite importar `ParamascotasTransitionHostComponent` desde productos; el unico consumidor permitido queda en finanzas/reportes mientras se migra esa fase.
+- La sincronizacion de environments trata `qa` como runtime real: fixtures apagadas, guards activos y logging en `error` despues de cada build/deploy.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run bundle:check`, `npm run module:check`, `npx vitest run src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts`, `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-product-editor-images/paramascotas-product-editor-images.component.spec.ts`, `php -l` de los archivos backend modificados y `git diff --check`.
+- `bundle:check` reporto initial `1.33 MB`, main `456.3 kB`, styles `753.8 kB` y largest lazy `604.9 kB` dentro de los gates actuales.
+- El build generado ubico la pantalla nueva de productos en un chunk propio de `60 KB` en produccion; el chunk grande restante corresponde al host legacy usado por finanzas/reportes. En el bundle QA desplegado, el chunk de productos queda en `169.7 KB`.
+- Se desplego `dashboard` con `npm run docker:up`; el contenedor quedo healthy, el bundle desplegado tiene `fixtureBackendEnabled: false`, `routeGuardsEnabled: true`, contiene `product-editor-backdrop`, `Generar SEO`, `.editor-section--seo` y `.editor-section--publishing`, con `.product-editor` fijo/centrado y `.editor-grid` distribuido en columna principal + lateral de publicacion.
+- Por APISIX, `/dashboard/paramascotas-panel/catalog/products` respondio `HTTP 200` y `/dashboard/api/admin/products` respondio `HTTP 401` sin sesion, confirmando ruta protegida.
+
+Pendientes:
+- Siguiente fase: extraer finanzas/reportes del host transicional y separar facades de ventas, balance, traceability y reportes financieros para poder eliminar el host legacy del runtime operativo.
+
+### 2026-06-30 - Modularizacion inicial y contrato admin de productos
+
+Objetivo: corregir la lentitud y desaparicion de productos en `/dashboard/paramascotas-panel/catalog/products` sin usar cache como solucion, separando el contrato admin real del catalogo publico y sacando rutas legacy del mapa operativo.
+
+Cambios:
+- Backend expone `GET/POST/PUT/DELETE /api/admin/products` y `GET /api/admin/products/{id}` como contrato admin explicito con `catalog.admin`; `/api/admin/products` usa proyeccion liviana por defecto y solo incluye procurement cuando se pide `projection=inventory|procurement|financial`.
+- Dashboard mueve `ecommerce.products*` a `/dashboard/api/admin/products*`, elimina `scope=admin`, elimina el fallback al catalogo publico y conserva productos ocultos/sin stock en admin.
+- Se creo `CatalogProductsFacade` con seniales propias para lista, referencia, mutaciones, imagenes y detalle de compras; productos, inventario, compras por producto y reportes consumen esa frontera en vez de depender directamente del servicio admin global.
+- `app-route-sources.ts` ya solo registra fuentes operativas (`billing-services`, `ecommerce`, `tenant-admin`, `users`); `dashboard-templates`, `ui-kit`, `products`, `inventory` y `monitoring` quedaron fuera del route map productivo.
+- `arch:check` ahora bloquea el patron `scope=admin`, rutas legacy/demo en el mapa operativo y se actualizo al modulo vigente `billing-sri`.
+
+Verificacion:
+- Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run bundle:check`, `npm run module:check`, `php backend/scripts/check_modular_routes.php`, `php -l` de los archivos backend modificados y `git diff --check`.
+- Se desplegaron `backend` con `./scripts/deploy.sh backend` y `dashboard` con `npm run docker:up`; contenedores quedaron healthy.
+- Por APISIX, `/dashboard/paramascotas-panel/catalog/products` respondio `HTTP 200`, `/dashboard/api/admin/products` respondio `HTTP 401` sin sesion (ruta existente y protegida) y el catalogo publico `/paramascotasec/api/products` siguio respondiendo `HTTP 200`.
+
+Pendientes:
+- Continuar la separacion por facades de finanzas, operaciones, pricing, billing y usuarios; productos ya quedo fuera del host transicional.
 
 ### 2026-06-29 - Periodos de balance y cuadre de cajas POS
 
@@ -934,6 +1355,8 @@ Verificacion:
 - Pasaron `bash -n` de scripts tocados, `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh`, `./scripts/check-seo-gateway.sh qa`, `./scripts/e2e-qa.sh`, `node dashboard/tools/check-module-manifests.mjs` y `npm run docker:health` en `dashboard`.
 - Se eliminaron imagenes legacy y redes `paramascotasec-*`; se preservaron volumenes PostgreSQL legacy de Facturador por politica de no borrar datos/facturas.
 
+Cierre: el redeploy completo posterior quedo registrado en `2026-06-28 - Backend runtime con nombres por responsabilidad`.
+
 ### 2026-06-28 - QA canonico y renombre de proyectos runtime
 
 Objetivo: dejar QA como unico modo no productivo, eliminar el alias operativo heredado y publicar los proyectos fisicos canonicos `gatewayapisix` y `basesdedatos`.
@@ -942,8 +1365,8 @@ Cambios:
 - Se renombraron las carpetas runtime conservando `.git`, cambios locales y datos: `gatewayapisix` y `basesdedatos`.
 - La data QA de PostgreSQL se preservo bajo `basesdedatos/postgres18_qa_data`; la red interna de DB pasa a `basesdedatos-internal`.
 - Se eliminaron wrappers de deploy por ambiente y scripts de migracion de `.env` legacy; los scripts activos leen `qa|production` solo desde `.env`.
-- El frontend QA usa `COMPOSE_PROFILES=qa`, `FRONTEND_QA_RUNTIME=stable` y contenedor visible `webparamascotas`.
-- dashboard queda como tooling interno con `APP_ENV=qa` y configuracion Angular `qa`; las topologias publicadas usan `gatewayapisix` y `basesdedatos`.
+- El frontend QA usa `COMPOSE_PROFILES=qa`, `FRONTEND_QA_RUNTIME=stable` y contenedor `webparamascotas`.
+- Dashboard queda como tooling interno con `APP_ENV=qa` y configuracion Angular `qa`; las topologias publicadas usan `gatewayapisix` y `basesdedatos`.
 - `gatewayapisix` trata `apisix-gateway-internal` y `apisix_etcd_data` como recursos externos creados por script para preservar estado y evitar labels heredados del proyecto anterior.
 
 Verificacion:
@@ -977,7 +1400,7 @@ Cambios:
 Verificacion:
 - Pasaron `bash -n` sobre scripts raiz/checks tocados.
 - Los comandos de `billing` y `facturador` fallan con mensaje dirigido a desplegar `backend`.
-- Pasaron `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh`, `node Dashboard/tools/check-module-manifests.mjs`, `jq empty` sobre topologias JSON tocadas y `git diff --check` en `Dashboard` y `paramascotasec`.
+- Pasaron `./scripts/check-env-secrets.sh qa`, `./scripts/check-container-connectivity.sh qa`, `./scripts/check-paramascotas.sh`, `node dashboard/tools/check-module-manifests.mjs`, `jq empty` sobre topologias JSON tocadas y `git diff --check` en `Dashboard` y `paramascotasec`.
 
 ### 2026-06-27 - Dashboard QA: retiro operativo de superficies legacy no vigentes
 
@@ -1028,7 +1451,7 @@ Cambios:
 - Se bajo y removio el stack legacy `Facturador` con `docker compose down --remove-orphans`, incluyendo contenedores detenidos y proxies locales residuales.
 - El repo local pasa a llamarse `backend` dentro del workspace; se actualizan referencias activas en scripts raiz, Gateway, Frontend, Dashboard, Facturador standalone, DB shared config y documentacion operativa vigente.
 - El runtime Docker del core API pasa a usar `backend-app`, `backend-web` y `backend-billing-worker`; los upstreams internos y ejemplos de URL quedan alineados a `http://backend-web:8080`.
-- Se actualizaron los `.env` reales del QA local (`Gateway/entorno/.env`, `paramascotasec/entorno/.env`, `Dashboard/.env`) para que el ambiente activo no siga resolviendo al host viejo.
+- Se actualizaron los `.env` reales del QA local (`Gateway/entorno/.env`, `paramascotasec/entorno/.env`, `dashboard/.env`) para que el ambiente activo no siga resolviendo al host viejo.
 - `scripts/show-admin-recovery-code.sh` deja de apuntar al `.env` legacy del repo y ahora lee `backend/entorno/.env`, consistente con la estructura vigente.
 
 Decisiones:
@@ -1049,7 +1472,7 @@ Objetivo: simplificar el despliegue por modo, dejar un contrato canonico unico p
 Cambios:
 - Se agregan entrypoints canonicos `deploy.sh` en la raiz del workspace y en `paramascotasec`, `paramascotasec-backend` y `Gateway`; el flujo individual del workspace queda en `scripts/deploy.sh <development|production> <servicio>`.
 - `scripts/deploy-workspace.sh` y los wrappers `deploy-development.sh` / `deploy-production.sh` pasan a delegar al contrato nuevo sin romper compatibilidad existente.
-- `paramascotasec/app/package.json` corrige `deploy:dev` y `deploy:prod` para que apunten al deploy real del frontend.
+- `webparamascotas/app/package.json` corrige `deploy:dev` y `deploy:prod` para que apunten al deploy real del frontend.
 - Se corrigen los README principales y la documentacion operativa de despliegue para reflejar que solo frontend y Dashboard requieren flujo hot local, que el frontend desplegado usa `FRONTEND_DEV_RUNTIME=stable`, y que `Facturador` queda fuera del deploy normal del workspace.
 - `MapaCompleto.md` se reescribe contra la topologia vigente: Billing SRI dentro de `platform-core`, PostgreSQL compartido por bases logicas, redes activas actuales y deploy canonico `DB -> Backend -> Frontend -> Gateway`.
 
@@ -1103,7 +1526,7 @@ Objetivo: recuperar el deploy development del Gateway que se cortaba al recrear 
 
 Cambios:
 - `Gateway/docker-compose.yml` deja de unir `apisix-gateway` a `monitor-infraestructura_app`.
-- Se elimina del bloque `networks` la definicion externa `monitor-infraestructura`, ya que el Gateway orquestado actual solo usa `edge`, `apisix-gateway-internal` y `paramascotasec-web-internal`.
+- Se elimina del bloque `networks` la definicion externa `monitor-infraestructura`, ya que el Gateway orquestado actual solo usa `edge`, `apisix-gateway-internal` y `webparamascotas-internal`.
 - `etcd` recupera su configuracion propia de red y persistencia: escucha en `0.0.0.0:2379/2380`, anuncia `apisix-etcd`, usa volumen `apisix_etcd_data` y deja de montar certificados/puertos HTTP que no le correspondian.
 - `certbot` deja de montar `Gateway/certbot/*` y usa solo `Gateway/entorno/certbot/*`, alineado al runtime vigente y evitando que el deploy se bloquee por rutas legacy.
 - `Gateway/scripts/setup-ssl-local.sh` deja de pre-sincronizar APISIX cuando existe un `apisix-gateway` no saludable; la sincronizacion temprana solo corre si el gateway ya esta `healthy`.
@@ -1148,7 +1571,7 @@ Verificacion:
 - Pasaron unitarias focalizadas de `billing-services`, `invoice-list`, analitica fiscal compartida, modal de producto, sucursales y branch modal.
 - Paso `npm run e2e -- --grep "billing rides|invoice editor|billing product"` con 5/5 casos.
 
-### 2026-06-25 - Dashboard/Identity QA: paginacion, permisos ecommerce y e2e real
+### 2026-06-25 - dashboard/Identity QA: paginacion, permisos ecommerce y e2e real
 
 Objetivo: responder que mas quedaba por arreglar con fallas concretas del e2e autenticado y dejar el flujo real de tenant admin operable en ecommerce.
 
@@ -1261,7 +1684,7 @@ Cambios:
 - `paramascotas-tax-settings` ahora usa `ParamascotasKpiStripComponent` para los indicadores `IVA general`, `Base gravada`, `IVA estimado` y `Exentos / sin PVP`.
 - `ParamascotasKpiStripComponent` agrega la variante `taxes` para mantener la distribucion de cuatro columnas sin depender de clases legacy.
 - Se retiro la regla CSS muerta `paramascotas-report-kpis--taxes` de `paramascotas-workspace-shared.css`.
-- Una busqueda focalizada confirma que `paramascotas-report-kpis--taxes` ya no existe en `Dashboard/src/app/features/dashboard`.
+- Una busqueda focalizada confirma que `paramascotas-report-kpis--taxes` ya no existe en `dashboard/src/app/features/dashboard`.
 
 Operacion y verificacion:
 - Pasaron `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-tax-settings/paramascotas-tax-settings.component.spec.ts --include src/app/features/dashboard/components/paramascotas-kpi-strip/paramascotas-kpi-strip.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
@@ -1286,7 +1709,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasTransitionHostComponent` y convertir el patron repetido de KPIs financieros en una pieza reutilizable con CSS propio.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-kpi-strip/` con `ParamascotasKpiStripComponent` y spec propia.
+- Se creo `dashboard/src/app/features/dashboard/components/paramascotas-kpi-strip/` con `ParamascotasKpiStripComponent` y spec propia.
 - El host de transicion usa `<app-paramascotas-kpi-strip>` para los KPIs financieros iniciales y para los KPIs compactos de balance.
 - `paramascotas-general-report` tambien reutiliza el strip para sus indicadores de reporte general.
 - El host conserva solo el armado de datos (`financialKpis`, `financialTrendTotalKpis`) y deja el render de cards al componente presentacional.
@@ -1303,7 +1726,7 @@ Cambios:
 - `ParamascotasFinancialToolbarComponent` ahora soporta modo solo periodo, ocultando el selector segmentado cuando la pantalla solo necesita un mes.
 - `paramascotas-expenses-workspace` usa el toolbar financiero compartido para `Gastos y cierre financiero`, eliminando el input mensual con `style="max-width: 160px"`.
 - `paramascotas-discount-codes` reemplaza el `width: 100%` inline de la barra `Todos` por la clase `paramascotas-discount-status-list__bar-full`.
-- Una busqueda sobre `Dashboard/src/app/features/dashboard/pages/paramascotas-*` y `Dashboard/src/app/features/dashboard/components/paramascotas-*` ya no encuentra `style="..."` en esas superficies activas.
+- Una busqueda sobre `dashboard/src/app/features/dashboard/pages/paramascotas-*` y `dashboard/src/app/features/dashboard/components/paramascotas-*` ya no encuentra `style="..."` en esas superficies activas.
 
 Operacion y verificacion:
 - Pasaron `npm test -- --watch=false --include src/app/features/dashboard/components/paramascotas-financial-toolbar/paramascotas-financial-toolbar.component.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts`, `npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts`, `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
@@ -1313,7 +1736,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el `ParamascotasTransitionHostComponent` y corregir un bloque visual que mantenia controles financieros con estilos inline dentro del template grande.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-financial-toolbar/` con `ParamascotasFinancialToolbarComponent` y spec propia.
+- Se creo `dashboard/src/app/features/dashboard/components/paramascotas-financial-toolbar/` con `ParamascotasFinancialToolbarComponent` y spec propia.
 - `paramascotas-transition-host.component.html` delega titulo, periodo, selector Dia/Semana/Mes/Ano/Total, inputs de fecha y acciones `Exportar Excel`/`Actualizar` al componente nuevo.
 - `paramascotas-general-report` y `paramascotas-product-purchases` tambien reutilizan el toolbar, retirando controles de periodo duplicados con `style="max-width..."`.
 - `paramascotas-expenses-workspace` reutiliza el mismo toolbar en modo solo mes, sin selector segmentado ni botones extra.
@@ -1330,7 +1753,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el `ParamascotasTransitionHostComponent`, sacando del template grande los modales genericos de confirmacion y prompt.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-decision-dialog/` con `ParamascotasDecisionDialogComponent` y spec propia.
+- Se creo `dashboard/src/app/features/dashboard/components/paramascotas-decision-dialog/` con `ParamascotasDecisionDialogComponent` y spec propia.
 - `paramascotas-transition-host.component.html` reemplaza los bloques `panelConfirmation()` y `panelPrompt()` por `<app-paramascotas-decision-dialog>`.
 - El host conserva la decision de negocio y los callbacks (`confirmPanelAction`, `confirmPanelPrompt`), pero ya no renderiza internamente la estructura modal.
 - Las reglas `paramascotas-decision*` se retiraron de `paramascotas-workspace-shared.css` y viven localmente en el componente nuevo para evitar duplicar CSS compartido.
@@ -1344,7 +1767,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el `ParamascotasTransitionHostComponent`, sacando del host un bloque presentacional de contexto/acciones verificadas sin cambiar el flujo operativo.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/dashboard/components/paramascotas-support-strip/` con `ParamascotasSupportStripComponent` y spec propia.
+- Se creo `dashboard/src/app/features/dashboard/components/paramascotas-support-strip/` con `ParamascotasSupportStripComponent` y spec propia.
 - `paramascotas-transition-host.component.html` ahora delega el strip superior a `<app-paramascotas-support-strip>`, pasando solo `surfaceMode` y `verifiedActions`.
 - Se retiraron `supportModeLabel()` y `supportModeDescription()` del host.
 - Las reglas CSS del support strip se movieron al componente nuevo y se retiraron de `paramascotas-workspace-shared.css`, evitando duplicar el stylesheet compartido completo en el chunk lazy.
@@ -1358,7 +1781,7 @@ Operacion y verificacion:
 Objetivo: evitar que el modal de registro de productos SRI vuelva a sentirse cortado o deje botones fuera de alcance en pantallas bajas.
 
 Cambios:
-- `Dashboard/src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.css` ahora estructura el dialogo con header, formulario scrollable y footer fijo dentro del modal.
+- `dashboard/src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.css` ahora estructura el dialogo con header, formulario scrollable y footer fijo dentro del modal.
 - El scroll queda limitado al cuerpo del formulario (`overscroll-behavior: contain`), dejando `Cancelar` y `Guardar producto` visibles sin depender del scroll completo del backdrop.
 
 Operacion y verificacion:
@@ -1369,10 +1792,10 @@ Operacion y verificacion:
 Objetivo: eliminar codigo viejo de `invoice-add`, `invoice-edit` e `invoice-preview` ahora que esas URLs publicas ya redirigen al flujo SRI real.
 
 Cambios:
-- Se eliminaron los componentes, templates, estilos y specs legacy de `Dashboard/src/app/features/business/pages/invoice-add/`, `invoice-edit/` e `invoice-preview/`.
-- `Dashboard/src/app/features/business/business.routes.ts` conserva el contrato publico con redirecciones: `invoice-add` e `invoice-edit` a `billing-services`, e `invoice-preview` a `invoice-list`.
-- `Dashboard/src/app/features/business/business.routes.spec.ts` protege que esas rutas sigan siendo solo redirecciones y no vuelvan a cargar pantallas paralelas.
-- `Dashboard/tools/check-architecture.mjs` ahora falla si reaparecen directorios legacy para esas pantallas SRI.
+- Se eliminaron los componentes, templates, estilos y specs legacy de `dashboard/src/app/features/business/pages/invoice-add/`, `invoice-edit/` e `invoice-preview/`.
+- `dashboard/src/app/features/business/business.routes.ts` conserva el contrato publico con redirecciones: `invoice-add` e `invoice-edit` a `billing-services`, e `invoice-preview` a `invoice-list`.
+- `dashboard/src/app/features/business/business.routes.spec.ts` protege que esas rutas sigan siendo solo redirecciones y no vuelvan a cargar pantallas paralelas.
+- `dashboard/tools/check-architecture.mjs` ahora falla si reaparecen directorios legacy para esas pantallas SRI.
 
 Operacion y verificacion:
 - Pasaron `npm test -- --watch=false --include src/app/features/business/business.routes.spec.ts --include src/app/features/business/pages/billing-services/billing-services.component.spec.ts --include src/app/features/business/pages/invoice-list/invoice-list.component.spec.ts --include src/app/features/business/components/billing-product-picker-modal/billing-product-picker-modal.component.spec.ts --include src/app/features/business/components/billing-sri-product-modal/billing-sri-product-modal.component.spec.ts`, `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
@@ -1382,11 +1805,11 @@ Operacion y verificacion:
 Objetivo: sacar el ultimo host historico Paramascotas del arbol de `pages`, para que las rutas exactas no dependan de una pagina legacy llamada `paramascotas-panel`.
 
 Cambios:
-- `ParamascotasPanelComponent` se movio y renombro a `ParamascotasTransitionHostComponent` en `Dashboard/src/app/features/dashboard/components/paramascotas-transition-host/`.
+- `ParamascotasPanelComponent` se movio y renombro a `ParamascotasTransitionHostComponent` en `dashboard/src/app/features/dashboard/components/paramascotas-transition-host/`.
 - `paramascotas-products-workspace` y `paramascotas-financial-workspace` son los unicos consumidores permitidos del host de transicion, usando `<app-paramascotas-transition-host>`.
-- Se elimino `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/`; el host ya no vive bajo `pages`.
-- `Dashboard/tools/check-architecture.mjs` ahora exige el host de transicion en `components`, bloquea referencias a `ParamascotasPanelComponent`, bloquea `<app-paramascotas-panel>` y falla si reaparece `pages/paramascotas-panel`.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md`, `Dashboard/src/app/features/ecommerce/README.md` y `Dashboard/src/app/tenants/paramascotasec/README.md` actualizan la lectura de transicion.
+- Se elimino `dashboard/src/app/features/dashboard/pages/paramascotas-panel/`; el host ya no vive bajo `pages`.
+- `dashboard/tools/check-architecture.mjs` ahora exige el host de transicion en `components`, bloquea referencias a `ParamascotasPanelComponent`, bloquea `<app-paramascotas-panel>` y falla si reaparece `pages/paramascotas-panel`.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md`, `dashboard/src/app/features/ecommerce/README.md` y `dashboard/src/app/tenants/paramascotasec/README.md` actualizan la lectura de transicion.
 
 Operacion y verificacion:
 - Pasaron `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
@@ -1396,9 +1819,9 @@ Operacion y verificacion:
 Objetivo: seguir desacoplando las vistas exactas de Paramascotas del host `ParamascotasPanelComponent`, sacando componentes reutilizados que aun vivian bajo `pages/paramascotas-panel/components`.
 
 Cambios:
-- Se movieron `paramascotas-order-detail-modal`, `paramascotas-product-preview-modal` y `paramascotas-product-editor-images` a `Dashboard/src/app/features/dashboard/components/`.
+- Se movieron `paramascotas-order-detail-modal`, `paramascotas-product-preview-modal` y `paramascotas-product-editor-images` a `dashboard/src/app/features/dashboard/components/`.
 - `ParamascotasPanelComponent`, `paramascotas-orders` y `paramascotas-shipping-workspace` ahora consumen esos componentes desde la carpeta compartida del feature, no desde el panel legacy.
-- `Dashboard/tools/check-architecture.mjs` ahora falla si reaparece `pages/paramascotas-panel/components` o si algun archivo importa desde `paramascotas-panel/components`.
+- `dashboard/tools/check-architecture.mjs` ahora falla si reaparece `pages/paramascotas-panel/components` o si algun archivo importa desde `paramascotas-panel/components`.
 
 Operacion y verificacion:
 - Pasaron specs focales de los tres componentes movidos, `paramascotas-orders` y `paramascotas-shipping-workspace` (`5` archivos, `11` pruebas).
@@ -1409,14 +1832,14 @@ Operacion y verificacion:
 Objetivo: reducir la dependencia de vistas ya extraidas hacia `ParamascotasPanelComponent`, evitando que importen su CSS aunque ya tengan rutas/workspaces propios.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` se renombro a `Dashboard/src/app/features/dashboard/pages/paramascotas-workspace-shared.css`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` se renombro a `dashboard/src/app/features/dashboard/pages/paramascotas-workspace-shared.css`.
 - `ParamascotasPanelComponent` y las vistas exactas extraidas ahora consumen `paramascotas-workspace-shared.css` como capa comun, no el stylesheet del componente legacy.
-- `Dashboard/tools/check-architecture.mjs` ahora falla si reaparece `paramascotas-panel.component.css` o si alguna vista importa CSS desde `paramascotas-panel/paramascotas-panel.component.css`.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan que los estilos compartidos Paramascotas viven en `paramascotas-workspace-shared.css`.
+- `dashboard/tools/check-architecture.mjs` ahora falla si reaparece `paramascotas-panel.component.css` o si alguna vista importa CSS desde `paramascotas-panel/paramascotas-panel.component.css`.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan que los estilos compartidos Paramascotas viven en `paramascotas-workspace-shared.css`.
 
 Operacion y verificacion:
 - Pasaron `npm run arch:check`, `npm run type:check`, `npm run lint` y `npm run build` en `Dashboard`.
-- `rg -n "paramascotas-panel.component.css|paramascotas-panel/paramascotas-panel.component.css" Dashboard/src/app Dashboard/docs Dashboard/tools` ya solo encuentra la regla preventiva en `check-architecture.mjs`.
+- `rg -n "paramascotas-panel.component.css|paramascotas-panel/paramascotas-panel.component.css" dashboard/src/app dashboard/docs dashboard/tools` ya solo encuentra la regla preventiva en `check-architecture.mjs`.
 
 ### 2026-06-25 - Backend QA: guardrail para rutas modulares
 
@@ -1428,7 +1851,7 @@ Cambios:
 - `scripts/check-paramascotas.sh` ahora ejecuta ese check despues de la sintaxis PHP del backend.
 
 Operacion y verificacion:
-- Se regenero el registro de capacidades con `npm run capabilities:generate` en `paramascotasec/app` despues de cambiar handlers de rutas.
+- Se regenero el registro de capacidades con `npm run capabilities:generate` en `webparamascotas/app` despues de cambiar handlers de rutas.
 - Pasaron `php paramascotasec-backend/scripts/check_modular_routes.php`, `php -l paramascotasec-backend/scripts/check_modular_routes.php`, `bash -n scripts/check-paramascotas.sh` y `scripts/check-paramascotas.sh`.
 - El check reporta `OK modules=6 routes=147`.
 
@@ -1451,7 +1874,7 @@ Operacion y verificacion:
 Objetivo: reducir el ultimo bloque modal grande dentro de `billing-services`, separando el formulario de producto facturable, imagen, IVA, estado activo y acciones de guardado en un componente dedicado.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-product-modal/` con `BillingSriProductModalComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-product-modal/` con `BillingSriProductModalComponent`.
 - El componente renderiza datos fiscales del producto, precio/costo/stock/IVA, flags de exento/activo, vista previa de imagen, selector de archivo, URL y descripcion.
 - `billing-services.component.html` reemplaza el modal inline por `<app-billing-sri-product-modal>`.
 - El padre conserva validaciones de negocio, subida de imagen, creacion del producto, actualizacion de catalogo y carga al detalle de factura.
@@ -1467,7 +1890,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `billing-services`, sacando el modal de alta/edicion de sucursales fiscales a un componente dedicado con eventos de campo, cierre y guardado.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-branch-modal/` con `BillingSriBranchModalComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-branch-modal/` con `BillingSriBranchModalComponent`.
 - El componente renderiza establecimiento, punto de emision, nombre, direccion, flags de ambiente/reintentos/default/activa y acciones `Cancelar` / `Guardar sucursal`.
 - `billing-services.component.html` reemplaza el modal inline por `<app-billing-sri-branch-modal>`.
 - El padre conserva validacion fiscal, normalizacion de serie, permisos y persistencia mediante `saveBranch`.
@@ -1482,7 +1905,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo la configuracion fiscal dentro de `billing-services`, separando certificado `.p12`, contrasena, carga de archivo y credencial segura en una pieza dedicada.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-certificate-panel/` con `BillingSriCertificatePanelComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-certificate-panel/` con `BillingSriCertificatePanelComponent`.
 - El componente renderiza estado del certificado, titular, vencimiento, campo de contrasena, selector `.p12` y resumen de credencial segura.
 - `billing-services.component.html` reemplaza el bloque inline por `<app-billing-sri-certificate-panel>`.
 - El componente hijo emite `File | null` al seleccionar certificado; `billing-services` conserva validaciones de contrasena, extension, tamano y llamada a `uploadCertificate`.
@@ -1497,7 +1920,7 @@ Operacion y verificacion:
 Objetivo: reducir repeticion y deuda visual en la configuracion fiscal de `billing-services`, separando las tarjetas de ambiente pruebas/produccion y reintentos en un componente dedicado.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-retry-settings-panel/` con `BillingSriRetrySettingsPanelComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-retry-settings-panel/` con `BillingSriRetrySettingsPanelComponent`.
 - El componente renderiza ambientes pruebas/produccion, activacion, reintentos automaticos, recuperacion activa, intentos, horas entre reintentos y ventana de dias.
 - `billing-services.component.html` reemplaza las dos tarjetas repetidas por `<app-billing-sri-retry-settings-panel>`.
 - Se retiraron del CSS del padre `.billing-services-environment-grid`, `.billing-services-environment-card`, `.billing-services-environment-card__head` y `.billing-services-switch`.
@@ -1512,7 +1935,7 @@ Operacion y verificacion:
 Objetivo: reducir la configuracion fiscal dentro de `billing-services`, separando el panel de sucursales SRI con sus estados, ambientes y acciones de alta/edicion.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-branches-panel/` con `BillingSriBranchesPanelComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-branches-panel/` con `BillingSriBranchesPanelComponent`.
 - El componente renderiza sucursales fiscales, badges de default/activa/pruebas/produccion, estado vacio y acciones `Nueva sucursal` / `Editar`.
 - `billing-services.component.html` delega el bloque a `<app-billing-sri-branches-panel>` y conserva solo el manejo de `openBranchModal`.
 - Se retiraron del CSS del padre `.billing-services-branches-panel`, `.billing-services-branch-list`, `.billing-services-branch-card` y `.billing-services-branch-card__badges`.
@@ -1526,7 +1949,7 @@ Operacion y verificacion:
 Objetivo: continuar reduciendo `billing-services` sacando la ficha de comprobante activo y la ayuda de estado SRI a una pieza visual propia, sin duplicar reglas fiscales ni cambiar acciones del comprobante.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-document-summary/` con `BillingSriDocumentSummaryComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-document-summary/` con `BillingSriDocumentSummaryComponent`.
 - El componente renderiza cliente, total, IVA, fecha de emision, ambiente y texto de ayuda de estado SRI a partir de valores ya calculados por el padre.
 - `billing-services.component.html` reemplaza el bloque inline de resumen por `<app-billing-sri-document-summary>`.
 - Se retiraron del CSS del padre `.billing-services-selected-card` y `.billing-services-status-help`, dejando la responsividad del resumen dentro del componente dedicado.
@@ -1540,7 +1963,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `billing-services` separando el panel de estado tecnico del servicio SRI, sin exponer rutas protegidas ni mezclar estilos de salud/control dentro del workspace fiscal principal.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-service-status-card/` con `BillingSriServiceStatusCardComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-service-status-card/` con `BillingSriServiceStatusCardComponent`.
 - El componente muestra salud del servicio, version, ultima respuesta y resumen de acciones protegidas, y emite la accion para abrir el modal de integraciones.
 - `billing-services.component.html` reemplaza el panel inline por `<app-billing-sri-service-status-card>`.
 - Se retiraron del CSS del padre las clases locales `.billing-services-health` y `.billing-services-control-grid`, conservando `.billing-services-api-summary` solo donde sigue viva en configuracion.
@@ -1554,7 +1977,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el workspace fiscal `billing-services`, aislando la barra de acciones del comprobante activo para que sus permisos, estados y estilos no sigan mezclados con la logica API de la pagina.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-document-actions/` con `BillingSriDocumentActionsComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-document-actions/` con `BillingSriDocumentActionsComponent`.
 - El componente concentra las acciones `Consultar SRI`, `RIDE PDF`, `XML`, `Correo prueba` y `Revisar reemision`, respetando permisos `canUpdate`, disponibilidad SRI y accion en ejecucion.
 - `billing-services.component.html` delega la barra a `<app-billing-sri-document-actions>` y el padre conserva solo handlers de API y estado de negocio.
 - Se retiro CSS muerto de `.billing-services-action-bar` y `.billing-services-action-button*`, dejando la responsividad de botones dentro del componente dedicado.
@@ -1568,7 +1991,7 @@ Operacion y verificacion:
 Objetivo: separar la accion peligrosa de anulacion/reemision del workspace `billing-services`, dejandola como componente dedicado, testeable y con bloqueo visual durante procesamiento.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-reissue-modal/` con `BillingSriReissueModalComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-reissue-modal/` con `BillingSriReissueModalComponent`.
 - El componente muestra clave abreviada, referencia fiscal, motivo visible en auditoria y acciones `Cancelar` / `Anular y reemitir`.
 - El modal bloquea textarea, cierre y confirmacion mientras `processing` esta activo.
 - `billing-services.component.html` delega el modal a `<app-billing-sri-reissue-modal>` y el padre conserva solo validacion, API y estado de apertura.
@@ -1583,7 +2006,7 @@ Operacion y verificacion:
 Objetivo: reducir mezcla tecnica dentro de `billing-services` moviendo el modal de acciones protegidas SRI a un componente propio con estilos y pruebas propias.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-integrations-modal/` con `BillingSriIntegrationsModalComponent`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-integrations-modal/` con `BillingSriIntegrationsModalComponent`.
 - El modal conserva el contrato visible de integraciones: metodo, ruta interna y descripcion, sin exponer permisos crudos al usuario.
 - `billing-services.component.html` delega el modal a `<app-billing-sri-integrations-modal>` y el padre solo controla apertura/cierre.
 - Se retiraron de `billing-services` los helpers `endpointBadge`/`methodClass` y el CSS muerto de `.billing-services-contract*`/`.billing-services-method*`.
@@ -1597,7 +2020,7 @@ Operacion y verificacion:
 Objetivo: reducir el tamaño y mezcla de `billing-services` separando el indicador de disponibilidad del SRI, que es una pieza funcional critica y visible para emision/consulta.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-availability-banner/` con `BillingSriAvailabilityBannerComponent`, estilos propios, estados `online/offline/checking/idle` y accion `Verificar SRI`.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-availability-banner/` con `BillingSriAvailabilityBannerComponent`, estilos propios, estados `online/offline/checking/idle` y accion `Verificar SRI`.
 - `billing-services.component.html` ahora delega el banner a `<app-billing-sri-availability-banner>` usando las señales existentes de disponibilidad.
 - Se retiraron del CSS de `billing-services` los estilos locales `.billing-services-sri-banner*`, evitando que el banner dependa del componente padre.
 - Se agrego spec directo del banner para render, evento de verificacion y estado bloqueado mientras carga.
@@ -1610,7 +2033,7 @@ Operacion y verificacion:
 Objetivo: evitar que `Documentos`, `Emision`, `Consultas`, `Productos`, `Clientes` y `Configuracion` vuelvan a declararse por separado entre la bandeja de facturas y el workspace de facturacion SRI.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/business/components/billing-sri-nav/` con `BillingSriNavComponent`, permisos SRI centralizados y responsive propio.
+- Se creo `dashboard/src/app/features/business/components/billing-sri-nav/` con `BillingSriNavComponent`, permisos SRI centralizados y responsive propio.
 - `invoice-list` y `billing-services` ahora usan `<app-billing-sri-nav>` en lugar de tener menus locales duplicados.
 - Se retiro CSS muerto de `.invoice-sri-nav` y `.billing-services-section-nav`.
 - Los tests de `invoice-list` y `billing-services` ahora validan el menu compartido; se agrego spec directo para `BillingSriNavComponent`.
@@ -1635,11 +2058,11 @@ Operacion y verificacion:
 Objetivo: cerrar la limpieza del panel Paramascotas retirando el servicio legacy que seguia construyendo snapshots genericos de endpoints aunque ya no existiera catch-all ni UI consumidora.
 
 Cambios:
-- Se eliminaron `Dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts`, su spec y `Dashboard/src/app/features/dashboard/state/paramascotas-panel-data.service.ts`.
+- Se eliminaron `dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts`, su spec y `dashboard/src/app/features/dashboard/state/paramascotas-panel-data.service.ts`.
 - `paramascotas-panel.model.ts` deja solo el contrato de navegacion/host que usa la UI transicional; se retiraron tipos de endpoint, preview y snapshot.
 - `paramascotas-panel.registry.ts` vuelve a ser un derivado simple de `PARAMASCOTAS_PANEL_MANIFEST`, sin URLs al viejo `my-account` ni mapas de endpoints.
 - `paramascotas-panel.registry.spec.ts` protege la derivacion del manifiesto y las rutas, no la auditoria legacy de endpoints.
-- `Dashboard/tools/check-architecture.mjs` elimina la excepcion especial que permitia a ese servicio usar `apiCatalog.publicUrl/path` para firmas visuales.
+- `dashboard/tools/check-architecture.mjs` elimina la excepcion especial que permitia a ese servicio usar `apiCatalog.publicUrl/path` para firmas visuales.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run lint`, `npm run arch:check` y `npm run module:check` en `Dashboard`.
@@ -1661,7 +2084,7 @@ Operacion y verificacion:
 Objetivo: impedir que `ParamascotasPanelComponent` vuelva a usarse como dependencia general ahora que solo debe sostener temporalmente Productos y Finanzas.
 
 Cambios:
-- `Dashboard/tools/check-architecture.mjs` valida que solo `paramascotas-products-workspace` y `paramascotas-financial-workspace` puedan importar o renderizar `ParamascotasPanelComponent`.
+- `dashboard/tools/check-architecture.mjs` valida que solo `paramascotas-products-workspace` y `paramascotas-financial-workspace` puedan importar o renderizar `ParamascotasPanelComponent`.
 - La regla permite seguir compartiendo el CSS existente del panel en workspaces ya extraidos, pero bloquea consumo del componente host transicional.
 
 Operacion y verificacion:
@@ -1673,10 +2096,10 @@ Objetivo: evitar que el panel generico `paramascotas-panel/:group/:view` vuelva 
 
 Cambios:
 - Se comprobo que los 28 items de `PARAMASCOTAS_PANEL_MANIFEST` tienen ruta exacta en `dashboard.routes.ts`.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` elimina la ruta comodin `:group/:view` bajo `paramascotas-panel`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` elimina la ruta comodin `:group/:view` bajo `paramascotas-panel`.
 - `dashboard.routes.spec.ts` ahora falla si reaparece el catch-all y valida que cada item del manifiesto tenga ruta exacta.
-- `Dashboard/tools/check-architecture.mjs` ahora tambien falla si reaparece el catch-all, si una ruta apunta directo a `ParamascotasPanelComponent` o si algun item del manifiesto no tiene ruta exacta.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` actualizan la regla operativa: las vistas del panel Paramascotas se declaran una por una; no hay catch-all para pantallas nuevas.
+- `dashboard/tools/check-architecture.mjs` ahora tambien falla si reaparece el catch-all, si una ruta apunta directo a `ParamascotasPanelComponent` o si algun item del manifiesto no tiene ruta exacta.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` actualizan la regla operativa: las vistas del panel Paramascotas se declaran una por una; no hay catch-all para pantallas nuevas.
 
 Pendiente:
 - `ParamascotasPanelComponent` sigue existiendo como implementacion transicional para `catalog/products` y el bloque financiero; el siguiente paso real es extraer esas logicas internas sin perder paridad funcional.
@@ -1686,11 +2109,11 @@ Pendiente:
 Objetivo: seguir reduciendo dependencia accidental de `paramascotas-panel/:group/:view` en las vistas financieras que aun quedaban dentro del panel generico.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara rutas exactas para `reporting/sales`, `reporting/balance`, `reporting/traceability` y `operations/balances` antes del catch-all.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-financial-workspace/` agrega un workspace de transicion que fija el `ParamascotasPanelRouteKey` desde route data.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara rutas exactas para `reporting/sales`, `reporting/balance`, `reporting/traceability` y `operations/balances` antes del catch-all.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-financial-workspace/` agrega un workspace de transicion que fija el `ParamascotasPanelRouteKey` desde route data.
 - `dashboard.routes.spec.ts` protege que las cuatro rutas carguen `ParamascotasFinancialWorkspaceComponent` y conserven su route key canonico.
 - `ParamascotasPanelComponent` limpia `CONTEXTUAL_REFRESH_ITEM_IDS` para no declarar como propias vistas ya extraidas (`general`, `inventory`, `sales-ranking`).
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` reflejan la frontera real: las rutas ya son exactas, pero el bloque financiero todavia reutiliza `ParamascotasPanelComponent` hasta extraer ventas, balance, trazabilidad y cierres con paridad funcional.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` reflejan la frontera real: las rutas ya son exactas, pero el bloque financiero todavia reutiliza `ParamascotasPanelComponent` hasta extraer ventas, balance, trazabilidad y cierres con paridad funcional.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check` y `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`.
@@ -1700,11 +2123,11 @@ Operacion y verificacion:
 Objetivo: evitar que `catalog/products` siga dependiendo accidentalmente del catch-all `paramascotas-panel/:group/:view`, sin repetir la regresion anterior donde una lista generica reemplazo el editor real de productos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `catalog/products` como ruta exacta antes del catch-all.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-products-workspace/` agrega un workspace dedicado que fija el flujo a `catalog.products`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `catalog/products` como ruta exacta antes del catch-all.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-products-workspace/` agrega un workspace dedicado que fija el flujo a `catalog.products`.
 - `ParamascotasPanelComponent` acepta `fixedRouteKey` para abrir una vista concreta cuando lo consume un workspace dedicado.
 - `dashboard.routes.spec.ts` protege que `catalog/products` cargue `ParamascotasProductsWorkspaceComponent` antes de la ruta generica.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan la frontera real: Productos ya tiene ruta exacta, pero el editor completo todavia reutiliza `ParamascotasPanelComponent` hasta extraer compras, variantes, imagenes, publicacion e inventario con paridad funcional.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan la frontera real: Productos ya tiene ruta exacta, pero el editor completo todavia reutiliza `ParamascotasPanelComponent` hasta extraer compras, variantes, imagenes, publicacion e inventario con paridad funcional.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` enfocado en `Dashboard`.
@@ -1714,11 +2137,11 @@ Operacion y verificacion:
 Objetivo: seguir puliendo Facturacion SRI para usuarios reales, quitando lenguaje tecnico visible y dejando claro que los reintentos fiscales no pueden ser menores a una hora.
 
 Cambios:
-- `Dashboard/src/app/features/business/pages/billing-services/billing-services.component.html/ts` reemplaza copy visible de `tenant`, `API`, `APISIX`, `development`, `QA` y rutas protegidas por lenguaje operativo de empresa activa, acciones protegidas e integraciones.
+- `dashboard/src/app/features/business/pages/billing-services/billing-services.component.html/ts` reemplaza copy visible de `tenant`, `API`, `APISIX`, `development`, `QA` y rutas protegidas por lenguaje operativo de empresa activa, acciones protegidas e integraciones.
 - La configuracion de reintentos SRI ahora se edita como `Horas entre reintentos`; el componente convierte horas a `delay_seconds` para conservar el contrato backend y mantiene minimo de 1 hora.
 - El modal avanzado de integraciones ya no muestra `backendLabel` ni permisos internos como texto de usuario; conserva las rutas tecnicas solo al abrir la vista avanzada.
-- `Dashboard/src/app/features/business/pages/invoice-list/invoice-list.component.html` cambia textos de bandeja de facturas para hablar de empresa activa y facturas, no de API/tenant.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.ts` limpia los textos de RIDE/reemision para hablar de ambiente SRI de pruebas y no de backend/QA/endpoints.
+- `dashboard/src/app/features/business/pages/invoice-list/invoice-list.component.html` cambia textos de bandeja de facturas para hablar de empresa activa y facturas, no de API/tenant.
+- `dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.ts` limpia los textos de RIDE/reemision para hablar de ambiente SRI de pruebas y no de backend/QA/endpoints.
 - El selector de productos facturables carga 50 resultados por busqueda desde `billing-services.component.ts`; el backend permite hasta 100 en `BillingDocumentController::products()` y `ProductRepository::searchForBilling()` preserva `has_more` con `limit + 1`.
 - `InvoicesApiService` limpia el ultimo mensaje visible de mutacion que hablaba de `tenant` y usa `empresa activa`.
 - Las pruebas E2E de auth, smoke e integraciones quedan alineadas con los nuevos nombres visibles de Facturacion SRI, consultas y selector de productos.
@@ -1733,10 +2156,10 @@ Operacion y verificacion:
 Objetivo: sacar `finance/expenses` del `ParamascotasPanelComponent` y dejar gastos como workspace dedicado, conservando en balance solo la lectura agregada necesaria de gastos y periodos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-expenses-workspace/` agrega `ParamascotasExpensesWorkspaceComponent` con carga propia de gastos, recurrencias, periodos financieros, preview de cierre, reversos, ventas historicas y confirmaciones.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `finance/expenses` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-expenses-workspace/` agrega `ParamascotasExpensesWorkspaceComponent` con carga propia de gastos, recurrencias, periodos financieros, preview de cierre, reversos, ventas historicas y confirmaciones.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `finance/expenses` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar el bloque `expenses` y se retiraron imports, signals y mutaciones de alta/pago de gastos, recurrencias, reversos, cierre financiero y ventas historicas; el panel conserva solo resumen read-only para `Balance general`/`Balances`.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que `finance/expenses` vive en `paramascotas-expenses-workspace`, no en el panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que `finance/expenses` vive en `paramascotas-expenses-workspace`, no en el panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-expenses-workspace/paramascotas-expenses-workspace.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run bundle:check` y `npm run bundle:hotspots -- --top=20`.
@@ -1747,10 +2170,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando `reporting/products-purchases` del catch-all legacy y dejando ventas, compras, lotes y facturas de compra en un workspace dedicado.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-product-purchases/` agrega `ParamascotasProductPurchasesComponent` con carga propia de reporte, productos, pedidos, facturas de compra, detalle de lotes, modal de factura y exportacion.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `reporting/products-purchases` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-product-purchases/` agrega `ParamascotasProductPurchasesComponent` con carga propia de reporte, productos, pedidos, facturas de compra, detalle de lotes, modal de factura y exportacion.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `reporting/products-purchases` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `products-purchases` y se retiraron sus imports, signals, charts, helpers, modal de factura y sincronizacion de seleccion asociados a esa vista.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que productos x compra vive en `paramascotas-product-purchases`, no en el panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que productos x compra vive en `paramascotas-product-purchases`, no en el panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-product-purchases/paramascotas-product-purchases.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run bundle:check` y `npm run bundle:hotspots -- --top=20`.
@@ -1761,9 +2184,9 @@ Operacion y verificacion:
 Objetivo: quitar fragilidad real del `main` de produccion y retirar codigo viejo de POS/cotizaciones que seguia dentro de `ParamascotasPanelComponent` despues de que esas rutas ya vivian en `paramascotas-sales-workspace`.
 
 Cambios:
-- `Dashboard/angular.json` reemplaza `src/app/app-fixture-handlers.ts` por `src/app/core/http/fixtures/app-fixture-handlers.production.ts` en build de produccion; development/testing conservan los fixtures completos.
-- `Dashboard/src/app/core/http/fixtures/app-fixture-handlers.production.ts` publica `APP_FIXTURE_HANDLERS` vacio para que datos demo, monitoring, usuarios, workspace y billing fixtures no entren al bundle inicial productivo.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` retira imports, signals, loaders, helpers y mutaciones POS/cotizaciones que ya no tienen template ni ruta activa dentro del catch-all legacy.
+- `dashboard/angular.json` reemplaza `src/app/app-fixture-handlers.ts` por `src/app/core/http/fixtures/app-fixture-handlers.production.ts` en build de produccion; development/testing conservan los fixtures completos.
+- `dashboard/src/app/core/http/fixtures/app-fixture-handlers.production.ts` publica `APP_FIXTURE_HANDLERS` vacio para que datos demo, monitoring, usuarios, workspace y billing fixtures no entren al bundle inicial productivo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` retira imports, signals, loaders, helpers y mutaciones POS/cotizaciones que ya no tienen template ni ruta activa dentro del catch-all legacy.
 - Se confirmo con busqueda que el panel legacy ya no referencia `localSale`, `quotation`, `pos`, `AdminNative` ni helpers asociados.
 
 Operacion y verificacion:
@@ -1775,10 +2198,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando `finance/prices`, `finance/margins`, `finance/calculations` y `finance/pricing-rules` del catch-all legacy y corrigiendo la documentacion que aun presentaba `Facturador` como fallback orquestado.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-pricing-workspace/` agrega `ParamascotasPricingWorkspaceComponent` con auditoria de PVP, margenes, simulador de calculo, reglas comerciales, busqueda, filtros de riesgo, graficas y navegacion hacia `Productos`.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `finance/prices`, `finance/margins`, `finance/calculations` y `finance/pricing-rules` como rutas exactas antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-pricing-workspace/` agrega `ParamascotasPricingWorkspaceComponent` con auditoria de PVP, margenes, simulador de calculo, reglas comerciales, busqueda, filtros de riesgo, graficas y navegacion hacia `Productos`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `finance/prices`, `finance/margins`, `finance/calculations` y `finance/pricing-rules` como rutas exactas antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar precios y se retiraron sus signals, computed, loaders y metodos especificos de `prices`, `margins`, `calculations` y `pricing-rules`.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que el workspace de precios vive fuera del panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que el workspace de precios vive fuera del panel generico.
 - `Facturador/module.json` queda marcado como runtime legacy standalone, sin soporte orquestado ni fallback HTTP; en modo orquestado el owner operativo es `platform-core/Billing`.
 
 Operacion y verificacion:
@@ -1790,11 +2213,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando `finance/taxes` del catch-all legacy sin romper el IVA que todavia usan Productos y Precios.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-tax-settings/` agrega `ParamascotasTaxSettingsComponent` con resumen fiscal, graficas, productos con impacto, revision fiscal, parametros de IVA/credito y contexto de envios.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/finance/taxes` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-tax-settings/` agrega `ParamascotasTaxSettingsComponent` con resumen fiscal, graficas, productos con impacto, revision fiscal, parametros de IVA/credito y contexto de envios.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/finance/taxes` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `taxes` y se retiraron sus estados, computed, metodos y loader especificos de impuestos; conserva `taxSettings` y `taxAnalytics` porque `Productos` y `Precios` siguen necesitando IVA.
 - Las rutas lazy extraidas usan barrels `index.ts` con alias corto `C` para mantener `main` dentro del presupuesto sin relajar limites.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que `Impuestos` vive fuera del panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que `Impuestos` vive fuera del panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-tax-settings/paramascotas-tax-settings.component.spec.ts`, `npm run bundle:check`, busqueda de referencias legacy de `taxes` en `paramascotas-panel` y `git diff --check` en `Dashboard`.
@@ -1805,10 +2228,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la operacion logistica de envios/mapa del catch-all legacy y dejandola como workspace dedicado.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-shipping-workspace/` agrega `ParamascotasShippingWorkspaceComponent` con carga de tarifas, cobertura, proveedores, recogidas, pedidos de entrega/retiro, guardado de configuracion y detalle de pedido.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/operations/shipments` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-shipping-workspace/` agrega `ParamascotasShippingWorkspaceComponent` con carga de tarifas, cobertura, proveedores, recogidas, pedidos de entrega/retiro, guardado de configuracion y detalle de pedido.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/operations/shipments` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `shipments` y se retiraron sus estados, computed, metodos y loader especificos de envios; conserva `shippingSettings` solo como dato auxiliar de `Impuestos`.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que `Envios y mapa` vive fuera del panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que `Envios y mapa` vive fuera del panel generico.
 - `dashboard.routes.ts` deduplica la metadata de rutas demo de graficas contra `privateDashboardTemplateRoute` para mantener `main` dentro del presupuesto sin subir limites.
 
 Operacion y verificacion:
@@ -1820,10 +2243,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la administracion de listas maestras e imagenes publicas de categorias/marcas del catch-all legacy.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-reference-catalogs/` agrega `ParamascotasReferenceCatalogsComponent` con KPIs, filtros, graficas, edicion de listas, media de categorias/marcas, proveedores y guardado por API.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/catalog/catalogs` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-reference-catalogs/` agrega `ParamascotasReferenceCatalogsComponent` con KPIs, filtros, graficas, edicion de listas, media de categorias/marcas, proveedores y guardado por API.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/catalog/catalogs` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `catalogs` y se retiraron sus estados, metodos y loader especificos de edicion de catalogos; conserva `referenceData` solo como dato auxiliar para productos, compras y proveedores.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que catalogos operativos vive fuera del panel generico; tambien corrigen la lista para no afirmar que `catalog/products` esta delegado cuando actualmente sigue en el catch-all por paridad funcional.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que catalogos operativos vive fuera del panel generico; tambien corrigen la lista para no afirmar que `catalog/products` esta delegado cuando actualmente sigue en el catch-all por paridad funcional.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-reference-catalogs/paramascotas-reference-catalogs.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy de `catalogs` en `paramascotas-panel` y `git diff --check` en `Dashboard`.
@@ -1834,10 +2257,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la configuracion comun de ficha publica de producto del catch-all legacy.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-product-page-settings/` agrega `ParamascotasProductPageSettingsComponent` con preview de producto, salud de ficha, textos visibles y guardado de configuracion comun.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/catalog/product-page` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-product-page-settings/` agrega `ParamascotasProductPageSettingsComponent` con preview de producto, salud de ficha, textos visibles y guardado de configuracion comun.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/catalog/product-page` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `product-page` y se retiraron sus señales, computed, metodos y loader especificos de ficha.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que ficha de producto vive fuera del panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que ficha de producto vive fuera del panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-product-page-settings/paramascotas-product-page-settings.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
@@ -1848,10 +2271,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent` y separar la gestion de cupones/descuentos en una ruta dedicada.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-discount-codes/` agrega `ParamascotasDiscountCodesComponent` con listado, filtros, graficas, creacion/edicion, activacion/desactivacion y auditoria de cupones.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/finance/discount-codes` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-discount-codes/` agrega `ParamascotasDiscountCodesComponent` con listado, filtros, graficas, creacion/edicion, activacion/desactivacion y auditoria de cupones.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/finance/discount-codes` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `discount-codes` y se retiraron sus imports, señales, computed, metodos, loader y helpers de formulario de cupones.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que cupones vive fuera del panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que cupones vive fuera del panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-discount-codes/paramascotas-discount-codes.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
@@ -1862,10 +2285,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el catch-all `ParamascotasPanelComponent` y separar la configuracion de sesiones en una ruta dedicada.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-security-settings/` agrega `ParamascotasSecuritySettingsComponent` con carga/guardado de sesiones via `ParamascotasAdminDataService`.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/monitoring/security-settings` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-security-settings/` agrega `ParamascotasSecuritySettingsComponent` con carga/guardado de sesiones via `ParamascotasAdminDataService`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/monitoring/security-settings` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de renderizar `security-settings` y se retiraron sus imports, señales, computed, metodos e inyeccion de analitica de sesion.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que seguridad de sesion vive fuera del panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que seguridad de sesion vive fuera del panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-security-settings/paramascotas-security-settings.component.spec.ts`, `npm run lint`, `npm run bundle:check`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
@@ -1876,10 +2299,10 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo `ParamascotasPanelComponent`, separando la lectura ejecutiva de inventario de la operacion diaria y del catch-all legacy.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-inventory-report/` agrega `ParamascotasInventoryReportComponent` como workspace dedicado para KPIs, riesgo, plan de compra, categorias, facturas recientes y tabla filtrable de inventario.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/reporting/inventory-report` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-inventory-report/` agrega `ParamascotasInventoryReportComponent` como workspace dedicado para KPIs, riesgo, plan de compra, categorias, facturas recientes y tabla filtrable de inventario.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` declara `paramascotas-panel/reporting/inventory-report` como ruta exacta antes de `paramascotas-panel/:group/:view`; `dashboard.routes.spec.ts` protege esa delegacion.
 - `ParamascotasPanelComponent` deja de cargar y renderizar `inventory-report`; la operacion diaria queda en `catalog/inventory` y las acciones del reporte abren ese modulo para compras, ajustes y fichas.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/ARCHITECTURE.md` reflejan que el reporte de inventario ya no vive en el panel generico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/ARCHITECTURE.md` reflejan que el reporte de inventario ya no vive en el panel generico.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-inventory-report/paramascotas-inventory-report.component.spec.ts`, `npm run lint`, `rg` de referencias legacy en `paramascotas-panel` y `git diff --check` en `Dashboard`.
@@ -1923,7 +2346,7 @@ Objetivo: seguir retirando ownership accidental del `paramascotas-panel`, despue
 Cambios:
 - `ParamascotasPanelComponent` deja de activar ramas compartidas para `item.id === 'inventory'`; conserva solo `inventory-report`, que todavia no fue extraido.
 - El template del panel ya no renderiza la operacion diaria de inventario desde el catch-all.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` documenta que `catalog/inventory` vive en `InventoryListComponent` y que el panel conserva solo `reporting/inventory-report`.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` documenta que `catalog/inventory` vive en `InventoryListComponent` y que el panel conserva solo `reporting/inventory-report`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run bundle:check` y `git diff --check`.
@@ -1937,7 +2360,7 @@ Cambios:
 - `ParamascotasPanelComponent` deja de renderizar el bloque interno `item()?.id === 'billing-rides'`.
 - Se eliminaron del panel legacy los signals, loaders, filtros, graficos y helpers de `billing-rides`.
 - `CONTEXTUAL_REFRESH_ITEM_IDS` ya no incluye `billing-rides`; la ruta dedicada sigue protegida en `dashboard.routes.ts` antes del catch-all.
-- `Dashboard/docs/ARCHITECTURE.md` aclara que `Facturas/RIDE` se resuelve en `InvoiceListComponent`, no dentro del catch-all legacy.
+- `dashboard/docs/ARCHITECTURE.md` aclara que `Facturas/RIDE` se resuelve en `InvoiceListComponent`, no dentro del catch-all legacy.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts`, `npm run bundle:check`, `scripts/check-container-connectivity.sh development` y `git diff --check`.
@@ -1948,7 +2371,7 @@ Operacion y verificacion:
 Objetivo: evitar que la documentacion visible contradiga la arquitectura actual, mostrando un runtime fiscal paralelo cuando Billing SRI ya vive dentro de `platform-core`.
 
 Cambios:
-- `Dashboard/docs/diagrams/paramascotas-containers-network.html` deja de mostrar `billing-nginx`, `billing-service`, puerto local `127.0.0.1:8084` y DB fiscal paralela como flujo activo.
+- `dashboard/docs/diagrams/paramascotas-containers-network.html` deja de mostrar `billing-nginx`, `billing-service`, puerto local `127.0.0.1:8084` y DB fiscal paralela como flujo activo.
 - El diagrama ahora presenta `platform-core/Billing`, `Billing\\Native`, `paramascotasec-backend-billing-worker` y `billing_service @ basesdedatos`.
 - `MODULAR-ORCHESTRATION.md` aclara que `Facturador/module.json` puede existir como referencia legacy/standalone historica, pero no como runtime activo del modo orquestado.
 
@@ -2060,7 +2483,7 @@ Cambios:
 - La capacidad `mail.service` queda registrada en el capability registry y `TenantAccessService` la mapea a permisos `email-service.*`, manteniendo la feature visible `email-service` como planned si el tenant no la tiene habilitada.
 
 Operacion y verificacion:
-- Pasaron `php -l` sobre los archivos PHP tocados y `npm run capabilities:generate` en `paramascotasec/app`.
+- Pasaron `php -l` sobre los archivos PHP tocados y `npm run capabilities:generate` en `webparamascotas/app`.
 
 ### 2026-06-25 - Dashboard SRI: lenguaje operativo sin Facturador legacy
 
@@ -2133,7 +2556,7 @@ Operacion y verificacion:
 - `RUN_DB_SETUP=1 ./scripts/deploy-development.sh backend` levanto `paramascotasec-backend-app`, `paramascotasec-backend-web` healthy y `paramascotasec-backend-billing-worker`.
 - Verificado en runtime: `identity-platform=identity_platform`, `catalog-inventory=catalog_inventory`, `commerce=commerce_orders`, `reporting-finance=reporting_finance`, `mailer-service=mailer_service`, `billing=billing_service`.
 - Verificado en PostgreSQL: tablas owner locales (`User`, `Product`, `Order`, `BusinessExpense`, `ContactMessage`, `EmailOutbox`, `EmailDeliveryLog`) viven como tablas reales en su DB; las tablas ajenas aparecen como foreign tables de compatibilidad.
-- Pasaron `php -l`, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh`, `Dashboard npm run module:check`, `node Dashboard/tools/check-module-manifests.mjs` y `scripts/e2e-development.sh`.
+- Pasaron `php -l`, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh`, `Dashboard npm run module:check`, `node dashboard/tools/check-module-manifests.mjs` y `scripts/e2e-development.sh`.
 
 ### 2026-06-25 - Backend QA: limpieza de cliente Facturador legacy
 
@@ -2158,11 +2581,11 @@ Cambios:
 - Se retiro el adaptador `UpstreamFacturadorBillingGateway`; Billing nativo atiende XML, RIDE, SRI, configuracion, certificados, correo y worker sobre `billing_service`.
 - Gateway dejo de crear `FACTURADOR_UPSTREAM` y ya no se conecta a `paramascotasec-services-internal`; el contrato fiscal publico sigue llegando a `platform-core/Billing`.
 - `scripts/check-container-connectivity.sh` y `scripts/check-env-secrets.sh` ahora rechazan contenedores/redes legacy de Facturador y validan DB/SRI/SMTP desde backend y `paramascotasec-backend-billing-worker`.
-- `Dashboard/public/module-registry.json`, `system-runtime-topology.json`, `ecosystem-atlas.json`, `tenant-module-topology.json` y `paramascotasec-backend/module.json` publican que `billing-sri-db` pertenece a `platform-core` y que no existe runtime `facturador-sri` en modo orquestado.
+- `dashboard/public/module-registry.json`, `system-runtime-topology.json`, `ecosystem-atlas.json`, `tenant-module-topology.json` y `paramascotasec-backend/module.json` publican que `billing-sri-db` pertenece a `platform-core` y que no existe runtime `facturador-sri` en modo orquestado.
 
 Operacion y verificacion:
 - Se redesplegaron `backend` y `gateway` con wrappers development, se detuvieron los contenedores `billing-*` legacy sin borrar datos y se confirmo que `facturador` ya no resuelve desde APISIX.
-- Pasaron JSON parse de manifiestos/topologias, `php -l` de Billing factory/gateway, `bash -n` de scripts tocados, `node Dashboard/tools/check-module-manifests.mjs`, `npm run module:check` en Dashboard, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh` y `scripts/e2e-development.sh`.
+- Pasaron JSON parse de manifiestos/topologias, `php -l` de Billing factory/gateway, `bash -n` de scripts tocados, `node dashboard/tools/check-module-manifests.mjs`, `npm run module:check` en Dashboard, `scripts/check-env-secrets.sh development`, `scripts/check-container-connectivity.sh development`, `scripts/check-paramascotas.sh` y `scripts/e2e-development.sh`.
 - Validacion runtime clave: APISIX solo conserva upstreams `frontend`, `dashboard`, `backend` y `acme`; rutas Billing publicas apuntan a `pmc-paramascotasec-backend-service`; `BillingGatewayFactory` instancia `NativeBillingGateway` y rechaza `facturador_http`.
 
 ### 2026-06-24 - Backend Billing nativo detras del Core API
@@ -2204,7 +2627,7 @@ Decision:
 
 ### 2026-06-24 - Backend modular base + storefront sin workspace admin
 
-Objetivo: empezar a materializar el backend unico por dominios sin romper rutas publicas actuales, y dejar de usar `paramascotasec/app/my-account` como panel operativo para admins.
+Objetivo: empezar a materializar el backend unico por dominios sin romper rutas publicas actuales, y dejar de usar `webparamascotas/app/my-account` como panel operativo para admins.
 
 Cambios:
 - `paramascotasec-backend/src/Modules/` ahora tiene la estructura base por dominio (`IdentityPlatform`, `CatalogInventory`, `Commerce`, `Billing`, `ReportingFinance`) con registries de rutas modulares en `src/Modules/*/routes.php`.
@@ -2212,17 +2635,17 @@ Cambios:
 - `paramascotasec-backend/src/Core/Router.php` ahora resuelve handlers FQCN, habilitando controladores namespaced por modulo sin romper controladores legacy.
 - `paramascotasec-backend/src/Core/ConnectionRegistry.php` y `config/module-databases.php` dejan listo el registro de stores logicos por dominio; `billing` ya se resuelve como store dedicado y los demas dominios siguen en modo `legacy-shared`.
 - `paramascotasec-backend/src/Controllers/BillingDocumentController.php` y `src/Controllers/OrderController.php` dejaron de instanciar `FacturadorApiService` directamente; ahora pasan por el puerto interno `BillingGateway`, con adaptador temporal `UpstreamFacturadorBillingGateway`.
-- `paramascotasec/app/src/app/my-account/hooks/useAuthBootstrap.ts` ahora expulsa a usuarios admin hacia `/dashboard/`, dejando `my-account` alineado como cuenta de cliente y no como workspace operativo paralelo.
+- `webparamascotas/app/src/app/my-account/hooks/useAuthBootstrap.ts` ahora expulsa a usuarios admin hacia `/dashboard/`, dejando `my-account` alineado como cuenta de cliente y no como workspace operativo paralelo.
 - `paramascotasec-backend/module.json` documenta el estado transicional como `modular-monolith-transition`, incluyendo el bounded context `billing` con adaptador temporal al runtime `facturador-sri`.
 
 Operacion y verificacion:
 - Validar sintaxis PHP de `src/Core`, `config/routes.php`, `src/Modules` y controladores modificados antes de desplegar.
-- Validar `npm run typecheck` en `paramascotasec/app` para confirmar el redireccionamiento de `/my-account`.
+- Validar `npm run typecheck` en `webparamascotas/app` para confirmar el redireccionamiento de `/my-account`.
 
 Pendientes:
 - Mover repositorios y servicios legacy al store logico definitivo de cada dominio; hoy solo `billing` tiene wiring dedicado.
 - Absorber el worker fiscal y la persistencia de Facturador dentro del backend unico antes de retirar ese runtime.
-- Quitar el resto del codigo operativo/admin heredado de `paramascotasec/app/my-account` cuando Dashboard ya cubra toda la operacion privada sin huecos.
+- Quitar el resto del codigo operativo/admin heredado de `webparamascotas/app/my-account` cuando Dashboard ya cubra toda la operacion privada sin huecos.
 
 ### 2026-06-24 - Workspace QA: PostgreSQL unico con bases logicas por modulo
 
@@ -2234,7 +2657,7 @@ Cambios:
 - `paramascotasec-backend/scripts/create_tenant_dbs.sh` queda deprecado a proposito: ya no se permite una base por tenant; el aislamiento correcto pasa a ser por modulo y tenancy interno del owner.
 - `Facturador/docker-compose.yml`, `docker-compose.development.yml`, `scripts/common.sh`, `scripts/backup-and-stop.sh`, `scripts/restore-from-backup.sh`, `templates/entorno/.env.example` y `src/Shared/Infrastructure/Persistence/PostgresConnection.php` se reconectan al PostgreSQL compartido `db:5432`, manteniendo a Facturador aislado por ownership pero ya no por contenedor PostgreSQL propio.
 - `scripts/deploy-workspace.sh`, `scripts/check-container-connectivity.sh`, `scripts/check-env-secrets.sh` y `scripts/rotate-owned-secrets.sh` se actualizan para operar sobre `basesdedatos` y la base logica `billing_service`.
-- `Dashboard/public/system-runtime-topology.json`, `Dashboard/public/ecosystem-atlas.json`, `Facturador/module.json`, `MapaCompleto.md` y esta documentacion canonica pasan a describir `billing-sri-db` como base logica del modulo fiscal dentro de `basesdedatos`.
+- `dashboard/public/system-runtime-topology.json`, `dashboard/public/ecosystem-atlas.json`, `Facturador/module.json`, `MapaCompleto.md` y esta documentacion canonica pasan a describir `billing-sri-db` como base logica del modulo fiscal dentro de `basesdedatos`.
 
 Operacion y verificacion:
 - La regla publicada queda fija: un solo servicio PostgreSQL, una base logica por modulo, multiples tenants del mismo modulo dentro de esa misma base y sin foreign keys entre modulos futuros.
@@ -2247,36 +2670,36 @@ Objetivo: evitar que la administracion de usuarios mezcle cuentas operativas del
 Cambios:
 - `paramascotasec-backend/src/Controllers/UserController.php` ahora trata `/users` como un roster de identidades gestionadas, soporta `scope=tenant|platform|all`, deja fuera clientes compradores del listado normal y rechaza `show/update/patch/unlock` sobre usuarios no gestionados.
 - El mismo controlador ya no maquilla compradores como `tenant_reader`: cuando un registro no gestionado se serializa, conserva `roles=['customer']`, con fallback de `Clientes`/`Cliente`, lo que evita que el Dashboard lo presente como usuario operativo.
-- `Dashboard/src/app/features/users/data/users-api.service.ts` fuerza `scope='tenant'` para el workspace de usuarios y `Dashboard/src/app/core/modules/dashboard-api.config.ts` deja documentado el contrato de scope.
-- `Dashboard/src/app/features/users/models/user.model.ts`, `users-list` y `users-grid` agregan la clasificacion `managed` vs `customer`, filtran defensivamente clientes compradores y mejoran el copy de resumen para que la UI explique que queda fuera de la vista en lugar de contar cualquier registro como usuario del workspace.
-- `Dashboard/src/app/features/users/data/users.fixtures.ts` y las pruebas `user.model.spec.ts`, `users-list.component.spec.ts`, `users-grid.component.spec.ts` cubren el caso real con cuentas `customer`, junto con cuentas tenant y plataforma.
+- `dashboard/src/app/features/users/data/users-api.service.ts` fuerza `scope='tenant'` para el workspace de usuarios y `dashboard/src/app/core/modules/dashboard-api.config.ts` deja documentado el contrato de scope.
+- `dashboard/src/app/features/users/models/user.model.ts`, `users-list` y `users-grid` agregan la clasificacion `managed` vs `customer`, filtran defensivamente clientes compradores y mejoran el copy de resumen para que la UI explique que queda fuera de la vista en lugar de contar cualquier registro como usuario del workspace.
+- `dashboard/src/app/features/users/data/users.fixtures.ts` y las pruebas `user.model.spec.ts`, `users-list.component.spec.ts`, `users-grid.component.spec.ts` cubren el caso real con cuentas `customer`, junto con cuentas tenant y plataforma.
 
 Operacion y verificacion:
-- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/models/user.model.spec.ts --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/users-grid/users-grid.component.spec.ts`, `npm run lint`, `npm run arch:check`, `git -C /home/admincenter/contenedores/Dashboard diff --check -- ...`, `git -C /home/admincenter/contenedores/paramascotasec-backend diff --check -- src/Controllers/UserController.php` y `php -l paramascotasec-backend/src/Controllers/UserController.php`.
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/users/models/user.model.spec.ts --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/users-grid/users-grid.component.spec.ts`, `npm run lint`, `npm run arch:check`, `git -C /home/admincenter/contenedores/Dashboard diff --check -- ...`, `git -C /home/admincenter/contenedores/webparamascotas-backend diff --check -- src/Controllers/UserController.php` y `php -l paramascotasec-backend/src/Controllers/UserController.php`.
 
 ### 2026-06-24 - Dashboard QA: accesos de plataforma fuera del modulo de usuarios tenant
 
 Objetivo: dejar de mezclar cuentas globales de plataforma con usuarios operativos del tenant, creando una superficie dedicada para superadmins y recovery sin depender de ocultar filas dentro de `users`.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/pages/platform-access/` agrega la vista `Accesos de plataforma` bajo permisos `platform-admin`, con roster/detalle de cuentas globales, rutas criticas (`Tenants`, `APIs`, `Topologia`) y una regla operativa explicita para no volver a mezclar plataforma con tenant.
-- `Dashboard/src/app/features/tenant-admin/tenant-admin.routes.ts` y `Dashboard/src/app/core/modules/dashboard-navigation.config.ts` registran la ruta `/platform-access` y la nueva entrada lateral `Accesos plataforma` dentro de `Plataforma`.
-- `Dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` suma la pestana `Accesos` y `Dashboard/src/app/features/users/components/identity-workspace-context/` manda el salto de `Plataforma` a esta superficie dedicada, no al gestor general de tenants.
-- `Dashboard/src/app/features/users/data/users.fixtures.ts` ahora incluye cuentas `platform_admin` y soporta `scope=platform|tenant`, de modo que fixtures y pruebas ya reflejan la separacion real entre identidades globales y usuarios del tenant.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` fijan `platform-access` como superficie de identidades globales/recovery, separada del modulo `users`.
+- `dashboard/src/app/features/tenant-admin/pages/platform-access/` agrega la vista `Accesos de plataforma` bajo permisos `platform-admin`, con roster/detalle de cuentas globales, rutas criticas (`Tenants`, `APIs`, `Topologia`) y una regla operativa explicita para no volver a mezclar plataforma con tenant.
+- `dashboard/src/app/features/tenant-admin/tenant-admin.routes.ts` y `dashboard/src/app/core/modules/dashboard-navigation.config.ts` registran la ruta `/platform-access` y la nueva entrada lateral `Accesos plataforma` dentro de `Plataforma`.
+- `dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` suma la pestana `Accesos` y `dashboard/src/app/features/users/components/identity-workspace-context/` manda el salto de `Plataforma` a esta superficie dedicada, no al gestor general de tenants.
+- `dashboard/src/app/features/users/data/users.fixtures.ts` ahora incluye cuentas `platform_admin` y soporta `scope=platform|tenant`, de modo que fixtures y pruebas ya reflejan la separacion real entre identidades globales y usuarios del tenant.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` fijan `platform-access` como superficie de identidades globales/recovery, separada del modulo `users`.
 
 Operacion y verificacion:
-- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/data/platform-access-api.service.spec.ts --include src/app/features/tenant-admin/pages/platform-access/platform-access.component.spec.ts --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts --include src/app/core/modules/dashboard-modules.config.spec.ts`, `npm run lint`, `npm run arch:check`, `git diff --check` y `git -C /home/admincenter/contenedores/paramascotasec diff --check -- docs/AI_CONTEXT.md`.
+- Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/data/platform-access-api.service.spec.ts --include src/app/features/tenant-admin/pages/platform-access/platform-access.component.spec.ts --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts --include src/app/core/modules/dashboard-modules.config.spec.ts`, `npm run lint`, `npm run arch:check`, `git diff --check` y `git -C /home/admincenter/contenedores/webparamascotas diff --check -- docs/AI_CONTEXT.md`.
 
 ### 2026-06-24 - Dashboard QA: frontera tenant/plataforma mas clara y fallback robusto de marca
 
 Objetivo: dejar mas clara la separacion entre identidad operativa del tenant y orquestacion de plataforma, y eliminar encabezados de tenant que se ven rotos o vacios cuando falla una marca.
 
 Cambios:
-- `Dashboard/src/app/features/users/components/identity-workspace-context/` rediseña el contexto compartido de `Usuarios`, `Roles` y `Nuevo usuario` con navegacion mas clara, tarjetas 2x2 y una frontera explicita: la plataforma queda fuera del flujo operativo del tenant.
-- `Dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` aplica la misma idea a `Tenants`, `APIs` y `Topologia`, dejando mas claro que esa capa administra superadmins, contratos y topologia, no la operacion diaria.
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.html/css/ts` ahora degrada de `branding.logoIconUrl/logoUrl` a monograma si la marca falla al renderizar, evitando avatares vacios o visualmente rotos en el tenant seleccionado.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` fijan esa frontera tenant/plataforma como regla operativa y documentan que el branding del tenant debe caer a monograma estable cuando no haya logo valido.
+- `dashboard/src/app/features/users/components/identity-workspace-context/` rediseña el contexto compartido de `Usuarios`, `Roles` y `Nuevo usuario` con navegacion mas clara, tarjetas 2x2 y una frontera explicita: la plataforma queda fuera del flujo operativo del tenant.
+- `dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` aplica la misma idea a `Tenants`, `APIs` y `Topologia`, dejando mas claro que esa capa administra superadmins, contratos y topologia, no la operacion diaria.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.html/css/ts` ahora degrada de `branding.logoIconUrl/logoUrl` a monograma si la marca falla al renderizar, evitando avatares vacios o visualmente rotos en el tenant seleccionado.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` fijan esa frontera tenant/plataforma como regla operativa y documentan que el branding del tenant debe caer a monograma estable cuando no haya logo valido.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check` y `npm test -- --watch=false --include src/app/features/users/pages/users-list/users-list.component.spec.ts --include src/app/features/users/pages/users-grid/users-grid.component.spec.ts --include src/app/features/users/pages/add-user/add-user.component.spec.ts --include src/app/features/users/pages/roles/roles.component.spec.ts --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts --include src/app/features/tenant-admin/pages/api-catalog/api-catalog.component.spec.ts --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` en `Dashboard`.
@@ -2286,7 +2709,7 @@ Operacion y verificacion:
 Objetivo: dejar `Usuarios` y `Roles` con una lectura de interfaz mas coherente, simple y consistente, evitando que `Usuarios` siga como una tabla legacy con modal aparte mientras `Roles` ya usa un workspace roster/detalle.
 
 Cambios:
-- `Dashboard/src/app/features/users/pages/users-list/users-list.component.html/css/ts` reemplaza el patron tabla + modal por un workspace inline con dos columnas: roster de usuarios y detalle del usuario seleccionado.
+- `dashboard/src/app/features/users/pages/users-list/users-list.component.html/css/ts` reemplaza el patron tabla + modal por un workspace inline con dos columnas: roster de usuarios y detalle del usuario seleccionado.
 - La lista operativa ahora separa `Admins del tenant` y `Equipo operativo`, igualando el patron que `Roles` ya usa con `Base del tenant` y `Roles personalizados`.
 - Se elimino el modo artificial `Edicion rapida`; las acciones de estado quedan visibles y claras dentro del detalle inline, sin un modal extra ni cambios de modo ambiguos.
 - El resumen superior conserva la frontera tenant/plataforma, mantiene visible el conteo de accesos plataforma ocultos y muestra el conteo cargado total para que no haya duda entre `visibles` y `ocultos`.
@@ -2300,12 +2723,12 @@ Operacion y verificacion:
 Objetivo: corregir una de las piezas base que mas transmitia desorden visual en plataforma (`tenant-admin`) y dejar aun mas explicito, en la documentacion canonica corta, como deben separarse las bases por modulo cuando el ecosistema siga creciendo.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.html/css/ts` reorganiza el header del tenant seleccionado en tres capas claras: identidad/contexto, hechos operativos y acciones.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.html/css/ts` reorganiza el header del tenant seleccionado en tres capas claras: identidad/contexto, hechos operativos y acciones.
 - El resumen del tenant ahora usa logo de marca cuando existe (`branding.logoIconUrl` o `branding.logoUrl`) y cae a monograma solo como fallback; se evita el avatar vacio o debil que dejaba la interfaz con apariencia incompleta.
 - Las acciones rapidas del tenant pasan a una grilla estable, con botones completos y sin competir visualmente con el contexto del tenant.
 - El bloque inferior `tenant-contract-overview` deja de repetir el mismo dato con nombres distintos y pasa a explicar paquetes, cobertura funcional, operacion ecommerce y contexto de administracion.
-- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` agrega el mapa objetivo de bases por dominio (`identity-platform`, `catalog-inventory`, `commerce-orders`, `reporting-finance`, `billing-sri`) y deja explicitos los flujos operativos que no deben mezclarse.
-- `Dashboard/docs/MODULAR-ORCHESTRATION.md` agrega una matriz directa de stores actuales vs stores objetivo para que no vuelva a confundirse runtime, canal, store de infraestructura y base de negocio.
+- `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` agrega el mapa objetivo de bases por dominio (`identity-platform`, `catalog-inventory`, `commerce-orders`, `reporting-finance`, `billing-sri`) y deja explicitos los flujos operativos que no deben mezclarse.
+- `dashboard/docs/MODULAR-ORCHESTRATION.md` agrega una matriz directa de stores actuales vs stores objetivo para que no vuelva a confundirse runtime, canal, store de infraestructura y base de negocio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check`, `npm run build` y `git diff --check` en `Dashboard`.
@@ -2315,11 +2738,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el `paramascotas-panel` monolitico, sacando `reporting/sales-ranking` a una pagina dedicada para que el reporte comercial no dependa del catch-all legacy ni de modales internos del panel.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/reporting/sales-ranking` antes de `paramascotas-panel/:group/:view`.
-- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-sales-ranking/` con `ParamascotasSalesRankingComponent` como workspace dedicado para ranking comercial y priorizacion de acciones.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/reporting/sales-ranking` antes de `paramascotas-panel/:group/:view`.
+- Se creo `dashboard/src/app/features/dashboard/pages/paramascotas-sales-ranking/` con `ParamascotasSalesRankingComponent` como workspace dedicado para ranking comercial y priorizacion de acciones.
 - El nuevo workspace mantiene lectura de ventas, utilidad, margen, cobertura y acciones recomendadas, pero cambia el siguiente paso de cada hallazgo para abrir el modulo correcto (`Inventario`, `Precios`, `Producto` o `Reporte`) en lugar de depender del editor/modal interno del panel generico.
 - Se retiro del template legacy de `ParamascotasPanelComponent` el bloque `sales-ranking` y tambien se eliminaron sus `signals`, loaders y helpers asociados dentro del catch-all.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` ahora incluyen `reporting/sales-ranking` dentro de las proyecciones que deben resolverse por ruta exacta.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` ahora incluyen `reporting/sales-ranking` dentro de las proyecciones que deben resolverse por ruta exacta.
 
 Evidencia de performance:
 - `npm run bundle:hotspots -- --top=10` deja `paramascotas-panel.component.ts` en aprox. `737.2 kB` dentro del chunk lazy `854.7 kB`, frente a `753.0 kB` / `870.5 kB` antes de extraer `sales-ranking`.
@@ -2333,12 +2756,12 @@ Operacion y verificacion:
 Objetivo: dejar mas clara la frontera entre Dashboard orquestador y workspace operativo, sacando `operations/local-sales` y `operations/quotations` del `paramascotas-panel` generico para que no vuelvan a mezclarse con el catch-all legacy.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` mantiene `operations/local-sales` y `operations/quotations` como rutas exactas antes de `paramascotas-panel/:group/:view`, usando metadata canonica sin extensiones ad hoc en `data`.
-- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-sales-workspace/` con `ParamascotasSalesWorkspaceComponent` como workspace dedicado compartido para POS local y cotizaciones.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` mantiene `operations/local-sales` y `operations/quotations` como rutas exactas antes de `paramascotas-panel/:group/:view`, usando metadata canonica sin extensiones ad hoc en `data`.
+- Se creo `dashboard/src/app/features/dashboard/pages/paramascotas-sales-workspace/` con `ParamascotasSalesWorkspaceComponent` como workspace dedicado compartido para POS local y cotizaciones.
 - El modo del workspace ya no depende de flags incrustados en metadata; se resuelve desde la ruta exacta activa, dejando la orquestacion mas simple y mas alineada con los checks de arquitectura.
 - Se retiro del template legacy de `ParamascotasPanelComponent` el bloque completo que seguia renderizando `local-sales` y `quotations`, con lo que el panel catch-all deja de ser duenio accidental de esas dos operaciones.
 - `dashboard.routes.spec.ts` y `paramascotas-sales-workspace.component.spec.ts` protegen la delegacion exacta y la carga del workspace en ambos modos.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` ahora dejan por escrito que `local-sales` y `quotations` viven en `paramascotas-sales-workspace`, no dentro del panel monolitico.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` ahora dejan por escrito que `local-sales` y `quotations` viven en `paramascotas-sales-workspace`, no dentro del panel monolitico.
 
 Operacion y verificacion:
 - `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-sales-workspace/paramascotas-sales-workspace.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` OK en `Dashboard`.
@@ -2348,8 +2771,8 @@ Operacion y verificacion:
 Objetivo: dejar inequívoco, para operadores y futuros cambios, como corre cada modulo solo, como lo orquesta el Dashboard y cual es la jugada correcta al integrar, ampliar o migrar el sistema.
 
 Cambios:
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` ahora abre con una respuesta corta por runtime (`dashboard`, `platform-core`, `facturador-sri`) indicando modo individual, modo orquestado, camino valido de escritura y cambio correcto.
-- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` agrega una matriz rapida de operacion y cambio para que la lectura de 60 segundos tambien deje claro ownership, orquestacion y migracion.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` ahora abre con una respuesta corta por runtime (`dashboard`, `platform-core`, `facturador-sri`) indicando modo individual, modo orquestado, camino valido de escritura y cambio correcto.
+- `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` agrega una matriz rapida de operacion y cambio para que la lectura de 60 segundos tambien deje claro ownership, orquestacion y migracion.
 - `/module-topology` suma una franja de decision rapida con cuatro lecturas explicitas: `Si corre solo`, `Si entra por Dashboard`, `Si quieres ampliar` y `Si quieres migrar o extraer`.
 - La vista `module-topology` deja mas directa la idea central: una pantalla nueva no crea un modulo nuevo, el Dashboard no toma ownership por proyectar UI y el cambio correcto depende de si cambia o no el owner real.
 - `module-topology.component.spec.ts` protege esa lectura rapida para que no vuelva a perderse entre futuras refactorizaciones visuales.
@@ -2363,12 +2786,12 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo el `paramascotas-panel` monolitico, dejando `reporting/general` como vista dedicada y quitando del panel legacy la responsabilidad de renderizar ese reporte.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/reporting/general` antes de `paramascotas-panel/:group/:view`.
-- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-general-report/` con `ParamascotasGeneralReportComponent` como workspace dedicado para KPIs, ventas por categoria, ranking de productos, pedidos recientes y exportacion Excel del reporte general.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/reporting/general` antes de `paramascotas-panel/:group/:view`.
+- Se creo `dashboard/src/app/features/dashboard/pages/paramascotas-general-report/` con `ParamascotasGeneralReportComponent` como workspace dedicado para KPIs, ventas por categoria, ranking de productos, pedidos recientes y exportacion Excel del reporte general.
 - La nueva vista deja explicito que el Dashboard orquesta permisos, tenancy y navegacion, mientras el reporte consume el contrato API del backend central del ecosistema sin volver a mezclarlo dentro del panel generic.
 - `dashboard.routes.spec.ts` ahora exige tambien la delegacion exacta de `reporting/general`, y `paramascotas-general-report.component.spec.ts` protege la carga inicial, el recambio de periodo y la exportacion del workbook.
 - El bloque `item()?.id === 'general'` y su estado/metodos asociados se retiraron de `ParamascotasPanelComponent`; la extraccion ya no es solo de ruta, tambien reduce responsabilidad dentro del chunk legacy.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` se actualizaron para incluir `reporting/general` dentro de las proyecciones que deben resolverse por ruta exacta antes del catch-all legacy.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` se actualizaron para incluir `reporting/general` dentro de las proyecciones que deben resolverse por ruta exacta antes del catch-all legacy.
 - Se elimino un warning real de build en `module-topology.component.ts` quitando `RouterLink` no usado.
 
 Evidencia de performance:
@@ -2383,12 +2806,12 @@ Operacion y verificacion:
 Objetivo: dejar mas clara la frontera entre modulo orquestado y panel monolitico, sacando `admin-orders` del catch-all legacy para que la operacion de pedidos tenga pagina propia y no dependa accidentalmente del `paramascotas-panel`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/operations/admin-orders` antes de `paramascotas-panel/:group/:view`.
-- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-orders/` con `ParamascotasOrdersComponent` como workspace dedicado para pedidos ecommerce.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/operations/admin-orders` antes de `paramascotas-panel/:group/:view`.
+- Se creo `dashboard/src/app/features/dashboard/pages/paramascotas-orders/` con `ParamascotasOrdersComponent` como workspace dedicado para pedidos ecommerce.
 - La nueva vista deja explicito que el Dashboard orquesta acceso, navegacion y contexto, mientras la operacion diaria de pedidos corre en una pagina propia con filtros, KPIs, tabla, tarjetas, modal de detalle y factura interna.
 - La paginacion del workspace de pedidos se alinea al contrato compartido `TABLE_PAGE_SIZE_OPTIONS = [10, 25, 50, 100]`.
 - `dashboard.routes.spec.ts` ahora exige tambien la delegacion exacta de `operations/admin-orders`, y `paramascotas-orders.component.spec.ts` protege la ruta dedicada, el copy de orquestacion y la hidratacion del filtro `search` desde query string.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan la regla operativa: cuando una proyeccion ya tiene page propia, la ruta exacta debe vivir antes del catch-all legacy.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` documentan la regla operativa: cuando una proyeccion ya tiene page propia, la ruta exacta debe vivir antes del catch-all legacy.
 
 Operacion y verificacion:
 - `npm run type:check`, `npm test -- --watch=false --include src/app/features/dashboard/dashboard.routes.spec.ts --include src/app/features/dashboard/pages/paramascotas-orders/paramascotas-orders.component.spec.ts`, `npm run lint`, `npm run arch:check`, `npm run module:check` y `git diff --check` OK en `Dashboard`.
@@ -2412,7 +2835,7 @@ Operacion y verificacion:
 Objetivo: dejar mas clara y consistente la administracion de plataforma para que `Tenants`, `APIs` y `Topologia` no parezcan herramientas aisladas con navegacion y contexto repetidos.
 
 Cambios:
-- Se creo `Dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` como contexto compartido para las pantallas de plataforma.
+- Se creo `dashboard/src/app/features/tenant-admin/components/platform-workspace-context/` como contexto compartido para las pantallas de plataforma.
 - `tenant-admin`, `api-catalog` y `module-topology` ahora muestran la misma navegacion de workspace (`Tenants`, `APIs`, `Topologia`) y el mismo marco de contexto de plataforma, incluyendo tenant activo, alcance global y un KPI especifico por pantalla.
 - Los headers de `api-catalog` y `module-topology` dejan de duplicar enlaces cruzados; conservan solo la accion principal de la pagina (`Nueva propuesta API` o `Recargar`).
 - `tenant-admin` conserva su editor detallado, pero ahora queda mejor conectado al resto del workspace de plataforma y deja de depender de un acceso redundante a `Topologia` en el header.
@@ -2440,7 +2863,7 @@ Operacion y verificacion:
 Objetivo: dejar mas coherente y simple la administracion de usuarios y roles del tenant, evitando redundancias visuales y mezcla conceptual con superadmins, tenants y flujos de plataforma.
 
 Cambios:
-- `Dashboard/src/app/features/users/components/identity-workspace-context/` se consolida como contexto compartido para `Usuarios`, `Roles`, `Nuevo usuario` y acceso a `Plataforma`, con la frontera tenant/plataforma explicita en una sola pieza reutilizable.
+- `dashboard/src/app/features/users/components/identity-workspace-context/` se consolida como contexto compartido para `Usuarios`, `Roles`, `Nuevo usuario` y acceso a `Plataforma`, con la frontera tenant/plataforma explicita en una sola pieza reutilizable.
 - `users-list` filtra de la vista operativa a los perfiles de plataforma, muestra aviso cuando existen accesos globales ocultos y ordena primero admins del tenant y luego usuarios operativos.
 - `roles` deja de depender del bloque repetido de alcance y separa el roster en `Base del tenant` y `Roles personalizados`, reduciendo mezcla entre roles base y custom.
 - `add-user` deja el bloque duplicado de resumen y adopta el mismo contexto compartido de identidad para que el alta de usuario use el mismo lenguaje y la misma navegacion que usuarios y roles.
@@ -2455,11 +2878,11 @@ Operacion y verificacion:
 Objetivo: dejar una lectura extremadamente clara y rapida del ecosistema completo, con conteo actual de runtimes, bases de datos, stores de infraestructura, flujo de trafico y jugadas correctas para agregar APIs, modulos o extraer dominios.
 
 Cambios:
-- Se agrego `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` como documento corto y operativo del sistema completo.
-- La referencia rapida explica, en una sola pagina, cuantos runtimes reales hay hoy, cuantas bases de negocio y stores de infraestructura existen, por donde entra el trafico, como se comunican Dashboard/Core/Facturador y que archivos mandan cuando se agrega una API, un modulo o se extrae un dominio.
+- Se agrego `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` como documento corto y operativo del sistema completo.
+- La referencia rapida explica, en una sola pagina, cuantos runtimes reales hay hoy, cuantas bases de negocio y stores de infraestructura existen, por donde entra el trafico, como se comunican dashboard/Core/Facturador y que archivos mandan cuando se agrega una API, un modulo o se extrae un dominio.
 - `/module-topology` agrega una seccion `Lectura operativa rapida` con cuatro bloques visibles: runtimes activos, persistencia real, cadena de comunicacion y cambio seguro.
 - `module-topology` incorpora `Referencia rapida` dentro de las fuentes canonicas visibles.
-- `Dashboard/docs/ARCHITECTURE.md` enlaza la nueva referencia corta para que la arquitectura tenga una entrada simple ademas de los documentos canonicos largos.
+- `dashboard/docs/ARCHITECTURE.md` enlaza la nueva referencia corta para que la arquitectura tenga una entrada simple ademas de los documentos canonicos largos.
 
 Operacion y verificacion:
 - `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run module:check`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
@@ -2469,12 +2892,12 @@ Operacion y verificacion:
 Objetivo: dejar explicito por cada feature visible del Dashboard si debe crecer en su owner actual, extraerse a otro target o seguir planned hasta tener runtime propio, y evitar que `futureTarget` quede como texto libre fragil.
 
 Cambios:
-- `Dashboard/public/tenant-module-topology.json` agrega `changePolicy` por modulo visible con modos `orchestrator-native`, `expand-owner-runtime`, `extract-to-target` y `planned-runtime`.
-- `Dashboard/docs/tenant-module-topology.schema.json` ahora exige `changePolicy` como parte del contrato publicado.
-- `Dashboard/tools/check-module-manifests.mjs` valida que `changePolicy` coincida con `ownerKind`, `deliveryStatus` y `futureTarget`, y que los targets futuros apunten a un runtime conocido, a un bounded context declarado o al propio modulo planned.
+- `dashboard/public/tenant-module-topology.json` agrega `changePolicy` por modulo visible con modos `orchestrator-native`, `expand-owner-runtime`, `extract-to-target` y `planned-runtime`.
+- `dashboard/docs/tenant-module-topology.schema.json` ahora exige `changePolicy` como parte del contrato publicado.
+- `dashboard/tools/check-module-manifests.mjs` valida que `changePolicy` coincida con `ownerKind`, `deliveryStatus` y `futureTarget`, y que los targets futuros apunten a un runtime conocido, a un bounded context declarado o al propio modulo planned.
 - `/module-topology` muestra una columna `Cambio correcto` para que plataforma vea, por modulo contratado, que hacer cuando quiera ampliarlo o migrarlo.
-- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` se actualizaron para consumir el contrato nuevo.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `MODULAR-ORCHESTRATION.md`, `MODULE-EVOLUTION-PLAYBOOK.md` y `ARCHITECTURE.md` documentan esta politica como parte del modelo modular canonico.
+- `dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` se actualizaron para consumir el contrato nuevo.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `MODULAR-ORCHESTRATION.md`, `MODULE-EVOLUTION-PLAYBOOK.md` y `ARCHITECTURE.md` documentan esta politica como parte del modelo modular canonico.
 
 Operacion y verificacion:
 - `npm run module:check`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` OK en `Dashboard`.
@@ -2484,7 +2907,7 @@ Operacion y verificacion:
 Objetivo: empezar a partir el hotspot principal de `paramascotas-panel` sin tocar reglas de negocio, moviendo un modal grande y poco frecuente fuera del chunk base del panel.
 
 Cambios:
-- Se creo `ParamascotasOrderDetailModalComponent` en `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/components/paramascotas-order-detail-modal/`.
+- Se creo `ParamascotasOrderDetailModalComponent` en `dashboard/src/app/features/dashboard/pages/paramascotas-panel/components/paramascotas-order-detail-modal/`.
 - El bloque inline de detalle de pedido salio de `paramascotas-panel.component.html` y ahora se carga bajo `@defer` cuando existe `selectedOrder()`.
 - `paramascotas-panel.component.ts` construye un view model `selectedOrderDetailModal` con el pedido seleccionado, etiquetas, readiness, resumen monetario, direcciones y lineas ya preparadas, manteniendo la mutacion de estado del pedido en el padre.
 - El CSS especifico del modal de pedido (`paramascotas-order-readiness`, `paramascotas-order-detail`, `paramascotas-order-confirmation`, `paramascotas-order-item`) salio del padre hacia `paramascotas-order-detail-modal.component.css`.
@@ -2503,7 +2926,7 @@ Operacion y verificacion:
 Objetivo: reducir el peso real de `billing-services` sin degradar el flujo de emision SRI ni volver a dejar el selector de productos cortado o fuera del viewport.
 
 Cambios:
-- Se separo el selector de productos en `BillingProductPickerModalComponent` (`Dashboard/src/app/features/business/components/billing-product-picker-modal/`).
+- Se separo el selector de productos en `BillingProductPickerModalComponent` (`dashboard/src/app/features/business/components/billing-product-picker-modal/`).
 - `billing-services.component.html` ahora carga ese modal bajo `@defer` cuando `productPickerModalOpen()` pasa a `true`, manteniendo el detalle visible de la factura en la pantalla principal.
 - El CSS especifico del selector modal vive en `billing-product-picker-modal.component.css`; el componente padre conserva solo los estilos generales de la vista y de otros modales.
 - `billing-services.component.spec.ts` se ajusto para esperar la resolucion del contenido diferido antes de validar el dialogo y el flujo de agregado a la factura.
@@ -2521,12 +2944,12 @@ Operacion y verificacion:
 Objetivo: dejar explicito, verificable y repetible como integrar, ampliar o migrar modulos sin depender de memoria humana ni reinterpretar ownership entre Dashboard y servicios.
 
 Cambios:
-- Se agrego `Dashboard/docs/MODULE-EVOLUTION-PLAYBOOK.md` como guia canonica para decidir si un cambio amplia un owner actual, crea un runtime nuevo o extrae un dominio del `platform-core`.
-- `Dashboard/public/system-runtime-topology.json` ahora publica `moduleEvolutionPlaybookDoc` y `Dashboard/docs/system-runtime-topology.schema.json` lo exige como parte del contrato visible.
-- `Dashboard/tools/check-module-manifests.mjs` valida que el playbook exista y que `system-runtime-topology.json` apunte a la ruta canonica correcta.
-- `Dashboard/src/app/features/tenant-admin/pages/module-topology/` agrega `Playbook de evolucion` a las fuentes canonicas visibles de plataforma.
-- `Dashboard/package.json` incorpora `npm run module:check` dentro de `npm run verify`, de modo que el pipeline normal del Dashboard tambien falle si se rompe la topologia modular publicada.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `MODULAR-ORCHESTRATION.md`, `API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `README.md` enlazan el playbook para que el criterio modular no quede disperso.
+- Se agrego `dashboard/docs/MODULE-EVOLUTION-PLAYBOOK.md` como guia canonica para decidir si un cambio amplia un owner actual, crea un runtime nuevo o extrae un dominio del `platform-core`.
+- `dashboard/public/system-runtime-topology.json` ahora publica `moduleEvolutionPlaybookDoc` y `dashboard/docs/system-runtime-topology.schema.json` lo exige como parte del contrato visible.
+- `dashboard/tools/check-module-manifests.mjs` valida que el playbook exista y que `system-runtime-topology.json` apunte a la ruta canonica correcta.
+- `dashboard/src/app/features/tenant-admin/pages/module-topology/` agrega `Playbook de evolucion` a las fuentes canonicas visibles de plataforma.
+- `dashboard/package.json` incorpora `npm run module:check` dentro de `npm run verify`, de modo que el pipeline normal del Dashboard tambien falle si se rompe la topologia modular publicada.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `MODULAR-ORCHESTRATION.md`, `API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `README.md` enlazan el playbook para que el criterio modular no quede disperso.
 
 Operacion y verificacion:
 - Deben pasar `npm run module:check`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` y `git diff --check` en `Dashboard`.
@@ -2536,7 +2959,7 @@ Operacion y verificacion:
 Objetivo: reducir el peso real de `api-catalog` y limpiar la ruta para que el editor de propuestas API no cargue dentro del chunk principal cuando el usuario solo consulta el catalogo.
 
 Cambios:
-- Se creo `ApiProposalModalComponent` en `Dashboard/src/app/features/tenant-admin/components/api-proposal-modal/`.
+- Se creo `ApiProposalModalComponent` en `dashboard/src/app/features/tenant-admin/components/api-proposal-modal/`.
 - `api-catalog.component.html` ahora difiere el modal de propuesta bajo `@defer` y solo lo carga cuando `proposalModalOpen()` pasa a `true`.
 - `api-catalog.component.ts` deja de renderizar el modal inline, consolida el borrador en `draftState()` y centraliza cambios via `updateDraft(...)`.
 - Los estilos del modal, formulario y snippets salieron de `api-catalog.component.css` hacia `api-proposal-modal.component.css`, evitando que el chunk principal de la ruta siga cargando CSS del editor.
@@ -2555,20 +2978,20 @@ Operacion y verificacion:
 Objetivo: dejar inequívoco, por runtime real, que necesita cada modulo para correr solo, como entra orquestado por el Dashboard y que limites no se pueden romper al integrarlo, ampliarlo o migrarlo.
 
 Cambios:
-- `Dashboard/public/system-runtime-topology.json` ahora publica por runtime `standalone.requires`, `orchestrated.requires`, `dataOwnershipRules`, `consumesRuntimeApis` y `migrationBoundaries`, ademas de entrypoints y ownership.
-- `Dashboard/tools/check-module-manifests.mjs` valida esos campos contra los `module.json` reales para que la topologia publicada no derive del contrato operativo.
+- `dashboard/public/system-runtime-topology.json` ahora publica por runtime `standalone.requires`, `orchestrated.requires`, `dataOwnershipRules`, `consumesRuntimeApis` y `migrationBoundaries`, ademas de entrypoints y ownership.
+- `dashboard/tools/check-module-manifests.mjs` valida esos campos contra los `module.json` reales para que la topologia publicada no derive del contrato operativo.
 - `/module-topology` muestra por runtime los requisitos de operacion individual y orquestada, las reglas de ownership de datos, las APIs consumidas y los limites de migracion.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md` y `Dashboard/docs/MODULAR-ORCHESTRATION.md` se ajustaron para declarar esta capa runtime como parte obligatoria del contrato modular visible.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md` y `dashboard/docs/MODULAR-ORCHESTRATION.md` se ajustaron para declarar esta capa runtime como parte obligatoria del contrato modular visible.
 
 Operacion y verificacion:
-- `node Dashboard/tools/check-module-manifests.mjs`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` pendientes de esta iteracion deben pasar en `Dashboard`.
+- `node dashboard/tools/check-module-manifests.mjs`, `npm run type:check`, `npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts`, `npm run lint`, `npm run arch:check` y `git diff --check` pendientes de esta iteracion deben pasar en `Dashboard`.
 
 ### 2026-06-24 - Dashboard QA: tenant-admin lazy con modal de asignacion separado
 
 Objetivo: bajar el peso real de `tenant-admin` sin romper el flujo de contratacion por paquetes y modulos del tenant.
 
 Cambios:
-- Se creo `TenantModuleAssignmentModalComponent` en `Dashboard/src/app/features/tenant-admin/components/tenant-module-assignment-modal/tenant-module-assignment-modal.component.ts`.
+- Se creo `TenantModuleAssignmentModalComponent` en `dashboard/src/app/features/tenant-admin/components/tenant-module-assignment-modal/tenant-module-assignment-modal.component.ts`.
 - `tenant-admin.component.html` ahora difiere el modal de asignacion de modulos y lo carga como componente standalone bajo demanda.
 - `tenant-admin.component.spec.ts` se actualizo para esperar la resolucion del contenido diferido al validar estados visuales del modal.
 - `tenant-admin.component.css` agrega estado `tenant-module-modal--loading` para el placeholder del modal diferido.
@@ -2586,7 +3009,7 @@ Operacion y verificacion:
 Objetivo: reducir el peso real de la ruta `Roles` sin degradar la edicion de permisos ni mezclar mas logica en un componente ya cargado.
 
 Cambios:
-- Se crearon los componentes standalone `RoleCreateModalComponent` y `RolePermissionModalComponent` bajo `Dashboard/src/app/features/users/components/`.
+- Se crearon los componentes standalone `RoleCreateModalComponent` y `RolePermissionModalComponent` bajo `dashboard/src/app/features/users/components/`.
 - `roles.component.html` ahora difiere esos dos modales y carga los componentes standalone bajo demanda; el modal de eliminacion se mantiene diferido dentro de la ruta.
 - `roles.component.ts` deja de renderizar directamente los modales pesados y pasa a orquestarlos desde la pagina principal.
 - `roles.component.spec.ts` se actualizo para esperar la resolucion del contenido diferido al validar el modal de permisos SRI.
@@ -2604,12 +3027,12 @@ Operacion y verificacion:
 Objetivo: dejar explicito, tanto para operadores como para el propio sistema, como corre cada modulo solo, como entra orquestado por el Dashboard y que reglas mandan al integrar, ampliar o migrar sin romper ownership futuro.
 
 Cambios:
-- `Dashboard/public/system-runtime-topology.json` ahora publica `operationModes` (`standalone` vs `orchestrated`) y `changeGuardrails` (`integrate`, `expand`, `migrate`) como lectura rapida machine-readable del ecosistema.
+- `dashboard/public/system-runtime-topology.json` ahora publica `operationModes` (`standalone` vs `orchestrated`) y `changeGuardrails` (`integrate`, `expand`, `migrate`) como lectura rapida machine-readable del ecosistema.
 - `/module-topology` agrega dos capas nuevas: comparativa visual entre `Modulo individual` y `Modulo orquestado por Dashboard`, y guardrails concretos para `Integrar`, `Ampliar` y `Migrar`.
 - La misma vista agrega `Matriz operativa por runtime`, una lectura compacta por modulo real con modo individual, modo orquestado, ownership de datos/escritura y la jugada correcta de cambio por runtime.
-- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` se actualizaron para tipar y cubrir esos contratos nuevos.
-- `Dashboard/docs/system-runtime-topology.schema.json` y `Dashboard/tools/check-module-manifests.mjs` ahora exigen esos bloques, validan mas estrictamente `docs.architecture`, `docs.operations`, `docs.aiContext` y verifican `integration.consumesApis` contra runtimes reales conocidos.
-- `README.md`, `Dashboard/README.md`, `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/API-FIRST-MODULES.md` quedaron alineados con esta lectura operativa.
+- `dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` se actualizaron para tipar y cubrir esos contratos nuevos.
+- `dashboard/docs/system-runtime-topology.schema.json` y `dashboard/tools/check-module-manifests.mjs` ahora exigen esos bloques, validan mas estrictamente `docs.architecture`, `docs.operations`, `docs.aiContext` y verifican `integration.consumesApis` contra runtimes reales conocidos.
+- `README.md`, `dashboard/README.md`, `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/MODULAR-ORCHESTRATION.md` y `dashboard/docs/API-FIRST-MODULES.md` quedaron alineados con esta lectura operativa.
 
 Decisiones:
 - La lectura `standalone` vs `orquestado` deja de ser solo narrativa: queda publicada en JSON, renderizada en el Dashboard y validada por checks.
@@ -2625,11 +3048,11 @@ Operacion y verificacion:
 Objetivo: dejar en una sola lectura, dentro del propio Dashboard, la foto completa del ecosistema real y no solo del mapa de runtimes que consume el orquestador.
 
 Cambios:
-- Se publico `Dashboard/public/ecosystem-atlas.json` como salida machine-readable del ecosistema completo: piezas reales, bases de negocio, stores persistentes, entradas publicas, cadenas de comunicacion, guias operativas y guardrails de despliegue.
+- Se publico `dashboard/public/ecosystem-atlas.json` como salida machine-readable del ecosistema completo: piezas reales, bases de negocio, stores persistentes, entradas publicas, cadenas de comunicacion, guias operativas y guardrails de despliegue.
 - `ModuleTopologyApiService` ahora carga tambien ese atlas y la vista privada `/module-topology` agrega secciones nuevas para `Atlas operativo del ecosistema`, `Bases, stores y borde publico`, `Cadenas de comunicacion`, `Si vas a hacer algo` y guardrails de despliegue.
 - `module-topology.component.ts/html/css/spec.ts` se actualizaron para renderizar frontend publico y gateway junto a Dashboard, backend y Facturador, dejando claro cuantas bases hay y por donde entra cada flujo.
-- `Dashboard/tools/check-module-manifests.mjs` ahora valida la forma del `ecosystem-atlas.json` y lo cruza contra los stores y runtimes reales publicados por `system-runtime-topology.json`.
-- `Dashboard/README.md`, `Dashboard/docs/ARCHITECTURE.md` y `MapaCompleto.md` quedaron enlazados al atlas publicado para que la documentacion corta, la larga y la vista UI cuenten la misma historia.
+- `dashboard/tools/check-module-manifests.mjs` ahora valida la forma del `ecosystem-atlas.json` y lo cruza contra los stores y runtimes reales publicados por `system-runtime-topology.json`.
+- `dashboard/README.md`, `dashboard/docs/ARCHITECTURE.md` y `MapaCompleto.md` quedaron enlazados al atlas publicado para que la documentacion corta, la larga y la vista UI cuenten la misma historia.
 
 Decisiones:
 - `Topologia modular` deja de ser solo un mapa de ownership del Dashboard y pasa a ser el atlas operativo corto del ecosistema entero.
@@ -2647,8 +3070,8 @@ Cambios:
 - Cada fila visible ahora responde cinco preguntas sin abrir JSONs aparte: modulo visible, owner real, operacion individual dentro del owner, operacion orquestada por Dashboard y politica de cambio correcta.
 - La vista agrega KPIs cortos (`Features implementadas`, `Nativas del Dashboard`, `Proyectadas por servicios`) y un bloque `Si vas a integrar/ampliar/migrar` para que la lectura humana no dependa de interpretar varias columnas dispersas.
 - `module-topology.component.ts/html/css/spec.ts` se actualizaron para tipar y renderizar esa lectura por feature visible usando el runtime owner real y su entrypoint orquestado.
-- `Dashboard/tools/check-module-manifests.mjs` ahora rompe si una `service-projection` no declara `routeSources`, si una feature visible dice soportar modo `standalone` u `orchestrated` sin que su owner runtime lo soporte o si el owner no publica entrypoints orquestados coherentes.
-- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md`, `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/ARCHITECTURE.md`, `Dashboard/README.md` y `MapaCompleto.md` quedaron alineados con la nueva lectura por runtime real y por feature visible.
+- `dashboard/tools/check-module-manifests.mjs` ahora rompe si una `service-projection` no declara `routeSources`, si una feature visible dice soportar modo `standalone` u `orchestrated` sin que su owner runtime lo soporte o si el owner no publica entrypoints orquestados coherentes.
+- `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md`, `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/ARCHITECTURE.md`, `dashboard/README.md` y `MapaCompleto.md` quedaron alineados con la nueva lectura por runtime real y por feature visible.
 
 Decisiones:
 - La pregunta operativa correcta ya no es solo `que runtime existe`, sino tambien `que modulo visible del Dashboard representa y por donde debe cambiarse`.
@@ -2662,7 +3085,7 @@ Operacion y verificacion:
 Objetivo: reducir peso de pantallas funcionales que no necesitan cargar `sweetalert2` hasta que el usuario abra una confirmacion real.
 
 Cambios:
-- `Dashboard/src/app/shared/ui/sweet-alert/sweet-alert.service.ts` deja de importar `sweetalert2` de forma estatica.
+- `dashboard/src/app/shared/ui/sweet-alert/sweet-alert.service.ts` deja de importar `sweetalert2` de forma estatica.
 - El servicio ahora carga `sweetalert2/dist/sweetalert2.esm.all.js` por `dynamic import` con cache en memoria, manteniendo la misma API `fire(...)`.
 
 Evidencia de performance:
@@ -2679,7 +3102,7 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo la dependencia del `paramascotas-panel` monolitico para que rutas legacy con feature ya existente no sigan cargando el chunk completo del panel.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora delega tambien `paramascotas-panel/catalog/products` a `ProductsListComponent`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora delega tambien `paramascotas-panel/catalog/products` a `ProductsListComponent`.
 - La misma capa de rutas ahora delega `paramascotas-panel/operations/billing-rides` a `InvoiceListComponent`.
 - `dashboard.routes.spec.ts` se amplio para exigir que esas rutas legacy existan antes de la ruta generica `paramascotas-panel/:group/:view` y carguen el componente dedicado correcto.
 
@@ -2698,10 +3121,10 @@ Operacion y verificacion:
 Objetivo: dejar explicitamente visible, y no solo documentado en abstracto, por donde opera cada runtime cuando corre solo y por que contratos entra al ecosistema cuando el Dashboard lo orquesta.
 
 Cambios:
-- `Dashboard/public/system-runtime-topology.json` ahora publica por runtime `runtimeBaseUrlExample`, `healthEndpoint`, `manifestEndpoint` y `orchestratedEntryPoints`, ademas del ownership y la topologia ya existente.
-- `Dashboard/tools/check-module-manifests.mjs` cruza esos campos contra `module.json` para romper si la vista runtime publicada deja de coincidir con el contrato real del modulo.
+- `dashboard/public/system-runtime-topology.json` ahora publica por runtime `runtimeBaseUrlExample`, `healthEndpoint`, `manifestEndpoint` y `orchestratedEntryPoints`, ademas del ownership y la topologia ya existente.
+- `dashboard/tools/check-module-manifests.mjs` cruza esos campos contra `module.json` para romper si la vista runtime publicada deja de coincidir con el contrato real del modulo.
 - La vista privada `/module-topology` ahora muestra `Entradas individuales reales` y `Entradas orquestadas reales` dentro de cada runtime, con sus URLs/path de referencia y notas de uso.
-- `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/MODULE-OPERATING-MODEL.md` se endurecieron para exigir que el mapa runtime visible publique tambien las superficies reales de operacion, no solo ownership abstracto.
+- `dashboard/docs/MODULAR-ORCHESTRATION.md` y `dashboard/docs/MODULE-OPERATING-MODEL.md` se endurecieron para exigir que el mapa runtime visible publique tambien las superficies reales de operacion, no solo ownership abstracto.
 
 Decisiones:
 - La forma correcta de integrar o migrar un modulo no se deduce de nombres de menu ni de rutas Angular: se lee desde `module.json` y `system-runtime-topology.json`.
@@ -2733,13 +3156,13 @@ Operacion y verificacion:
 Objetivo: hacer visible y verificable, desde la propia UI de plataforma, que modulos corren como runtimes reales, cuales son solo features proyectadas por el Dashboard y que reglas mandan al integrar, extraer o migrar dominios.
 
 Cambios:
-- `Dashboard/public/system-runtime-topology.json` se consolido como mapa runtime completo: manifiestos fuente, topologia actual/objetivo, ownership de datos, stores, contratos publicos, flujos de comunicacion y checklists de alta/extraccion.
-- `Dashboard/tools/check-module-manifests.mjs` ahora valida tambien `system-runtime-topology.json` contra `module-registry.json`, `tenant-module-topology.json` y los `module.json` reales, de modo que el mapa visible no pueda divergir del contrato modular.
+- `dashboard/public/system-runtime-topology.json` se consolido como mapa runtime completo: manifiestos fuente, topologia actual/objetivo, ownership de datos, stores, contratos publicos, flujos de comunicacion y checklists de alta/extraccion.
+- `dashboard/tools/check-module-manifests.mjs` ahora valida tambien `system-runtime-topology.json` contra `module-registry.json`, `tenant-module-topology.json` y los `module.json` reales, de modo que el mapa visible no pueda divergir del contrato modular.
 - Se agrego la vista privada `/module-topology` en el Dashboard (`tenant-admin`) con resumen de runtimes, features proyectadas, ownership de escrituras, stores, contratos APISIX y flujos entre modulos.
 - La vista `/module-topology` ahora incluye glosario operativo (`modulo runtime`, `modulo contratado`, `source of truth`, `write flow`, `store`), enlaces directos a `module-registry.json`, `system-runtime-topology.json` y `tenant-module-topology.json`, y panel de `Fuentes canonicas` con los archivos que mandan para integrar o migrar.
 - La misma vista agrega `Playbooks para cambiar el ecosistema` con pasos concretos para `Agregar API consumida por el Dashboard`, `Agregar modulo runtime nuevo` y `Extraer un dominio del platform-core`, incluyendo archivos a tocar y checks minimos.
 - La seccion `Plataforma` del menu ahora expone `Topologia modular`, y `tenant-admin`/`api-catalog` se enlazan entre si para navegar entre tenants, topologia y APIs sin adivinar rutas.
-- `README.md`, `MapaCompleto.md`, `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/MODULE-OPERATING-MODEL.md` ahora apuntan explicitamente a `system-runtime-topology.json` y a la ruta `/module-topology` como lectura operativa humana del contrato modular.
+- `README.md`, `MapaCompleto.md`, `dashboard/docs/MODULAR-ORCHESTRATION.md` y `dashboard/docs/MODULE-OPERATING-MODEL.md` ahora apuntan explicitamente a `system-runtime-topology.json` y a la ruta `/module-topology` como lectura operativa humana del contrato modular.
 
 Decisiones:
 - El mapa visual del Dashboard no inventa ownership; solo proyecta lo que ya declaran los manifests y la topologia tenantizada.
@@ -2747,7 +3170,7 @@ Decisiones:
 - Para publicar nuevos modulos o extraer dominios del `platform-core`, primero debe actualizarse el contrato (`module.json`, `tenant-module-topology.json`, `system-runtime-topology.json`) y pasar `check-module-manifests.mjs`.
 
 Operacion y verificacion:
-- `node Dashboard/tools/check-module-manifests.mjs` OK.
+- `node dashboard/tools/check-module-manifests.mjs` OK.
 - `npm run type:check`, `npm run lint`, `npm run arch:check` y `npm run build` OK en `Dashboard`.
 - Pasaron unit focales `module-topology.component.spec.ts` y `api-catalog.component.spec.ts` (`npm test -- --watch=false --include ...`).
 - `git -C Dashboard diff --check` OK.
@@ -2759,15 +3182,15 @@ Operacion y verificacion:
 Objetivo: dejar explicito y verificable como deben convivir los modulos individuales y los modulos orquestados por el Dashboard, sin volver a mezclar ownership, datos o despliegues al integrar o migrar.
 
 Cambios:
-- Se definio la guia canonica `Dashboard/docs/MODULAR-ORCHESTRATION.md` con reglas de orquestacion, modo individual, fronteras de datos, checklist de integracion y estrategia de extraccion desde el backend compartido.
-- Se agregaron esquemas `Dashboard/docs/module-manifest.schema.json` y `Dashboard/docs/module-registry.schema.json`.
-- El Dashboard publica `Dashboard/public/module-registry.json` como registro canonico del orquestador y `Dashboard/public/module.json` como manifiesto del propio orquestador.
+- Se definio la guia canonica `dashboard/docs/MODULAR-ORCHESTRATION.md` con reglas de orquestacion, modo individual, fronteras de datos, checklist de integracion y estrategia de extraccion desde el backend compartido.
+- Se agregaron esquemas `dashboard/docs/module-manifest.schema.json` y `dashboard/docs/module-registry.schema.json`.
+- El Dashboard publica `dashboard/public/module-registry.json` como registro canonico del orquestador y `dashboard/public/module.json` como manifiesto del propio orquestador.
 - `paramascotasec-backend/module.json` declara el estado real actual del core API: activo, multi-tenant, con DB compartida temporal y dominios pendientes de extraccion.
 - `Facturador/module.json` declara el modulo fiscal aislado, su DB propia, sus fronteras fiscales y su contrato orquestado.
 - `paramascotasec-backend/public/index.php` expone `GET /module.json` sin depender de tenant ni login.
 - `Facturador/public/index.php` expone `GET /module.json`.
-- Se agrego el validador `Dashboard/tools/check-module-manifests.mjs`, el script `npm run module:check` en Dashboard y la ejecucion del check en `scripts/check-paramascotas.sh`.
-- `README.md`, `Dashboard/docs/ARCHITECTURE.md` y `Dashboard/docs/API-FIRST-MODULES.md` quedaron enlazados a la nueva frontera modular para que la documentacion no vuelva a separarse de la implementacion.
+- Se agrego el validador `dashboard/tools/check-module-manifests.mjs`, el script `npm run module:check` en Dashboard y la ejecucion del check en `scripts/check-paramascotas.sh`.
+- `README.md`, `dashboard/docs/ARCHITECTURE.md` y `dashboard/docs/API-FIRST-MODULES.md` quedaron enlazados a la nueva frontera modular para que la documentacion no vuelva a separarse de la implementacion.
 
 Decisiones:
 - El Dashboard sigue siendo orquestador y registro, no backend de negocio.
@@ -2779,12 +3202,12 @@ Decisiones:
 Objetivo: dejar inequívoco que una cosa es el modulo runtime desplegable y otra la feature/modulo contratado que el Dashboard proyecta al tenant, para evitar que futuras integraciones, extracciones o migraciones mezclen ownership.
 
 Cambios:
-- Se agrego `Dashboard/public/tenant-module-topology.json` como mapa canonico entre `TENANT_MODULE_CATALOG` y los owners runtime reales.
+- Se agrego `dashboard/public/tenant-module-topology.json` como mapa canonico entre `TENANT_MODULE_CATALOG` y los owners runtime reales.
 - La topologia clasifica cada modulo contratado como `implemented` o `planned`, declara `ownerModuleKey`, `routeSources`, area de dominio y el comportamiento `standalone`/`orchestrated`.
-- `Dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora incluyen `dashboardProjection`, declarando que features del Dashboard y que `routeSources` proyecta cada modulo runtime.
-- El validador `Dashboard/tools/check-module-manifests.mjs` ahora cruza cuatro fuentes: `module-registry.json`, `module.json`, `tenant-module-topology.json` y `tenant-module-catalog.ts`.
+- `dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora incluyen `dashboardProjection`, declarando que features del Dashboard y que `routeSources` proyecta cada modulo runtime.
+- El validador `dashboard/tools/check-module-manifests.mjs` ahora cruza cuatro fuentes: `module-registry.json`, `module.json`, `tenant-module-topology.json` y `tenant-module-catalog.ts`.
 - El check falla si una feature del Dashboard cambia de owner sin declararlo, si un modulo planned expone rutas, si una `routeSource` no coincide con el catalogo tenant o si dos manifests reclaman la misma feature.
-- Se extendieron `Dashboard/docs/MODULAR-ORCHESTRATION.md`, `Dashboard/docs/API-FIRST-MODULES.md`, `Dashboard/docs/ARCHITECTURE.md` y `README.md` para distinguir modulos runtime de features proyectadas.
+- Se extendieron `dashboard/docs/MODULAR-ORCHESTRATION.md`, `dashboard/docs/API-FIRST-MODULES.md`, `dashboard/docs/ARCHITECTURE.md` y `README.md` para distinguir modulos runtime de features proyectadas.
 
 Decisiones:
 - `module-registry.json` sigue describiendo modulos runtime desplegables.
@@ -2802,9 +3225,9 @@ Objetivo: dejar documentado con claridad extrema como se comunica el ecosistema 
 Cambios:
 - `MapaCompleto.md` se rehizo como mapa tecnico actual: modulos, contenedores, bases reales, redes, flujos HTTP, ownership, despliegue y pasos concretos para agregar APIs o modulos.
 - La documentacion canonica deja explicito que hoy hay 2 bases de negocio (`basesdedatos` PostgreSQL 18.4 y `billing-postgres` PostgreSQL 16.14) y 1 store de infraestructura (`apisix-etcd` 3.5.31).
-- `AGENTS.md` y `paramascotasec/docs/AI_CONTEXT.md` corrigen el estado operativo de persistencia: la DB principal corre en PostgreSQL 18, pero el Facturador sigue en PostgreSQL 16 en runtime actual; no debe asumirse migrado a 18 hasta que runtime y compose coincidan.
+- `AGENTS.md` y `webparamascotas/docs/AI_CONTEXT.md` corrigen el estado operativo de persistencia: la DB principal corre en PostgreSQL 18, pero el Facturador sigue en PostgreSQL 16 en runtime actual; no debe asumirse migrado a 18 hasta que runtime y compose coincidan.
 - `README.md` ahora apunta a `MapaCompleto.md` como mapa tecnico amplio del ecosistema.
-- `Dashboard/src/app/shared/models/pagination.ts` centraliza presets de paginacion para tablas, cards y monitoreo.
+- `dashboard/src/app/shared/models/pagination.ts` centraliza presets de paginacion para tablas, cards y monitoreo.
 - Se normalizaron listas del Dashboard a presets coherentes:
   - tablas operativas (`invoice-list`, `users-list`): `10, 25, 50, 100`
   - vistas tipo cards (`users-grid`, `products-list`, `inventory-list`): `8, 12, 24`
@@ -2812,7 +3235,7 @@ Cambios:
 - `InvoicesFacade`, `InvoicesApiService` y `MonitoringFacade` dejan defaults de `pageSize` consistentes con esos presets.
 
 Operacion y verificacion:
-- `node Dashboard/tools/check-module-manifests.mjs` OK.
+- `node dashboard/tools/check-module-manifests.mjs` OK.
 - `npm run type:check` en Dashboard OK.
 - `npm test -- --watch=false --include ...invoice-list... --include ...invoices.facade... --include ...monitoring-list... --include ...monitoring.facade...` OK: 4 archivos / 19 pruebas.
 - `npm run lint` en Dashboard OK.
@@ -2829,15 +3252,15 @@ Hallazgos:
 Objetivo: dejar inequívoco como debe comportarse cada modulo cuando corre solo y cuando el Dashboard lo orquesta, para que integrar, ampliar o migrar dominios no dependa de interpretaciones informales.
 
 Cambios:
-- Se agrego `Dashboard/docs/MODULE-OPERATING-MODEL.md` como guia canonica de `standalone`, `orquestado`, `sourceOfTruth`, `writePolicy`, `integrationStyle`, `compositionRole`, `writeFlow` y `scope`.
-- `Dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora declaran en ambos modos quien conserva la verdad del dato, por donde se permite escribir y como se integra el runtime al Dashboard.
-- `Dashboard/public/tenant-module-topology.json` ahora clasifica cada feature visible con `compositionRole`, `sourceOfTruth`, `writeFlow` y `scope`, distinguiendo nativo del orquestador, proyeccion de servicio real o modulo planned.
-- `Dashboard/docs/module-manifest.schema.json` y `Dashboard/docs/tenant-module-topology.schema.json` se endurecieron para exigir esos campos.
-- `Dashboard/tools/check-module-manifests.mjs` ahora falla si un owner `service` se presenta como si fuera nativo del Dashboard, si una feature implementada declara `sourceOfTruth`/`writeFlow` incompatibles, o si falta la referencia al modelo operativo canonico.
-- `Dashboard/docs/MODULAR-ORCHESTRATION.md`, `Dashboard/docs/API-FIRST-MODULES.md`, `Dashboard/docs/ARCHITECTURE.md`, `README.md` y `MapaCompleto.md` quedaron enlazados al nuevo modelo operativo.
+- Se agrego `dashboard/docs/MODULE-OPERATING-MODEL.md` como guia canonica de `standalone`, `orquestado`, `sourceOfTruth`, `writePolicy`, `integrationStyle`, `compositionRole`, `writeFlow` y `scope`.
+- `dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora declaran en ambos modos quien conserva la verdad del dato, por donde se permite escribir y como se integra el runtime al Dashboard.
+- `dashboard/public/tenant-module-topology.json` ahora clasifica cada feature visible con `compositionRole`, `sourceOfTruth`, `writeFlow` y `scope`, distinguiendo nativo del orquestador, proyeccion de servicio real o modulo planned.
+- `dashboard/docs/module-manifest.schema.json` y `dashboard/docs/tenant-module-topology.schema.json` se endurecieron para exigir esos campos.
+- `dashboard/tools/check-module-manifests.mjs` ahora falla si un owner `service` se presenta como si fuera nativo del Dashboard, si una feature implementada declara `sourceOfTruth`/`writeFlow` incompatibles, o si falta la referencia al modelo operativo canonico.
+- `dashboard/docs/MODULAR-ORCHESTRATION.md`, `dashboard/docs/API-FIRST-MODULES.md`, `dashboard/docs/ARCHITECTURE.md`, `README.md` y `MapaCompleto.md` quedaron enlazados al nuevo modelo operativo.
 
 Operacion y verificacion:
-- `node Dashboard/tools/check-module-manifests.mjs` OK.
+- `node dashboard/tools/check-module-manifests.mjs` OK.
 - Parseo JSON local de manifests, topologia y schemas OK.
 - `git -C Dashboard diff --check` del alcance tocado OK.
 - `git -C paramascotasec-backend diff --check -- module.json` OK.
@@ -2853,12 +3276,12 @@ Decisiones:
 Objetivo: dejar explicito, por runtime, como opera solo y como entra al Dashboard para que integrar, ampliar o migrar el sistema no dependa de interpretaciones humanas ni de recordar el flujo correcto.
 
 Cambios:
-- `Dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora publican `modes.standalone.operationFlow` y `modes.orchestrated.operationFlow`.
-- `Dashboard/public/system-runtime-topology.json` refleja esas secuencias para los tres runtimes reales del workspace.
+- `dashboard/public/module.json`, `paramascotasec-backend/module.json` y `Facturador/module.json` ahora publican `modes.standalone.operationFlow` y `modes.orchestrated.operationFlow`.
+- `dashboard/public/system-runtime-topology.json` refleja esas secuencias para los tres runtimes reales del workspace.
 - La vista privada `/module-topology` ahora muestra `Secuencia operativa` dentro de cada modo (`Ejecucion individual` y `Operacion orquestada`) para que plataforma vea el flujo real sin abrir JSONs a mano.
-- `Dashboard/tools/check-module-manifests.mjs`, `Dashboard/docs/module-manifest.schema.json` y `Dashboard/docs/system-runtime-topology.schema.json` exigen y validan ese campo nuevo, evitando que la lectura visual diverja del contrato publicado.
-- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` quedaron alineados con el nuevo contrato.
-- `Dashboard/docs/MODULE-OPERATING-MODEL.md`, `Dashboard/docs/MODULAR-ORCHESTRATION.md`, `Dashboard/docs/ARCHITECTURE.md`, `Dashboard/docs/API-FIRST-MODULES.md` y `Dashboard/README.md` ahora apuntan explicitamente a `operationFlow` como parte canonica del modelo modular.
+- `dashboard/tools/check-module-manifests.mjs`, `dashboard/docs/module-manifest.schema.json` y `dashboard/docs/system-runtime-topology.schema.json` exigen y validan ese campo nuevo, evitando que la lectura visual diverja del contrato publicado.
+- `dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` y `module-topology.component.spec.ts` quedaron alineados con el nuevo contrato.
+- `dashboard/docs/MODULE-OPERATING-MODEL.md`, `dashboard/docs/MODULAR-ORCHESTRATION.md`, `dashboard/docs/ARCHITECTURE.md`, `dashboard/docs/API-FIRST-MODULES.md` y `dashboard/README.md` ahora apuntan explicitamente a `operationFlow` como parte canonica del modelo modular.
 
 Decisiones:
 - Si cambia la forma de operar un modulo, el primer cambio debe ocurrir en `module.json`; la vista del Dashboard solo refleja ese contrato.
@@ -2876,43 +3299,43 @@ Operacion y verificacion:
 Objetivo: dejar explicito y verificable como opera cada modulo por su cuenta y como entra orquestado por Dashboard, para que integrar, ampliar o migrar no vuelva a depender de criterio informal.
 
 Cambios:
-- `Dashboard/public/system-runtime-topology.json` agrega `decisionGate` con las preguntas minimas que toda integracion modular debe responder: owner real, write path, store real, operacion individual, operacion orquestada y primer cambio contractual.
-- `Dashboard/docs/system-runtime-topology.schema.json` ahora exige `decisionGate`.
-- `Dashboard/tools/check-module-manifests.mjs` valida la presencia del gate y falla si no publica al menos cinco preguntas de decision.
-- `Dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` tipa `decisionGate` como parte del contrato runtime publicado.
-- `Dashboard/src/app/features/tenant-admin/pages/module-topology/module-topology.component.{ts,html,css}` muestra la `Puerta de decision obligatoria` dentro de `/module-topology`, antes de los playbooks y matrices detalladas.
-- `Dashboard/docs/MODULAR-ORCHESTRATION.md` y `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` incorporan el gate como regla operativa corta para integracion, ampliacion y migracion.
+- `dashboard/public/system-runtime-topology.json` agrega `decisionGate` con las preguntas minimas que toda integracion modular debe responder: owner real, write path, store real, operacion individual, operacion orquestada y primer cambio contractual.
+- `dashboard/docs/system-runtime-topology.schema.json` ahora exige `decisionGate`.
+- `dashboard/tools/check-module-manifests.mjs` valida la presencia del gate y falla si no publica al menos cinco preguntas de decision.
+- `dashboard/src/app/features/tenant-admin/data/module-topology-api.service.ts` tipa `decisionGate` como parte del contrato runtime publicado.
+- `dashboard/src/app/features/tenant-admin/pages/module-topology/module-topology.component.{ts,html,css}` muestra la `Puerta de decision obligatoria` dentro de `/module-topology`, antes de los playbooks y matrices detalladas.
+- `dashboard/docs/MODULAR-ORCHESTRATION.md` y `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` incorporan el gate como regla operativa corta para integracion, ampliacion y migracion.
 
 Operacion y verificacion:
-- `cd Dashboard && npm run type:check` OK.
-- `cd Dashboard && npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` OK.
-- `cd Dashboard && npm run lint` OK.
-- `cd Dashboard && npm run arch:check` OK.
-- `cd Dashboard && npm run module:check` OK.
-- `cd Dashboard && npm run build` OK.
-- `cd Dashboard && git diff --check` OK.
+- `cd dashboard && npm run type:check` OK.
+- `cd dashboard && npm test -- --watch=false --include src/app/features/tenant-admin/pages/module-topology/module-topology.component.spec.ts` OK.
+- `cd dashboard && npm run lint` OK.
+- `cd dashboard && npm run arch:check` OK.
+- `cd dashboard && npm run module:check` OK.
+- `cd dashboard && npm run build` OK.
+- `cd dashboard && git diff --check` OK.
 
 ### 2026-06-24 - Dashboard QA: estado comercial fuera del panel legacy
 
 Objetivo: seguir reduciendo el `paramascotas-panel` catch-all, dejando `operations/store-status` como vista dedicada con copy operativo claro sobre owner real, write path y modo orquestado.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/operations/store-status` antes de `paramascotas-panel/:group/:view`.
-- Se creo `Dashboard/src/app/features/dashboard/pages/paramascotas-store-status/` con `ParamascotasStoreStatusComponent` como workspace dedicado para pausar ventas, comunicar al cliente y revisar el impacto comercial.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` ahora declara la ruta exacta `paramascotas-panel/operations/store-status` antes de `paramascotas-panel/:group/:view`.
+- Se creo `dashboard/src/app/features/dashboard/pages/paramascotas-store-status/` con `ParamascotasStoreStatusComponent` como workspace dedicado para pausar ventas, comunicar al cliente y revisar el impacto comercial.
 - La nueva vista carga `storeStatus`, pedidos y metricas del mes con degradacion parcial: si fallan pedidos o stats, la pagina sigue operativa y publica avisos de alcance parcial.
 - `ParamascotasStoreStatusComponent` deja explicito en UI que el owner real es `platform-core`, que la escritura valida entra por `Dashboard -> /dashboard/api -> Core API` y que la pagina ya no depende del panel monolitico.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{html,ts}` retira el bloque `store-status` y sus helpers/charts asociados del catch-all legacy.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.spec.ts` y `paramascotas-store-status.component.spec.ts` protegen la delegacion por ruta exacta y el copy de orquestacion.
-- `Dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `Dashboard/docs/MODULE-OPERATING-MODEL.md` ahora incluyen `operations/store-status` entre las vistas que deben resolverse por ruta exacta.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{html,ts}` retira el bloque `store-status` y sus helpers/charts asociados del catch-all legacy.
+- `dashboard/src/app/features/dashboard/dashboard.routes.spec.ts` y `paramascotas-store-status.component.spec.ts` protegen la delegacion por ruta exacta y el copy de orquestacion.
+- `dashboard/docs/ECOSYSTEM-QUICK-REFERENCE.md` y `dashboard/docs/MODULE-OPERATING-MODEL.md` ahora incluyen `operations/store-status` entre las vistas que deben resolverse por ruta exacta.
 
 Operacion y verificacion:
-- `cd Dashboard && npm run type:check` OK.
-- `cd Dashboard && npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-store-status/paramascotas-store-status.component.spec.ts --include src/app/features/dashboard/dashboard.routes.spec.ts` OK.
-- `cd Dashboard && npm run lint` OK.
-- `cd Dashboard && npm run arch:check` OK.
-- `cd Dashboard && npm run build` OK.
-- `cd Dashboard && npm run bundle:hotspots -- --chunk=paramascotas-panel --top=15` OK.
-- `cd Dashboard && git diff --check` OK.
+- `cd dashboard && npm run type:check` OK.
+- `cd dashboard && npm test -- --watch=false --include src/app/features/dashboard/pages/paramascotas-store-status/paramascotas-store-status.component.spec.ts --include src/app/features/dashboard/dashboard.routes.spec.ts` OK.
+- `cd dashboard && npm run lint` OK.
+- `cd dashboard && npm run arch:check` OK.
+- `cd dashboard && npm run build` OK.
+- `cd dashboard && npm run bundle:hotspots -- --chunk=paramascotas-panel --top=15` OK.
+- `cd dashboard && git diff --check` OK.
 
 Hallazgos:
 - El reporte de hotspots en produccion deja `paramascotas-panel-component` en `839.0 kB`, frente a ~`854.7 kB` antes de extraer esta vista.
@@ -2923,10 +3346,10 @@ Hallazgos:
 Objetivo: atacar el principal hotspot de performance del Dashboard con evidencia real, no por intuicion.
 
 Cambios:
-- Se agrego `Dashboard/src/app/shared/ui/charts/deferred-apex-chart.component.ts` para diferir el render de ApexCharts y sacar `ng-apexcharts` del chunk base de `paramascotas-panel`.
+- Se agrego `dashboard/src/app/shared/ui/charts/deferred-apex-chart.component.ts` para diferir el render de ApexCharts y sacar `ng-apexcharts` del chunk base de `paramascotas-panel`.
 - `paramascotas-panel.component.ts/html/css` migraron sus charts a `app-deferred-apex-chart`; el panel ya no importa `NgApexchartsModule` directamente.
-- Se agrego `Dashboard/tools/report-bundle-hotspots.mjs` y el script `npm run bundle:hotspots` para inspeccionar `stats.json` y ver que archivos explican el peso real de cada chunk.
-- `Dashboard/docs/ARCHITECTURE.md` documenta el uso de `bundle:check` y `bundle:hotspots` como criterio operativo de performance.
+- Se agrego `dashboard/tools/report-bundle-hotspots.mjs` y el script `npm run bundle:hotspots` para inspeccionar `stats.json` y ver que archivos explican el peso real de cada chunk.
+- `dashboard/docs/ARCHITECTURE.md` documenta el uso de `bundle:check` y `bundle:hotspots` como criterio operativo de performance.
 
 Operacion y verificacion:
 - `npm run type:check` OK.
@@ -3005,7 +3428,7 @@ Operacion y verificacion:
 - Backend redesplegado con `./scripts/deploy-development.sh backend`.
 - Paso Playwright real por APISIX `paramascotas-real-auth.spec.ts -g "platform admin keeps tenant recovery routes after removing tenant-admin and users from the active tenant"`: el tenant puede quedar sin `tenant-admin`/`users` en su contrato, pero el `platform-admin` mantiene `Tenants` y `APIs`, recarga `tenant-admin` y puede restaurar los modulos.
 
-### 2026-06-23 - Dashboard/Facturador QA: sucursales fiscales coherentes
+### 2026-06-23 - dashboard/Facturador QA: sucursales fiscales coherentes
 
 Objetivo: corregir la incoherencia del modulo SRI donde se podia seleccionar sucursal para emitir, pero no registrar ni editar sucursales fiscales desde el Dashboard.
 
@@ -3052,7 +3475,7 @@ Operacion y verificacion:
 - Runtime backend confirma configuracion con `delay_test=3600`, `delay_prod=3600`, `branches=1`.
 - Paso `scripts/check-container-connectivity.sh development`, incluyendo APISIX, backend, Facturador, SRI pruebas y rutas legacy bloqueadas.
 
-### 2026-06-23 - Dashboard/Facturador QA: Configuracion SRI editable
+### 2026-06-23 - dashboard/Facturador QA: Configuracion SRI editable
 
 Objetivo: hacer que `Estado y configuracion SRI` sea realmente configurable desde el Dashboard, incluyendo identidad fiscal, certificado `.p12`, ambientes QA/produccion y politica de reintentos.
 
@@ -3765,7 +4188,7 @@ Decisiones:
 Objetivo: corregir el caso donde un usuario guardaba modulos del tenant, recargaba con F5 y podia seguir viendo una version vieja del Dashboard con tenants demo o sin los modulos recien asignados.
 
 Cambios:
-- `Dashboard/nginx.conf` ahora sirve `index.html`, fallback SPA, `/dashboard/*` y assets JS/CSS con `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`.
+- `dashboard/nginx.conf` ahora sirve `index.html`, fallback SPA, `/dashboard/*` y assets JS/CSS con `Cache-Control: no-store, no-cache, must-revalidate, proxy-revalidate`.
 - Al agregar headers de cache por location se duplicaron tambien los headers de seguridad (`nosniff`, `DENY`, CSP, Referrer Policy, Permissions Policy, COOP y CORP) para no perderlos por herencia de Nginx.
 - `smoke.spec.ts` valida que el runtime Docker entregue `no-store` en el shell del Dashboard.
 
@@ -3808,7 +4231,7 @@ Operacion y verificacion:
 - Playwright por APISIX confirmo: `/dashboard/tenant-admin` tras F5 mantiene `6 modulos`, menu con `Facturacion` y `Facturador SRI`, sin tenants demo ni overflow horizontal.
 - Catalogo de APIs por APISIX: `ecommerce.products` devuelve 200 con 127 registros reales y vista previa limitada a 3; `billing-sri.facturador-health` devuelve 200 con `Facturador SRI` en estado `healthy`.
 - `billing-services` no presenta scroll vertical interno en contenido operativo.
-- Pasaron unit focales de API catalog/probe/servicios SRI (11 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `php -l src/Services/FacturadorApiService.php`, `git diff --check` en Dashboard/backend y `scripts/check-container-connectivity.sh development`.
+- Pasaron unit focales de API catalog/probe/servicios SRI (11 pruebas), `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `php -l src/Services/FacturadorApiService.php`, `git diff --check` en dashboard/backend y `scripts/check-container-connectivity.sh development`.
 
 Decisiones:
 - La consola API puede mostrar una muestra de respuestas grandes, pero debe indicar el total real recibido para evitar la falsa lectura de que la API trae un solo producto.
@@ -4167,7 +4590,7 @@ Cambios:
 - Ajuste final de Recursos UI restantes: `colors`, `form-validation`, `table-data`, `gallery-grid`, `gallery-masonry`, `gallery-hover-effect` y `blank-page` dejan de ser paginas de plantilla largas o vacias; ahora usan heroes compactos, tarjetas con bordes/fondos planos, copy operativo en espanol y datos realistas.
 - `colors` pasa de una paleta gigante a familias de uso; `gallery-hover-effect` reemplaza nueve bloques copiados por variantes data-driven; `gallery-masonry` deja de duplicar imagenes; `blank-page` muestra un estado vacio util con criterios de uso.
 - `progress`, `pagination` y `badges` eliminan referencias visibles/clases de gradiente y traducen etiquetas heredadas como `First`, `Previous`, `Primary`, `Success` o `Gradient Badges` a lenguaje de operacion.
-- Auditoria global de copy en `Dashboard/src/app` ya no encuentra residuos visibles como `Lorem`, `This is`, `Read More`, `View All`, `Bitcoin`, `Ethereum`, `NFT`, `Investment`, `Medical`, `Patient`, `Doctor`, `Appointment`, `Campaigns` ni similares; las coincidencias restantes son specs que verifican ausencia de esos textos.
+- Auditoria global de copy en `dashboard/src/app` ya no encuentra residuos visibles como `Lorem`, `This is`, `Read More`, `View All`, `Bitcoin`, `Ethereum`, `NFT`, `Investment`, `Medical`, `Patient`, `Doctor`, `Appointment`, `Campaigns` ni similares; las coincidencias restantes son specs que verifican ausencia de esos textos.
 - `layout-density.spec.ts` espera explicitamente el heading de `/home-4` antes de medir el DOM para evitar lecturas prematuras del shell Angular.
 - `dashboard-overrides.css` agrega politica visual plana para rutas con breadcrumb: tarjetas con borde/sombra leve, headers diferenciados, secciones con borde lateral y bloqueo de scroll vertical interno en `scroll-sm`/`max-h-*`.
 - Las tablas conservan overflow horizontal cuando hace falta, pero no deben recortar verticalmente ni generar una segunda barra vertical.
@@ -4462,7 +4885,7 @@ Objetivo: evitar crecimiento indefinido de informacion de contenedores que pueda
 
 Cambios:
 - Se creo `/etc/docker/daemon.json` con driver `json-file` y rotacion global `max-size=10m`, `max-file=3`.
-- Se agrego rotacion por servicio en `paramascotasec-backend/docker-compose.yml`, `Facturador/docker-compose.yml`, `Facturador/docker-compose.development.yml`, `Dashboard/docker-compose.yml` y `paramascotasec/docker-compose.yml`.
+- Se agrego rotacion por servicio en `paramascotasec-backend/docker-compose.yml`, `Facturador/docker-compose.yml`, `Facturador/docker-compose.development.yml`, `dashboard/docker-compose.yml` y `paramascotasec/docker-compose.yml`.
 - Se agrego `scripts/docker-maintenance.sh` para auditar uso Docker y limpiar build cache, contenedores detenidos e imagenes antiguas sin ejecutar `docker volume prune`.
 - El script tiene modo conservador y modo agresivo para build cache; los volumenes sin contenedor enlazado solo se reportan y deben borrarse por nombre si son cache clara.
 - Se programo `/etc/cron.d/paramascotasec-docker-maintenance` para ejecutar mantenimiento conservador semanal y `/etc/logrotate.d/paramascotasec-docker-maintenance` para rotar su log.
@@ -4496,7 +4919,7 @@ Operacion y verificacion:
 - `./Gateway/scripts/check-apisix-security.sh development` paso.
 - Pruebas por APISIX QA: `/paramascotasec/api/products` 200, `/paramascotasec/api/__not_registered_probe` 404, `/api/products` 404, `DELETE /paramascotasec/api/products` 404, facturacion sin credencial 401 y con `X-API-Key`/`Authorization: Bearer` 200.
 - Prueba real de rate limit: 80 `POST {}` invalidos a `/paramascotasec/api/contact` produjeron 23 respuestas 400 de validacion backend y 57 respuestas 429 desde APISIX.
-- Pasaron `scripts/check-container-connectivity.sh development`, `cd Dashboard && npm run type:check && npm run lint && npm run arch:check`, `cd paramascotasec/app && npm run capabilities:check`, `bash -n` de scripts tocados y `git -C Gateway diff --check`.
+- Pasaron `scripts/check-container-connectivity.sh development`, `cd dashboard && npm run type:check && npm run lint && npm run arch:check`, `cd webparamascotas/app && npm run capabilities:check`, `bash -n` de scripts tocados y `git -C Gateway diff --check`.
 
 Pendientes:
 - Si se quieren APIs partner distintas de facturacion, crear consumers/keys dedicados y mapearlas bajo un prefijo externo versionado antes de exponerlas.
@@ -4549,14 +4972,14 @@ Pendientes:
 Objetivo: avanzar la estandarizacion del consumo de APIs del Dashboard para que un proyecto duplicado o un tenant nuevo pueda registrar, auditar, probar y consumir endpoints desde una zona conocida.
 
 Cambios:
-- `Dashboard/src/app/core/api/` queda como frontera publica ampliada: exporta `DashboardApiCatalogService`, `DashboardApiRegistryService`, `DashboardApiProbeService`, `DashboardApiDraftStoreService` y `DASHBOARD_API_ENDPOINT_KEYS`.
+- `dashboard/src/app/core/api/` queda como frontera publica ampliada: exporta `DashboardApiCatalogService`, `DashboardApiRegistryService`, `DashboardApiProbeService`, `DashboardApiDraftStoreService` y `DASHBOARD_API_ENDPOINT_KEYS`.
 - `dashboard-api.config.ts` amplia el contrato de endpoint con metadata administrativa opcional: `authType`, `status`, `requiredHeaders`, `tenantScope`, `owner`, `createdAt` y `updatedAt`, manteniendo compatibilidad con endpoints existentes mediante defaults en el registro.
 - `DashboardApiRegistryService` deriva backends, modulos, endpoints, disponibilidad por tenant y snippets de alta desde el catalogo central; no crea una segunda fuente de verdad.
 - `DashboardApiProbeService` prueba solo endpoints `GET` disponibles y sin parametros de ruta usando `ApiClientService`, interceptores, timeout y manejo de errores estandar; no ejecuta mutaciones desde la consola.
 - `DashboardApiDraftStoreService` agrega administracion local de drafts de APIs sin secretos: guardar, editar, activar, pausar, quitar y detectar si un candidato ya esta versionado en el registro central. Es un adapter reemplazable por backend de plataforma.
 - Nueva ruta protegida de plataforma `Plataforma > APIs` (`/api-catalog`) para listar APIs registradas, filtrar por modulo/backend/metodo/estado, ver URL interna y firma publica APISIX, revisar permisos/metadata, generar snippets para registrar un nuevo consumo y administrar drafts locales.
 - `ApiClientService` agrega `getTextResponse(...)` para pruebas controladas que necesitan status, headers y cuerpo sin usar `HttpClient` directo en features.
-- Documentacion nueva `Dashboard/docs/API-CONSUMPTION-STANDARD.md` define zona de carpetas, orden de registro, patron de consumo y alcance de la consola; `API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `core/api/README.md` enlazan el estandar.
+- Documentacion nueva `dashboard/docs/API-CONSUMPTION-STANDARD.md` define zona de carpetas, orden de registro, patron de consumo y alcance de la consola; `API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `core/api/README.md` enlazan el estandar.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` y `scripts/check-container-connectivity.sh development`.
@@ -4744,7 +5167,7 @@ Operacion y verificacion:
 - Backfill QA ejecutado para tenant `paramascotasec`: 166 revisados, 82 normalizados, 2 omitidos por conflicto de unicidad.
 - Auditoria API por APISIX: 123 productos publicos, 16 familias agrupadas, 0 sin `variantDefinitionField`, 0 familias con eje mezclado; Guerpo 2 kg/25 kg queda como `variantDefinitionField=weight`, `displayAxis=presentation`.
 - Playwright por APISIX QA local usando `--host-resolver-rules` a `192.168.100.229` valido la ficha Guerpo: selector unico `Presentación` con `2 kg` y `25 kg`, y al elegir `25 kg` aparece SKU `ALI-GUERPO-ADULTO-25KG-PERRO`.
-- Pasaron `npm run typecheck`/`npm run lint` en `paramascotasec/app`, `npm run type:check`/`npm run lint`/`npm run arch:check`/`npm run docker:health` en `Dashboard`, `php -l` de backend afectado y `scripts/check-container-connectivity.sh development`.
+- Pasaron `npm run typecheck`/`npm run lint` en `webparamascotas/app`, `npm run type:check`/`npm run lint`/`npm run arch:check`/`npm run docker:health` en `Dashboard`, `php -l` de backend afectado y `scripts/check-container-connectivity.sh development`.
 - `npx vitest run src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` sigue bloqueado por la dependencia opcional local faltante de Rollup `@rollup/rollup-linux-x64-gnu`; las specs compilan por `type:check`.
 
 ### 2026-06-18 - Dashboard QA: Paramascotas como tenant, Ecommerce como modulo
@@ -4752,11 +5175,11 @@ Operacion y verificacion:
 Objetivo: corregir la estructura del arbol para que ParamascotasEC quede claro como tenant/cliente y no como modulo funcional del Dashboard.
 
 Cambios:
-- Se elimina la carpeta/documentacion `Dashboard/src/app/features/paramascotas` para no presentar un tenant como feature SaaS.
-- Se agrega `Dashboard/src/app/tenants/README.md` y `Dashboard/src/app/tenants/paramascotasec/README.md`, explicando que `paramascotasec` es tenant que contrata modulos como `ecommerce`, `products`, `inventory`, `invoicing`, `users` y `monitoring`.
-- Se agrega `Dashboard/src/app/features/ecommerce/README.md` como ancla visible del modulo ecommerce reutilizable.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que `features/*` son modulos y `tenants/*` son adaptaciones/configuracion por cliente.
-- `Dashboard/tools/check-architecture.mjs` permite `src/app/tenants` y bloquea que vuelvan carpetas tenant-specific como `features/paramascotas` o `features/paramascotasec`.
+- Se elimina la carpeta/documentacion `dashboard/src/app/features/paramascotas` para no presentar un tenant como feature SaaS.
+- Se agrega `dashboard/src/app/tenants/README.md` y `dashboard/src/app/tenants/paramascotasec/README.md`, explicando que `paramascotasec` es tenant que contrata modulos como `ecommerce`, `products`, `inventory`, `invoicing`, `users` y `monitoring`.
+- Se agrega `dashboard/src/app/features/ecommerce/README.md` como ancla visible del modulo ecommerce reutilizable.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que `features/*` son modulos y `tenants/*` son adaptaciones/configuracion por cliente.
+- `dashboard/tools/check-architecture.mjs` permite `src/app/tenants` y bloquea que vuelvan carpetas tenant-specific como `features/paramascotas` o `features/paramascotasec`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -4766,12 +5189,12 @@ Operacion y verificacion:
 Objetivo: hacer mas legible el arbol del Dashboard y dejar claro donde se centraliza el consumo de APIs.
 
 Cambios:
-- `Dashboard/src/app/core/api/` queda como frontera publica de contratos API del dashboard, reexportando `DashboardApiCatalogService`, `DASHBOARD_API_ENDPOINT_KEYS` y tipos desde los catalogos centrales.
+- `dashboard/src/app/core/api/` queda como frontera publica de contratos API del dashboard, reexportando `DashboardApiCatalogService`, `DASHBOARD_API_ENDPOINT_KEYS` y tipos desde los catalogos centrales.
 - Los servicios API del Dashboard pasan a importar contratos desde `@core/api` en vez de rutas internas `@core/modules/dashboard-api.*`.
-- La separacion tenant/modulo quedo corregida posteriormente: ParamascotasEC es tenant en `Dashboard/src/app/tenants/paramascotasec/`, no modulo bajo `features/*`.
-- `Dashboard/src/app/features/dashboard/data/README.md` y `services/README.md` marcan que los archivos `paramascotas-*` son legado de transicion y que nuevas pantallas deben seguir `Page -> Facade -> data/*-api.service.ts -> @core/api -> Backend`.
-- `Dashboard/tools/check-architecture.mjs` ahora bloquea imports directos al catalogo API interno fuera de `core/api`/`core/modules`, obligando a usar `@core/api`.
-- `Dashboard/docs/API-FIRST-MODULES.md` queda alineado con la nueva frontera `@core/api`.
+- La separacion tenant/modulo quedo corregida posteriormente: ParamascotasEC es tenant en `dashboard/src/app/tenants/paramascotasec/`, no modulo bajo `features/*`.
+- `dashboard/src/app/features/dashboard/data/README.md` y `services/README.md` marcan que los archivos `paramascotas-*` son legado de transicion y que nuevas pantallas deben seguir `Page -> Facade -> data/*-api.service.ts -> @core/api -> Backend`.
+- `dashboard/tools/check-architecture.mjs` ahora bloquea imports directos al catalogo API interno fuera de `core/api`/`core/modules`, obligando a usar `@core/api`.
+- `dashboard/docs/API-FIRST-MODULES.md` queda alineado con la nueva frontera `@core/api`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -4782,10 +5205,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando de `ParamascotasPanelComponent` los calculos de reabastecimiento editable de producto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` agrega helpers y metodos de servicio para modo reabastecimiento, stock actual, unidades compradas y cantidad final (`paramascotasProductFormIsRestockMode`, `paramascotasProductFormCurrentStock`, `paramascotasProductFormRestockUnits`, `paramascotasProductRestockTargetQuantity`).
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva los metodos usados por el template, pero delega esos calculos y la validacion de inventario a `ParamascotasProductInventoryService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.spec.ts` cubre el calculo de unidades compradas, stock actual redondeado, cantidad final y modo restock sin instanciar el componente.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estos calculos de restock vuelvan al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` agrega helpers y metodos de servicio para modo reabastecimiento, stock actual, unidades compradas y cantidad final (`paramascotasProductFormIsRestockMode`, `paramascotasProductFormCurrentStock`, `paramascotasProductFormRestockUnits`, `paramascotasProductRestockTargetQuantity`).
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva los metodos usados por el template, pero delega esos calculos y la validacion de inventario a `ParamascotasProductInventoryService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.spec.ts` cubre el calculo de unidades compradas, stock actual redondeado, cantidad final y modo restock sin instanciar el componente.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estos calculos de restock vuelvan al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de reabastecimiento de producto (`2/2`).
@@ -4797,10 +5220,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando de `ParamascotasPanelComponent` la deduplicacion y seleccion de imagenes de preview de producto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.ts` agrega `paramascotasProductPreviewImages()` y el metodo `previewImages()` para devolver miniaturas y galeria en orden, descartando URLs vacias y duplicados por URL+alt.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva `productPreviewImages()` como delegado al servicio de ficha de producto.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.spec.ts` cubre orden thumbnail-first, deduplicacion y descarte de imagenes sin URL.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que la lista deduplicada de preview vuelva al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.ts` agrega `paramascotasProductPreviewImages()` y el metodo `previewImages()` para devolver miniaturas y galeria en orden, descartando URLs vacias y duplicados por URL+alt.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva `productPreviewImages()` como delegado al servicio de ficha de producto.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.spec.ts` cubre orden thumbnail-first, deduplicacion y descarte de imagenes sin URL.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que la lista deduplicada de preview vuelva al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de catalogo/ficha de producto (`3/3`).
@@ -4812,10 +5235,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando de `ParamascotasPanelComponent` reglas visibles del catalogo de productos que dependian de datos de inventario/proveedor recibidos por API.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.ts` agrega etiquetas de proveedor, cobertura, vencimiento, ultima compra, ultima venta y tags de preview mediante helpers puros (`paramascotasProductSupplierLabel`, `paramascotasProductCoverageLabel`, `paramascotasProductExpirationLabel`, `paramascotasProductLastPurchaseLabel`, `paramascotasProductLastSaleLabel`, `paramascotasProductPreviewTags`) y metodos del servicio.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva los metodos usados por el template, pero los delega a `ParamascotasProductCatalogSearchService`; tambien se removio el import local de `attributeString`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.spec.ts` cubre labels operativos, fallbacks y tags de preview sin instanciar el componente.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estas reglas de visualizacion del catalogo vuelvan al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.ts` agrega etiquetas de proveedor, cobertura, vencimiento, ultima compra, ultima venta y tags de preview mediante helpers puros (`paramascotasProductSupplierLabel`, `paramascotasProductCoverageLabel`, `paramascotasProductExpirationLabel`, `paramascotasProductLastPurchaseLabel`, `paramascotasProductLastSaleLabel`, `paramascotasProductPreviewTags`) y metodos del servicio.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva los metodos usados por el template, pero los delega a `ParamascotasProductCatalogSearchService`; tambien se removio el import local de `attributeString`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.spec.ts` cubre labels operativos, fallbacks y tags de preview sin instanciar el componente.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estas reglas de visualizacion del catalogo vuelvan al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de catalogo/productos (`3/3`).
@@ -4827,10 +5250,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando de `ParamascotasPanelComponent` la logica visible que decide que pedidos aparecen como `Ventas recientes` dentro de `Venta en local`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.ts` agrega `buildParamascotasLocalSaleRecentOrders()` e `isParamascotasLocalSaleRecentOrder()` para filtrar pedidos `completed/delivered`, exigir canal `local_pos`, deduplicar contra la ultima venta creada y ordenar por fecha.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva `localSaleRecentOrders()` e `isLocalSaleRecentOrder()` como delegados al servicio POS, sin `Map`, `Date.parse`, estado de pedido ni canal de pago calculados en la vista.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.spec.ts` cubre ventas recientes POS con `payment_details` JSON/string, pedidos ecommerce ignorados, pendientes ignorados y deduplicacion de la ultima orden.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que la seleccion de ventas recientes POS vuelva al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.ts` agrega `buildParamascotasLocalSaleRecentOrders()` e `isParamascotasLocalSaleRecentOrder()` para filtrar pedidos `completed/delivered`, exigir canal `local_pos`, deduplicar contra la ultima venta creada y ordenar por fecha.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva `localSaleRecentOrders()` e `isLocalSaleRecentOrder()` como delegados al servicio POS, sin `Map`, `Date.parse`, estado de pedido ni canal de pago calculados en la vista.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.spec.ts` cubre ventas recientes POS con `payment_details` JSON/string, pedidos ecommerce ignorados, pendientes ignorados y deduplicacion de la ultima orden.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que la seleccion de ventas recientes POS vuelva al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de `Venta en local` (`2/2`).
@@ -4842,10 +5265,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando de `ParamascotasPanelComponent` el resumen de cabeceras de facturas de compra usado por `Productos x Compra`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.ts` agrega `ParamascotasPurchaseInvoicesSummary`, `buildParamascotasPurchaseInvoicesSummary()` y el metodo `purchaseInvoicesSummary()` para calcular facturas, unidades, total comprado y proveedores unicos desde el contrato normalizado del backend.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva `purchaseInvoicesSummary()` solo como delegado al servicio de analitica de compras, sin reducers ni conteo de proveedores en la vista.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.spec.ts` cubre el resumen con montos/unidades numericos y string, ademas de proveedor repetido.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que el resumen de cabeceras de facturas vuelva al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.ts` agrega `ParamascotasPurchaseInvoicesSummary`, `buildParamascotasPurchaseInvoicesSummary()` y el metodo `purchaseInvoicesSummary()` para calcular facturas, unidades, total comprado y proveedores unicos desde el contrato normalizado del backend.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva `purchaseInvoicesSummary()` solo como delegado al servicio de analitica de compras, sin reducers ni conteo de proveedores en la vista.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.spec.ts` cubre el resumen con montos/unidades numericos y string, ademas de proveedor repetido.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que el resumen de cabeceras de facturas vuelva al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de `Productos x Compra`/facturas de compra (`2/2`).
@@ -4857,10 +5280,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando del componente principal reglas visibles de pedidos, facturacion interna, contacto, direccion y totales.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.ts` centraliza `OrderReadinessCard`, contacto/direcciones de pedido, labels de entrega/pago/factura, secuencial SRI visible, canal de pago, subtotal/IVA/envio/descuento, totales de item, fallback de imagen y permisos operativos de estado/factura.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva los nombres usados por el template, pero delega esos calculos a `ParamascotasOrderAnalyticsService`; tambien se removieron helpers locales `parseJsonValue`, `asRecord`, `textValue` y `addressName`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.spec.ts` cubre detalle fiscal/operativo de pedido, readiness, busqueda, labels y totales.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estos calculos de detalle de pedido vuelvan al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.ts` centraliza `OrderReadinessCard`, contacto/direcciones de pedido, labels de entrega/pago/factura, secuencial SRI visible, canal de pago, subtotal/IVA/envio/descuento, totales de item, fallback de imagen y permisos operativos de estado/factura.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva los nombres usados por el template, pero delega esos calculos a `ParamascotasOrderAnalyticsService`; tambien se removieron helpers locales `parseJsonValue`, `asRecord`, `textValue` y `addressName`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.spec.ts` cubre detalle fiscal/operativo de pedido, readiness, busqueda, labels y totales.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estos calculos de detalle de pedido vuelvan al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de pedidos/admin-orders (`4/4`).
@@ -4872,10 +5295,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando de `ParamascotasPanelComponent` la decision de tipo de imagen y metadata para logos/multimedia de catalogos operativos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.ts` agrega `ParamascotasReferenceImageUploadRequest`, `buildParamascotasReferenceImageUploadRequest()` y el metodo `imageUploadRequest()` para centralizar `brandLogo`, `categoryFeatured*`, `variantLabel` y metadata `brandName/category/platform`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ya no importa `ParamascotasUploadImageKind` ni calcula `categoryRequirement`; ahora solo valida archivo/nombre y pasa `{ kind, metadata }` desde `ParamascotasReferenceCatalogService` al API.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.spec.ts` cubre solicitudes de upload para logos de marca y slots publicos de categoria.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que esta metadata de catalogos vuelva al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.ts` agrega `ParamascotasReferenceImageUploadRequest`, `buildParamascotasReferenceImageUploadRequest()` y el metodo `imageUploadRequest()` para centralizar `brandLogo`, `categoryFeatured*`, `variantLabel` y metadata `brandName/category/platform`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ya no importa `ParamascotasUploadImageKind` ni calcula `categoryRequirement`; ahora solo valida archivo/nombre y pasa `{ kind, metadata }` desde `ParamascotasReferenceCatalogService` al API.
+- `dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.spec.ts` cubre solicitudes de upload para logos de marca y slots publicos de categoria.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que esta metadata de catalogos vuelva al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de catalogos operativos (`4/4`).
@@ -4887,10 +5310,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando del componente la metadata de negocio enviada al endpoint de subida de imagenes de producto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` agrega `buildParamascotasProductUploadMetadata()` y el metodo `uploadMetadata()` para centralizar `productName`, `brandName`, `category`, `productType`, `size`, `species`, `material`, `variantLabel` y proveedor.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar `productUploadMetadata()`; al subir imagenes solo prepara el archivo y delega la metadata al servicio de formulario de producto.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` cubre la metadata generada, el fallback de proveedor y la prioridad de `variantLabel`.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que la metadata de subida de producto vuelva al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` agrega `buildParamascotasProductUploadMetadata()` y el metodo `uploadMetadata()` para centralizar `productName`, `brandName`, `category`, `productType`, `size`, `species`, `material`, `variantLabel` y proveedor.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar `productUploadMetadata()`; al subir imagenes solo prepara el archivo y delega la metadata al servicio de formulario de producto.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` cubre la metadata generada, el fallback de proveedor y la prioridad de `variantLabel`.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que la metadata de subida de producto vuelva al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git -C Dashboard diff --check` y Playwright focal de producto/catalogo (`3/3`).
@@ -4902,10 +5325,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando mensajes y reglas de stock de la ficha de producto desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` agrega `ParamascotasProductInventoryIntentSummary`, `buildParamascotasProductInventoryIntentSummary()` y el metodo `inventoryIntentSummary()` para centralizar los estados `stock inicial`, `compra/reabastecimiento`, `ajuste manual`, `cambio sin accion` y `sin ingreso de stock`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` agrega `ParamascotasProductInventoryIntentSummary`, `buildParamascotasProductInventoryIntentSummary()` y el metodo `inventoryIntentSummary()` para centralizar los estados `stock inicial`, `compra/reabastecimiento`, `ajuste manual`, `cambio sin accion` y `sin ingreso de stock`.
 - `paramascotas-panel.component.ts` deja de construir mensajes como `Factura obligatoria para stock inicial`, `Compra / reabastecimiento` y `Ajuste manual`; ahora solo delega en `ParamascotasProductInventoryService`.
 - `paramascotas-product-inventory.service.spec.ts` cubre los cinco estados de intencion de inventario.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que esos resumenes de inventario vuelvan al componente.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que esos resumenes de inventario vuelvan al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de producto/inventario (`3/3`).
@@ -4917,10 +5340,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando reglas de ficha de producto desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` centraliza `ParamascotasProductPublicationChecklistItem`, checklist de publicacion del editor, evaluacion `editorCanPublish`, sugerencias SEO y aplicacion de alt text en miniaturas/galeria.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` centraliza `ParamascotasProductPublicationChecklistItem`, checklist de publicacion del editor, evaluacion `editorCanPublish`, sugerencias SEO y aplicacion de alt text en miniaturas/galeria.
 - `paramascotas-panel.component.ts` deja de calcular requisitos de publicacion y textos SEO; conserva solo metodos delegados para el template y actualiza el estado del formulario con `ParamascotasProductFormService`.
 - `paramascotas-product-form.service.spec.ts` cubre checklist, publicabilidad, sugerencias SEO y aplicacion al formulario.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que checklist de publicacion y sugerencias SEO vuelvan al componente.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que checklist de publicacion y sugerencias SEO vuelvan al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de productos/catalogo (`4/4`).
@@ -4932,9 +5355,9 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales del sidebar ya funcionaban, pero los submenus no navegaban de forma confiable para el usuario.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` unifica la navegacion de items principales y submenus: ambos intentan primero `router.navigateByUrl(...)` con la ruta interna tenant-aware y caen al `href` publico real (`/dashboard/...`) si Angular cancela, rechaza o deja la URL anterior.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` unifica la navegacion de items principales y submenus: ambos intentan primero `router.navigateByUrl(...)` con la ruta interna tenant-aware y caen al `href` publico real (`/dashboard/...`) si Angular cancela, rechaza o deja la URL anterior.
 - `navigateSubmenuItem(...)` ya no fuerza siempre `location.assign(...)`; esto evita recargas innecesarias y deja a los submenus operar igual que los items principales, conservando el fallback publico para base path `/dashboard/`.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` actualiza la cobertura para confirmar que submenus normales y flyout replegado usan router primero, preservan `?tenant` sin codificarlo como `%3Ftenant`, y cierran el flyout al seleccionar un hijo.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` actualiza la cobertura para confirmar que submenus normales y flyout replegado usan router primero, preservan `?tenant` sin codificarlo como `%3Ftenant`, y cierran el flyout al seleccionar un hijo.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health` y Playwright focal de submenus mobile/desktop/replegado/grupo activo (`5/5`).
@@ -4947,10 +5370,10 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular eliminando reglas de filtros de productos e impuestos desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.ts` centraliza `ParamascotasProductCatalogFilter`, normalizacion de filtros, resumen publicado/oculto/incompleto, quick filters, insights de catalogo, stock, costo unitario y margen bruto.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-tax-analytics.service.ts` centraliza `ParamascotasProductTaxFilter`, `PARAMASCOTAS_PRODUCT_TAX_FILTER_OPTIONS`, normalizacion y matching fiscal `all/taxed/exempt`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.ts` centraliza `ParamascotasProductCatalogFilter`, normalizacion de filtros, resumen publicado/oculto/incompleto, quick filters, insights de catalogo, stock, costo unitario y margen bruto.
+- `dashboard/src/app/features/dashboard/services/paramascotas-tax-analytics.service.ts` centraliza `ParamascotasProductTaxFilter`, `PARAMASCOTAS_PRODUCT_TAX_FILTER_OPTIONS`, normalizacion y matching fiscal `all/taxed/exempt`.
 - `paramascotas-panel.component.{ts,html}` deja de declarar `ProductCatalogFilter`, `ProductTaxFilter`, filas de insight y reglas `stock-risk`/`margin-risk`; la vista solo conserva senales y delega en servicios.
-- Specs de servicios cubren filtros de catalogo, filtros fiscales, resumenes e insights. `tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estas reglas vuelvan al componente.
+- Specs de servicios cubren filtros de catalogo, filtros fiscales, resumenes e insights. `tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/bloquean que estas reglas vuelvan al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright de ruta `catalog/products` (`1/1`) y Playwright focal de filtros de productos/IVA (`2/2`).
@@ -4962,7 +5385,7 @@ Operacion y verificacion:
 Objetivo: corregir que el menu lateral ya respondiera en estado replegado, pero los submenus siguieran fallando para el usuario al seleccionar hijos.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html}` separa la navegacion de submenus de la navegacion SPA de items principales: los hijos ahora usan `navigateSubmenuItem()` y van por el `href` publico ya calculado (`/dashboard/...`) mediante `DomService.navigateToExternalUrl`, preservando tenant query y evitando estados donde `Router.navigateByUrl()` acepte el click pero la vista no cambie.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html}` separa la navegacion de submenus de la navegacion SPA de items principales: los hijos ahora usan `navigateSubmenuItem()` y van por el `href` publico ya calculado (`/dashboard/...`) mediante `DomService.navigateToExternalUrl`, preservando tenant query y evitando estados donde `Router.navigateByUrl()` acepte el click pero la vista no cambie.
 - Los clicks modificados (`Ctrl`, `Meta`, `Shift`, `Alt` o boton no primario) siguen comportandose como enlaces normales del navegador.
 - `side-nav.component.spec.ts` se actualiza para validar hrefs publicos, cierre de flyout y no codificar `?tenant` como `%3Ftenant`.
 
@@ -4976,11 +5399,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando configuracion editable de stock desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` exporta `PARAMASCOTAS_EDITABLE_INVENTORY_ACTION_OPTIONS`, `ParamascotasEditableInventoryAction` y `ParamascotasEditableInventoryActionOption`, ademas de exponer las opciones desde `ParamascotasProductInventoryService`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina el arreglo local `inventoryActionOptions`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.spec.ts` cubre las opciones esperadas.
-- `Dashboard/tools/check-architecture.mjs` bloquea que opciones editables de inventario vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de accion de stock pertenecen a `ParamascotasProductInventoryService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` exporta `PARAMASCOTAS_EDITABLE_INVENTORY_ACTION_OPTIONS`, `ParamascotasEditableInventoryAction` y `ParamascotasEditableInventoryActionOption`, ademas de exponer las opciones desde `ParamascotasProductInventoryService`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina el arreglo local `inventoryActionOptions`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.spec.ts` cubre las opciones esperadas.
+- `dashboard/tools/check-architecture.mjs` bloquea que opciones editables de inventario vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de accion de stock pertenecen a `ParamascotasProductInventoryService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `catalog/products` (`1/1`).
@@ -4992,12 +5415,12 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando configuracion de filtros y recurrencias de gastos desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-analytics.service.ts` exporta `PARAMASCOTAS_EXPENSE_STATUS_OPTIONS` y `ParamascotasExpenseStatusOption`, ademas de exponer las opciones desde `ParamascotasExpenseAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.ts` exporta `PARAMASCOTAS_EXPENSE_RECURRENCE_FREQUENCY_OPTIONS`, `ParamascotasExpenseRecurrenceFrequency` y `ParamascotasExpenseRecurrenceFrequencyOption`, ademas de exponerlas desde el servicio.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina arreglos locales de estados/frecuencias.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-analytics.service.ts` exporta `PARAMASCOTAS_EXPENSE_STATUS_OPTIONS` y `ParamascotasExpenseStatusOption`, ademas de exponer las opciones desde `ParamascotasExpenseAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.ts` exporta `PARAMASCOTAS_EXPENSE_RECURRENCE_FREQUENCY_OPTIONS`, `ParamascotasExpenseRecurrenceFrequency` y `ParamascotasExpenseRecurrenceFrequencyOption`, ademas de exponerlas desde el servicio.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina arreglos locales de estados/frecuencias.
 - Las specs de `paramascotas-expense-analytics.service` y `paramascotas-expense-money.service` cubren las opciones esperadas.
-- `Dashboard/tools/check-architecture.mjs` bloquea que esas opciones vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de estado y frecuencia de gastos pertenecen a servicios de dominio financiero.
+- `dashboard/tools/check-architecture.mjs` bloquea que esas opciones vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de estado y frecuencia de gastos pertenecen a servicios de dominio financiero.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `finance/expenses` + `operations/balances` (`2/2`).
@@ -5009,11 +5432,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando configuracion visible de reportes financieros desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.ts` exporta `PARAMASCOTAS_FINANCIAL_TREND_MODE_OPTIONS`, `PARAMASCOTAS_FINANCIAL_TREND_SCOPE_OPTIONS` y `ParamascotasFinancialTrendOption`, ademas de exponerlas desde `ParamascotasFinancialAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina los arreglos tipados locales para modo/alcance de tendencia.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.spec.ts` cubre las etiquetas e IDs esperados.
-- `Dashboard/tools/check-architecture.mjs` bloquea que opciones de tendencia financiera vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de modo/alcance de tendencia pertenecen al dominio financiero.
+- `dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.ts` exporta `PARAMASCOTAS_FINANCIAL_TREND_MODE_OPTIONS`, `PARAMASCOTAS_FINANCIAL_TREND_SCOPE_OPTIONS` y `ParamascotasFinancialTrendOption`, ademas de exponerlas desde `ParamascotasFinancialAnalyticsService`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina los arreglos tipados locales para modo/alcance de tendencia.
+- `dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.spec.ts` cubre las etiquetas e IDs esperados.
+- `dashboard/tools/check-architecture.mjs` bloquea que opciones de tendencia financiera vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de modo/alcance de tendencia pertenecen al dominio financiero.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de rutas financieras `reporting/balance` y `operations/balances` (`2/2`).
@@ -5025,11 +5448,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando configuracion operativa de `Venta en local` desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.ts` exporta `PARAMASCOTAS_POS_MOVEMENT_TYPES`, `PARAMASCOTAS_POS_PAYMENT_METHODS`, `ParamascotasPosMovementType` e `isParamascotasPosMovementType`, ademas de exponer las opciones desde el servicio.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina el validador local `isPosMovementType`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.spec.ts` cubre IDs de movimientos/metodos y validacion de tipo.
-- `Dashboard/tools/check-architecture.mjs` bloquea que opciones POS o validadores de movimiento vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de movimiento y metodos de pago pertenecen al dominio POS.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.ts` exporta `PARAMASCOTAS_POS_MOVEMENT_TYPES`, `PARAMASCOTAS_POS_PAYMENT_METHODS`, `ParamascotasPosMovementType` e `isParamascotasPosMovementType`, ademas de exponer las opciones desde el servicio.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina el validador local `isPosMovementType`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.spec.ts` cubre IDs de movimientos/metodos y validacion de tipo.
+- `dashboard/tools/check-architecture.mjs` bloquea que opciones POS o validadores de movimiento vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que opciones de movimiento y metodos de pago pertenecen al dominio POS.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `Venta en local` (`2/2`).
@@ -5041,10 +5464,10 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales funcionaban pero los submenus podian no cambiar de vista, y continuar la separacion modular de configuracion de catalogo.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` conserva `router.navigateByUrl`, pero ahora tambien cae al `href` publico real si Angular devuelve exito y la URL interna queda igual, cubriendo cancelaciones silenciosas bajo `/dashboard/`.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` agrega cobertura para ese fallback de submenus replegados.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` exporta `PARAMASCOTAS_PRODUCT_TYPE_OPTIONS` y `PARAMASCOTAS_PRODUCT_SPECIES_OPTIONS`; `ParamascotasPanelComponent` consume esas constantes en lugar de declarar arreglos locales.
-- `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan y protegen que esas opciones de producto no vuelvan a componentes visuales.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` conserva `router.navigateByUrl`, pero ahora tambien cae al `href` publico real si Angular devuelve exito y la URL interna queda igual, cubriendo cancelaciones silenciosas bajo `/dashboard/`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` agrega cobertura para ese fallback de submenus replegados.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` exporta `PARAMASCOTAS_PRODUCT_TYPE_OPTIONS` y `PARAMASCOTAS_PRODUCT_SPECIES_OPTIONS`; `ParamascotasPanelComponent` consume esas constantes en lugar de declarar arreglos locales.
+- `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan y protegen que esas opciones de producto no vuelvan a componentes visuales.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright focal de submenus (`mobile`, `desktop`, `collapsed`, grupo activo) y Playwright autenticado por `https://paramascotasec.com/dashboard` (`tenant admin signs in with MFA and stays tenant-scoped`).
@@ -5056,11 +5479,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando opciones operativas de inventario desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.ts` exporta `PARAMASCOTAS_INVENTORY_STATUS_OPTIONS`, `PARAMASCOTAS_INVENTORY_TYPE_OPTIONS` y `PARAMASCOTAS_INVENTORY_ACTION_OPTIONS`, ademas de exponerlas desde `ParamascotasInventoryAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina `INVENTORY_STATUS_OPTIONS`, `INVENTORY_TYPE_OPTIONS` e `INVENTORY_ACTION_OPTIONS` locales.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.spec.ts` cubre IDs y etiqueta critica de filtros.
-- `Dashboard/tools/check-architecture.mjs` bloquea que opciones de inventario vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que opciones/filtros de inventario pertenecen a `ParamascotasInventoryAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.ts` exporta `PARAMASCOTAS_INVENTORY_STATUS_OPTIONS`, `PARAMASCOTAS_INVENTORY_TYPE_OPTIONS` y `PARAMASCOTAS_INVENTORY_ACTION_OPTIONS`, ademas de exponerlas desde `ParamascotasInventoryAnalyticsService`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas opciones centrales y elimina `INVENTORY_STATUS_OPTIONS`, `INVENTORY_TYPE_OPTIONS` e `INVENTORY_ACTION_OPTIONS` locales.
+- `dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.spec.ts` cubre IDs y etiqueta critica de filtros.
+- `dashboard/tools/check-architecture.mjs` bloquea que opciones de inventario vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que opciones/filtros de inventario pertenecen a `ParamascotasInventoryAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `catalog/inventory` (`1/1`).
@@ -5072,11 +5495,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando configuracion operativa fija de tienda desde `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.ts` exporta `PARAMASCOTAS_STORE_PAUSE_PRESETS`, `ParamascotasStorePausePreset` y lo expone desde `ParamascotasStoreStatusAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume los presets desde el servicio de dominio y elimina `STORE_PAUSE_PRESETS` local.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.spec.ts` cubre los IDs y mensaje esperado de presets.
-- `Dashboard/tools/check-architecture.mjs` bloquea que `STORE_PAUSE_PRESETS` vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que presets de pausa pertenecen al dominio de estado de tienda.
+- `dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.ts` exporta `PARAMASCOTAS_STORE_PAUSE_PRESETS`, `ParamascotasStorePausePreset` y lo expone desde `ParamascotasStoreStatusAnalyticsService`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume los presets desde el servicio de dominio y elimina `STORE_PAUSE_PRESETS` local.
+- `dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.spec.ts` cubre los IDs y mensaje esperado de presets.
+- `dashboard/tools/check-architecture.mjs` bloquea que `STORE_PAUSE_PRESETS` vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que presets de pausa pertenecen al dominio de estado de tienda.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `operations/store-status` (`1/1`).
@@ -5088,9 +5511,9 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales ya respondian, pero los submenus podian no cambiar de vista en el navegador del usuario.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` mantiene la navegacion interna por `router.navigateByUrl`, pero ahora usa el `href` publico real como fallback si Angular cancela o rechaza la navegacion del submenu.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` agrega cobertura para el fallback de submenus replegados bajo base publica `/dashboard/`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-state.service.ts` importa el tipo `ParamascotasOrderStatus`, corrigiendo una edicion parcial previa que bloqueaba `type:check`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` mantiene la navegacion interna por `router.navigateByUrl`, pero ahora usa el `href` publico real como fallback si Angular cancela o rechaza la navegacion del submenu.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` agrega cobertura para el fallback de submenus replegados bajo base publica `/dashboard/`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-state.service.ts` importa el tipo `ParamascotasOrderStatus`, corrigiendo una edicion parcial previa que bloqueaba `type:check`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, Playwright focal de submenus (`mobile`, `desktop`, `collapsed`) y Playwright autenticado por `https://paramascotasec.com/dashboard` (`tenant admin signs in with MFA and stays tenant-scoped`).
@@ -5102,11 +5525,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion de catalogo moviendo la configuracion de ejes de variantes agrupadas fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.ts` exporta `PARAMASCOTAS_PRODUCT_VARIANT_AXIS_OPTIONS` y lo expone desde `ParamascotasProductVariantService`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` usa la constante central para `productVariantAxisOptions` y elimina `PRODUCT_VARIANT_AXIS_OPTIONS` local.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` cubre los valores esperados de ejes de variante.
-- `Dashboard/tools/check-architecture.mjs` bloquea que `PRODUCT_VARIANT_AXIS_OPTIONS` vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que ejes/opciones de variante pertenecen a `ParamascotasProductVariantService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.ts` exporta `PARAMASCOTAS_PRODUCT_VARIANT_AXIS_OPTIONS` y lo expone desde `ParamascotasProductVariantService`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` usa la constante central para `productVariantAxisOptions` y elimina `PRODUCT_VARIANT_AXIS_OPTIONS` local.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` cubre los valores esperados de ejes de variante.
+- `dashboard/tools/check-architecture.mjs` bloquea que `PRODUCT_VARIANT_AXIS_OPTIONS` vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que ejes/opciones de variante pertenecen a `ParamascotasProductVariantService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `Productos` (`1/1`).
@@ -5118,11 +5541,11 @@ Operacion y verificacion:
 Objetivo: completar el tramo de envios moviendo el calculo visual de cobertura de reglas de mapa fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.ts` agrega `coveragePercent()` y `paramascotasShippingCoveragePercent()` para calcular la barra de radio gratis/tarifa plana desde `ParamascotasShippingSettings`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega `shippingCoveragePercent()` a `ParamascotasShippingAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.spec.ts` cubre cobertura normal y caso cero.
-- `Dashboard/tools/check-architecture.mjs` bloquea que `shippingCoveragePercent` vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que cobertura de reglas de mapa pertenece a `ParamascotasShippingAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.ts` agrega `coveragePercent()` y `paramascotasShippingCoveragePercent()` para calcular la barra de radio gratis/tarifa plana desde `ParamascotasShippingSettings`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega `shippingCoveragePercent()` a `ParamascotasShippingAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.spec.ts` cubre cobertura normal y caso cero.
+- `dashboard/tools/check-architecture.mjs` bloquea que `shippingCoveragePercent` vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que cobertura de reglas de mapa pertenece a `ParamascotasShippingAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `Envios` (`1/1`).
@@ -5134,11 +5557,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular moviendo defaults y payload sanitizado de configuracion de envios fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.ts` ahora centraliza `createDefaultParamascotasShippingSettings`, `normalizeParamascotasShippingSettings` y `paramascotasShippingSettingsPayload`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` inicializa y guarda `shippingSettings` usando el servicio de payloads, manteniendo solo la validacion visible de direccion obligatoria y la llamada API.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.spec.ts` cubre defaults de envio y saneamiento de montos, coordenadas, radios, cooldowns y limites.
-- `Dashboard/tools/check-architecture.mjs` bloquea defaults/normalizadores/payloads de `ShippingSettings` en componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que `shippingSettings` pertenece a `ParamascotasSettingsPayloadService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.ts` ahora centraliza `createDefaultParamascotasShippingSettings`, `normalizeParamascotasShippingSettings` y `paramascotasShippingSettingsPayload`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` inicializa y guarda `shippingSettings` usando el servicio de payloads, manteniendo solo la validacion visible de direccion obligatoria y la llamada API.
+- `dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.spec.ts` cubre defaults de envio y saneamiento de montos, coordenadas, radios, cooldowns y limites.
+- `dashboard/tools/check-architecture.mjs` bloquea defaults/normalizadores/payloads de `ShippingSettings` en componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que `shippingSettings` pertenece a `ParamascotasSettingsPayloadService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `Envios` (`1/1`).
@@ -5150,11 +5573,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo acoplamiento visual/de dominio en inventario, moviendo el chart de capital por categoria fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.ts` ahora expone `categoryChart()` y `buildParamascotasInventoryCategoryChart()` con el chart de categorias, formato compacto de moneda y etiquetas recortadas.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega `inventoryCategoryChart` a `ParamascotasInventoryAnalyticsService` y elimina `buildInventoryCategoryChart` junto con helpers locales de chart.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.spec.ts` cubre el tipo de chart y serie principal del grafico de categorias.
-- `Dashboard/tools/check-architecture.mjs` bloquea que `buildInventoryCategoryChart` vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que charts de inventario pertenecen a `ParamascotasInventoryAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.ts` ahora expone `categoryChart()` y `buildParamascotasInventoryCategoryChart()` con el chart de categorias, formato compacto de moneda y etiquetas recortadas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega `inventoryCategoryChart` a `ParamascotasInventoryAnalyticsService` y elimina `buildInventoryCategoryChart` junto con helpers locales de chart.
+- `dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.spec.ts` cubre el tipo de chart y serie principal del grafico de categorias.
+- `dashboard/tools/check-architecture.mjs` bloquea que `buildInventoryCategoryChart` vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que charts de inventario pertenecen a `ParamascotasInventoryAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de inventario (`2/2`).
@@ -5166,11 +5589,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando del componente del panel las reglas visibles de trazabilidad financiera y auditoria producto/pedido.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-traceability-analytics.service.ts` centraliza filas auditables de pedidos, incidencias de trazabilidad, severidades, tipos, filtros, resumen de cobertura y vinculos entre productos vendidos y pedidos.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva estado visible, apertura de pedido/producto y llamadas API, pero delega calculos de documento faltante, pago, entrega, costo, margen, referencias y ficha de catalogo al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-traceability-analytics.service.spec.ts` cubre ordenes sin datos obligatorios, productos sin costo, referencias faltantes, filtros, etiquetas y resumen.
-- `Dashboard/tools/check-architecture.mjs` bloquea que builders, tipos, interfaces o constantes de trazabilidad vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que trazabilidad debe vivir en servicios como `ParamascotasTraceabilityAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-traceability-analytics.service.ts` centraliza filas auditables de pedidos, incidencias de trazabilidad, severidades, tipos, filtros, resumen de cobertura y vinculos entre productos vendidos y pedidos.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva estado visible, apertura de pedido/producto y llamadas API, pero delega calculos de documento faltante, pago, entrega, costo, margen, referencias y ficha de catalogo al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-traceability-analytics.service.spec.ts` cubre ordenes sin datos obligatorios, productos sin costo, referencias faltantes, filtros, etiquetas y resumen.
+- `dashboard/tools/check-architecture.mjs` bloquea que builders, tipos, interfaces o constantes de trazabilidad vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que trazabilidad debe vivir en servicios como `ParamascotasTraceabilityAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de `Reporte de trazabilidad` (`1/1`).
@@ -5182,11 +5605,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular sacando del componente del panel los derivados visibles de reportes financieros, tendencias, decisiones operativas y charts.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.ts` centraliza KPIs de reportes, top de productos/categorias, pedidos recientes, anchos de barras, tendencias diarias/mensuales, totales por alcance, decisiones operativas y charts financieros.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` queda como orquestador de periodo/filtros/API y delega esos calculos al servicio de dominio, manteniendo al backend como fuente de verdad de datos financieros.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.spec.ts` cubre ordenamiento, totales, seleccion de tendencia, decisiones y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que funciones/tipos/interfaces de analitica financiera vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que KPIs, tendencias, totales, decisiones y charts financieros deben vivir en servicios como `ParamascotasFinancialAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.ts` centraliza KPIs de reportes, top de productos/categorias, pedidos recientes, anchos de barras, tendencias diarias/mensuales, totales por alcance, decisiones operativas y charts financieros.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` queda como orquestador de periodo/filtros/API y delega esos calculos al servicio de dominio, manteniendo al backend como fuente de verdad de datos financieros.
+- `dashboard/src/app/features/dashboard/services/paramascotas-financial-analytics.service.spec.ts` cubre ordenamiento, totales, seleccion de tendencia, decisiones y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que funciones/tipos/interfaces de analitica financiera vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que KPIs, tendencias, totales, decisiones y charts financieros deben vivir en servicios como `ParamascotasFinancialAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de reportes/submenus (`7/7`).
@@ -5198,10 +5621,10 @@ Operacion y verificacion:
 Objetivo: reforzar la arquitectura API-first/modular separando reglas visibles de gastos de negocio del componente del panel y dejando el backend como fuente autoritativa de resumenes financieros.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-analytics.service.ts` conserva la analitica de gastos en servicio de dominio y corrige el fallback de resumen: los totales/cantidades del API se respetan aunque sean `0`; solo se calcula localmente si el campo no existe.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-analytics.service.spec.ts` cubre el caso de resumen API con valor cero autoritativo.
-- `Dashboard/tools/check-architecture.mjs` ahora bloquea que funciones, tipos o interfaces de analitica/filtros/charts de gastos vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que resumenes, filtros, categorias, obligaciones y charts de gastos pertenecen a `ParamascotasExpenseAnalyticsService`, no al componente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-analytics.service.ts` conserva la analitica de gastos en servicio de dominio y corrige el fallback de resumen: los totales/cantidades del API se respetan aunque sean `0`; solo se calcula localmente si el campo no existe.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-analytics.service.spec.ts` cubre el caso de resumen API con valor cero autoritativo.
+- `dashboard/tools/check-architecture.mjs` ahora bloquea que funciones, tipos o interfaces de analitica/filtros/charts de gastos vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que resumenes, filtros, categorias, obligaciones y charts de gastos pertenecen a `ParamascotasExpenseAnalyticsService`, no al componente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de gastos (`1/1`).
@@ -5213,8 +5636,8 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales del sidebar funcionaban, pero los submenus no navegaban de forma confiable.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` reemplaza `routerLink` en enlaces del menu por `hrefForItem(...)` mas click explicito a `navigateMenuItem(...)`, tanto en submenus normales como en el flyout del sidebar replegado.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` retira `RouterLink` del componente y deja una sola ruta de navegacion controlada con `router.navigateByUrl`, preservando Ctrl/Cmd/Shift/Alt-click como enlaces normales del navegador.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` reemplaza `routerLink` en enlaces del menu por `hrefForItem(...)` mas click explicito a `navigateMenuItem(...)`, tanto en submenus normales como en el flyout del sidebar replegado.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` retira `RouterLink` del componente y deja una sola ruta de navegacion controlada con `router.navigateByUrl`, preservando Ctrl/Cmd/Shift/Alt-click como enlaces normales del navegador.
 - Los `href` visibles siguen respetando `base href="/dashboard/"`, mientras la navegacion SPA conserva la ruta interna y el query `tenant`.
 
 Operacion y verificacion:
@@ -5228,12 +5651,12 @@ Operacion y verificacion:
 Objetivo: seguir separando UI y dominio en `Cotizaciones`, moviendo estados, filtros, seguimiento, avisos y validaciones visibles fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-quotation-analytics.service.ts` centraliza estado de cotizacion, etiquetas/clases, total/unidades/contacto/direccion, estado de correo, resumenes, filas de estado, seguimiento comercial, filtros, charts, validaciones de conversion y avisos de correo/WhatsApp.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva estado visible, seleccion, llamadas API, impresion y apertura de WhatsApp, pero delega derivados de cotizacion a `ParamascotasQuotationAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-quotation-analytics.service.spec.ts` cubre clasificacion de estados, totales, contacto, resumenes, status rows, filtros, follow-up, validaciones de conversion, avisos y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas de analitica/estado de cotizaciones vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que cotizaciones deben delegar estado, seguimiento, filtros, charts, conversion y avisos a servicios de dominio.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ajusta el stub de impresion de cotizaciones para detectar el HTML imprimible con script `window.print`, alineado con `BrowserInteractionService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-quotation-analytics.service.ts` centraliza estado de cotizacion, etiquetas/clases, total/unidades/contacto/direccion, estado de correo, resumenes, filas de estado, seguimiento comercial, filtros, charts, validaciones de conversion y avisos de correo/WhatsApp.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva estado visible, seleccion, llamadas API, impresion y apertura de WhatsApp, pero delega derivados de cotizacion a `ParamascotasQuotationAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-quotation-analytics.service.spec.ts` cubre clasificacion de estados, totales, contacto, resumenes, status rows, filtros, follow-up, validaciones de conversion, avisos y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas de analitica/estado de cotizaciones vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que cotizaciones deben delegar estado, seguimiento, filtros, charts, conversion y avisos a servicios de dominio.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ajusta el stub de impresion de cotizaciones para detectar el HTML imprimible con script `window.print`, alineado con `BrowserInteractionService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de cotizaciones (`3/3`).
@@ -5245,11 +5668,11 @@ Operacion y verificacion:
 Objetivo: seguir separando UI y dominio en `Venta en local`, moviendo calculos visibles de POS fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.ts` centraliza defaults del formulario de venta local, conversion producto API -> linea POS, catalogo buscable, cantidades/costo/utilidad, totales visibles, resumen de turno, filas de flujo, readiness de venta, clases de stock y chart de cobro.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva estado, llamadas API y firmas usadas por el template, pero delega esos calculos a `ParamascotasPosAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.spec.ts` cubre defaults, ranking de catalogo POS, totales con/sin quote, resumen/flujo/chart POS y readiness de venta.
-- `Dashboard/tools/check-architecture.mjs` bloquea que defaults, mapeos, totales, readiness o charts POS vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que los calculos visibles de POS pertenecen al servicio de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.ts` centraliza defaults del formulario de venta local, conversion producto API -> linea POS, catalogo buscable, cantidades/costo/utilidad, totales visibles, resumen de turno, filas de flujo, readiness de venta, clases de stock y chart de cobro.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva estado, llamadas API y firmas usadas por el template, pero delega esos calculos a `ParamascotasPosAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pos-analytics.service.spec.ts` cubre defaults, ranking de catalogo POS, totales con/sin quote, resumen/flujo/chart POS y readiness de venta.
+- `dashboard/tools/check-architecture.mjs` bloquea que defaults, mapeos, totales, readiness o charts POS vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que los calculos visibles de POS pertenecen al servicio de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de venta local (`2/2`).
@@ -5261,11 +5684,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo acoplamiento en `ParamascotasPanelComponent` moviendo reglas visibles de `Ficha de producto` a un servicio de dominio, alineado con la arquitectura API-first/modular.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.ts` centraliza defaults de configuracion, seleccion de producto de preview, URL/alt/contador de imagenes, completitud publicable, resumen del catalogo, filas de confianza, porcentaje de envio gratis y readiness operativo.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva senales, carga/guardado por API y firmas usadas por el template, pero delega las reglas de ficha a `ParamascotasProductPageService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.spec.ts` cubre defaults, trust rows, preview, resumen, publicacion, readiness e imagenes/cache key.
-- `Dashboard/tools/check-architecture.mjs` bloquea que helpers de ficha de producto vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que defaults/readiness/completitud/resumen de ficha publica pertenecen a `ParamascotasProductPageService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.ts` centraliza defaults de configuracion, seleccion de producto de preview, URL/alt/contador de imagenes, completitud publicable, resumen del catalogo, filas de confianza, porcentaje de envio gratis y readiness operativo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva senales, carga/guardado por API y firmas usadas por el template, pero delega las reglas de ficha a `ParamascotasProductPageService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-page.service.spec.ts` cubre defaults, trust rows, preview, resumen, publicacion, readiness e imagenes/cache key.
+- `dashboard/tools/check-architecture.mjs` bloquea que helpers de ficha de producto vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que defaults/readiness/completitud/resumen de ficha publica pertenecen a `ParamascotasProductPageService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/catalog/product-page loads without fatal operational errors"` (`1/1`).
@@ -5277,7 +5700,7 @@ Operacion y verificacion:
 Objetivo: dejar corregido el caso donde los menus principales del sidebar funcionaban, pero los submenus no navegaban de forma confiable, especialmente en sidebar replegado y con el Dashboard publicado bajo `/dashboard`.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html}` vuelve a usar `routerLink` en enlaces directos, submenus normales y flyout del sidebar replegado, con `queryParams` del tenant calculados por `TenantResolverService`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html}` vuelve a usar `routerLink` en enlaces directos, submenus normales y flyout del sidebar replegado, con `queryParams` del tenant calculados por `TenantResolverService`.
 - El codigo propio ya no cancela el clic para navegar en los submenus; solo cierra el sidebar o el flyout despues de un clic normal. Esto evita estados donde el hijo visible no ejecuta navegacion aunque el menu principal abra correctamente.
 - Los `href` publicos quedan generados por Angular bajo el `base href="/dashboard/"`, manteniendo Ctrl/Cmd/Shift/Alt-click como comportamiento nativo del navegador.
 
@@ -5293,11 +5716,11 @@ Operacion y verificacion:
 Objetivo: seguir separando UI y dominio en el panel Paramascotas moviendo normalizacion, validacion y analitica de catalogos operativos fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.ts` centraliza el registro de catalogos reutilizables, requisitos de imagen publica por categoria, defaults de draft/data, normalizacion, validacion de duplicados/contactos/proveedores, edicion/remocion, filas seleccionadas, metricas y charts.
+- `dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.ts` centraliza el registro de catalogos reutilizables, requisitos de imagen publica por categoria, defaults de draft/data, normalizacion, validacion de duplicados/contactos/proveedores, edicion/remocion, filas seleccionadas, metricas y charts.
 - `ParamascotasPanelComponent` delega esas reglas al nuevo `ParamascotasReferenceCatalogService` y conserva estado visible, subida de imagenes y llamada al API.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.spec.ts` cubre normalizacion, resumenes, validaciones de proveedores/categorias, add/update/remove/toggle y filtros/filas.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas de catalogos operativos vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que catalogos operativos deben vivir en `ParamascotasReferenceCatalogService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-reference-catalog.service.spec.ts` cubre normalizacion, resumenes, validaciones de proveedores/categorias, add/update/remove/toggle y filtros/filas.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas de catalogos operativos vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que catalogos operativos deben vivir en `ParamascotasReferenceCatalogService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de catalogos operativos con `5/5`.
@@ -5309,11 +5732,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo acoplamiento del panel Paramascotas moviendo la transformacion visible de inventario fuera de `ParamascotasPanelComponent`, alineado con la arquitectura API-first/modular.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.ts` centraliza filas enriquecidas de inventario, cruces con `inventory/intelligence`, filtros rapidos, resumenes, categorias/proveedores, acciones recomendadas, razones operativas y barras de capital.
+- `dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.ts` centraliza filas enriquecidas de inventario, cruces con `inventory/intelligence`, filtros rapidos, resumenes, categorias/proveedores, acciones recomendadas, razones operativas y barras de capital.
 - `ParamascotasPanelComponent` delega esa analitica al nuevo servicio y conserva solo estado de UI, senales, etiquetas/clases visuales y acciones de pantalla.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.spec.ts` cubre matching por IDs legacy, estados de stock/vencimiento, filtros, resumenes, categorias/proveedores y acciones sugeridas.
-- `Dashboard/tools/check-architecture.mjs` bloquea que builders o interfaces de analitica visible de inventario vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica visible de inventario debe vivir en `ParamascotasInventoryAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-inventory-analytics.service.spec.ts` cubre matching por IDs legacy, estados de stock/vencimiento, filtros, resumenes, categorias/proveedores y acciones sugeridas.
+- `dashboard/tools/check-architecture.mjs` bloquea que builders o interfaces de analitica visible de inventario vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica visible de inventario debe vivir en `ParamascotasInventoryAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de inventario (`catalog/inventory`, detalle auditado de facturas de compra y deduplicacion de resumen) con `3/3`.
@@ -5325,11 +5748,11 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo conversion de ranking, cruces con inventario, acciones recomendadas, filtros, resumenes y lideres de productos fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-ranking-analytics.service.ts` centraliza filas de ranking mensual/historico/reportes, cruce con inventario por `product_id`/`legacy_id`, decisiones operativas, acciones destacadas, filtros, resumen financiero, barras y lideres por unidades/ingreso/utilidad/margen.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva carga API, seleccion de periodo/filtros, exportacion CSV y navegacion, pero delega la analitica a `ParamascotasProductRankingAnalyticsService`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-ranking-analytics.service.spec.ts` cubre conversion de filas, cruce con inventario, acciones, filtros, resumen financiero y lideres.
-- `Dashboard/tools/check-architecture.mjs` bloquea que la analitica de ranking de productos vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que el ranking de productos debe vivir en el servicio de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-ranking-analytics.service.ts` centraliza filas de ranking mensual/historico/reportes, cruce con inventario por `product_id`/`legacy_id`, decisiones operativas, acciones destacadas, filtros, resumen financiero, barras y lideres por unidades/ingreso/utilidad/margen.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva carga API, seleccion de periodo/filtros, exportacion CSV y navegacion, pero delega la analitica a `ParamascotasProductRankingAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-ranking-analytics.service.spec.ts` cubre conversion de filas, cruce con inventario, acciones, filtros, resumen financiero y lideres.
+- `dashboard/tools/check-architecture.mjs` bloquea que la analitica de ranking de productos vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que el ranking de productos debe vivir en el servicio de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/reporting/sales-ranking loads without fatal operational errors|paramascotas sales ranking joins grouped variant inventory by internal alias"` (`2/2`).
@@ -5341,11 +5764,11 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo filas, resumenes, atencion y graficos de impuestos fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-tax-analytics.service.ts` centraliza filas auditables por producto, resumen gravado/exento/sin PVP, filas de atencion, labels/classes y charts de IVA por estado/categoria.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la configuracion fiscal visible, guardado API y apertura del producto relacionado, pero delega la analitica fiscal al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-tax-analytics.service.spec.ts` cubre clasificacion de productos, resumen, filas de atencion, labels/classes y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que `TaxProductRow`, `TaxSummary` o builders de analitica fiscal vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica fiscal de catalogo debe vivir en `ParamascotasTaxAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-tax-analytics.service.ts` centraliza filas auditables por producto, resumen gravado/exento/sin PVP, filas de atencion, labels/classes y charts de IVA por estado/categoria.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la configuracion fiscal visible, guardado API y apertura del producto relacionado, pero delega la analitica fiscal al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-tax-analytics.service.spec.ts` cubre clasificacion de productos, resumen, filas de atencion, labels/classes y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que `TaxProductRow`, `TaxSummary` o builders de analitica fiscal vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica fiscal de catalogo debe vivir en `ParamascotasTaxAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/finance/taxes loads without fatal operational errors"` (`1/1`).
@@ -5357,8 +5780,8 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales del sidebar ya respondian, pero los submenus no navegaban de forma confiable al seleccionarlos.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia los submenus normales y el flyout del sidebar replegado a `routerLink` + `queryParams`, dejando que Angular genere y procese el enlace real bajo la base publica `/dashboard/`.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` deja de cancelar el click del submenu para navegar manualmente y solo difiere el cierre visual del sidebar/flyout hasta que `routerLink` procese la navegacion.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia los submenus normales y el flyout del sidebar replegado a `routerLink` + `queryParams`, dejando que Angular genere y procese el enlace real bajo la base publica `/dashboard/`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` deja de cancelar el click del submenu para navegar manualmente y solo difiere el cierre visual del sidebar/flyout hasta que `routerLink` procese la navegacion.
 - Se conserva el comportamiento esperado de navegador para clicks modificados y enlaces con tenant.
 
 Operacion y verificacion:
@@ -5370,11 +5793,11 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo reglas de duracion, riesgo y graficos de sesiones fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-session-analytics.service.ts` centraliza presets de seguridad, resumen de riesgo, porcentajes de rango, etiquetas/clases y charts Apex de duracion/riesgo.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva aplicacion de presets, guardado API y estado de UI, pero delega la analitica al servicio de dominio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-session-analytics.service.spec.ts` cubre resumen, clasificacion de riesgo/perfil, presets, labels/classes y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas o charts de sesiones vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que sesiones/seguridad debe usar `ParamascotasSessionAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-session-analytics.service.ts` centraliza presets de seguridad, resumen de riesgo, porcentajes de rango, etiquetas/clases y charts Apex de duracion/riesgo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva aplicacion de presets, guardado API y estado de UI, pero delega la analitica al servicio de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-session-analytics.service.spec.ts` cubre resumen, clasificacion de riesgo/perfil, presets, labels/classes y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas o charts de sesiones vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que sesiones/seguridad debe usar `ParamascotasSessionAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/monitoring/security-settings loads without fatal operational errors"` (`1/1`).
@@ -5386,11 +5809,11 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo reglas operativas de ventas activas/pausadas fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.ts` centraliza resumen de estado de tienda, pedidos activos/cancelados, ventas del mes, canales impactados, advertencias y charts Apex.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la configuracion visible, guardado API y navegacion hacia pedidos/cotizaciones/POS, pero delega los calculos al servicio de dominio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.spec.ts` cubre resumen, clasificacion de pedidos, canales impactados y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas o charts de estado de tienda vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que estado de tienda debe usar `ParamascotasStoreStatusAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.ts` centraliza resumen de estado de tienda, pedidos activos/cancelados, ventas del mes, canales impactados, advertencias y charts Apex.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la configuracion visible, guardado API y navegacion hacia pedidos/cotizaciones/POS, pero delega los calculos al servicio de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-store-status-analytics.service.spec.ts` cubre resumen, clasificacion de pedidos, canales impactados y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas o charts de estado de tienda vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que estado de tienda debe usar `ParamascotasStoreStatusAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/operations/store-status loads without fatal operational errors"` (`1/1`).
@@ -5402,12 +5825,12 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo reglas de monitoreo operativo y alertas fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-alert-analytics.service.ts` centraliza la fusion de alertas desde stats, inventario y catalogo, normalizacion de severidad/fuente, filtros, resumenes, salud de inventario, labels/classes y charts Apex.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva solo filtros visibles y acciones de navegacion al modulo relacionado; delega calculos de alertas al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` exporta `paramascotasInventoryActionLabel()` para reutilizar etiquetas de acciones de inventario sin duplicarlas en alertas.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-alert-analytics.service.spec.ts` cubre construccion de alertas, filtros, resumen, salud de inventario y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas o charts de alertas vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que alertas/monitoreo operativo debe vivir en `ParamascotasAlertAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-alert-analytics.service.ts` centraliza la fusion de alertas desde stats, inventario y catalogo, normalizacion de severidad/fuente, filtros, resumenes, salud de inventario, labels/classes y charts Apex.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva solo filtros visibles y acciones de navegacion al modulo relacionado; delega calculos de alertas al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` exporta `paramascotasInventoryActionLabel()` para reutilizar etiquetas de acciones de inventario sin duplicarlas en alertas.
+- `dashboard/src/app/features/dashboard/services/paramascotas-alert-analytics.service.spec.ts` cubre construccion de alertas, filtros, resumen, salud de inventario y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas o charts de alertas vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que alertas/monitoreo operativo debe vivir en `ParamascotasAlertAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/monitoring/alerts loads without fatal operational errors"` (`1/1`).
@@ -5419,11 +5842,11 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo calculos, foco operativo y graficos de envios fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.ts` centraliza resumen visible, listas de pedidos a domicilio/retiro, labels y conteos de foco, ademas de los charts de canal y revenue de envios.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` elimina builders locales de graficos de envios y delega los computeds al servicio de dominio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.spec.ts` cubre resumen visible, listas de foco, conteos y opciones de chart.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas, listas, focos o charts de envios vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que envios debe vivir en `ParamascotasShippingAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.ts` centraliza resumen visible, listas de pedidos a domicilio/retiro, labels y conteos de foco, ademas de los charts de canal y revenue de envios.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` elimina builders locales de graficos de envios y delega los computeds al servicio de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-shipping-analytics.service.spec.ts` cubre resumen visible, listas de foco, conteos y opciones de chart.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas, listas, focos o charts de envios vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que envios debe vivir en `ParamascotasShippingAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/operations/shipments loads without fatal operational errors"` (`1/1`).
@@ -5435,7 +5858,7 @@ Operacion y verificacion:
 Objetivo: corregir que los menus principales del sidebar funcionaran, pero los submenus del menu replegado no navegaran de forma confiable al seleccionarlos.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia los enlaces de submenus normales y flyout replegado para usar `href` real calculado con base `/dashboard` y navegar por `navigateSubmenuItem()` en clicks simples.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia los enlaces de submenus normales y flyout replegado para usar `href` real calculado con base `/dashboard` y navegar por `navigateSubmenuItem()` en clicks simples.
 - Se conserva el comportamiento de navegador para clicks modificados o abrir en nueva pestana, y se mantiene el cierre del flyout/sidebar despues de iniciar la navegacion Angular.
 
 Operacion y verificacion:
@@ -5448,11 +5871,11 @@ Operacion y verificacion:
 Objetivo: continuar la arquitectura API-first/modular moviendo reglas de facturacion, RIDE y ambiente SRI fuera de `ParamascotasPanelComponent`, sin ejecutar pruebas contra SRI produccion.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.ts` centraliza filtros de facturas, resumenes, periodos, ambiente SRI (`pruebas/produccion/sin ambiente/otro`), estado PDF/correo, bloqueo de reemision en QA, labels/classes y charts Apex.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la carga API, seleccion visible, apertura de PDF y accion de anular/reemitir, pero delega calculos y reglas de ambiente al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.spec.ts` cubre resumenes, filtros, estado de correo, periodos, charts y bloqueo de reemision marcada como produccion cuando el dashboard corre en QA/development.
-- `Dashboard/tools/check-architecture.mjs` bloquea que reglas/charts de facturacion SRI vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que facturacion/SRI debe usar `ParamascotasBillingAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.ts` centraliza filtros de facturas, resumenes, periodos, ambiente SRI (`pruebas/produccion/sin ambiente/otro`), estado PDF/correo, bloqueo de reemision en QA, labels/classes y charts Apex.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la carga API, seleccion visible, apertura de PDF y accion de anular/reemitir, pero delega calculos y reglas de ambiente al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-billing-analytics.service.spec.ts` cubre resumenes, filtros, estado de correo, periodos, charts y bloqueo de reemision marcada como produccion cuando el dashboard corre en QA/development.
+- `dashboard/tools/check-architecture.mjs` bloquea que reglas/charts de facturacion SRI vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que facturacion/SRI debe usar `ParamascotasBillingAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/operations/billing-rides loads without fatal operational errors|paramascotas billing rides"` (`4/4`).
@@ -5465,11 +5888,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular retirando de `ParamascotasBackendComponent` calculos de tendencia, inventario, ranking y drilldowns que pertenecen a un servicio del dominio del resumen.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-backend-analytics.service.ts` centraliza charts de tendencia/inventario/ranking, lideres de productos por unidades/ingreso/utilidad/margen, etiquetas y clases de estado/inventario, preview de catalogo y filtros de drilldown.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.ts` queda como orquestador de estado, refresh y acciones de UI; delega analitica al nuevo servicio y sigue usando `ParamascotasOrderAnalyticsService` para el chart agregado de estados de pedidos.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-backend-analytics.service.spec.ts` cubre lideres, drilldowns, etiquetas/clases y opciones de charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que builders y tipos de analitica del resumen Paramascotas vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que tendencias, inventario agregado, ranking/lideres y drilldowns del resumen pertenecen a `ParamascotasBackendAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-backend-analytics.service.ts` centraliza charts de tendencia/inventario/ranking, lideres de productos por unidades/ingreso/utilidad/margen, etiquetas y clases de estado/inventario, preview de catalogo y filtros de drilldown.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.ts` queda como orquestador de estado, refresh y acciones de UI; delega analitica al nuevo servicio y sigue usando `ParamascotasOrderAnalyticsService` para el chart agregado de estados de pedidos.
+- `dashboard/src/app/features/dashboard/services/paramascotas-backend-analytics.service.spec.ts` cubre lideres, drilldowns, etiquetas/clases y opciones de charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que builders y tipos de analitica del resumen Paramascotas vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que tendencias, inventario agregado, ranking/lideres y drilldowns del resumen pertenecen a `ParamascotasBackendAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-backend loads without fatal operational errors"` (`1/1`) y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-backend-layout.spec.ts` (`3/3`).
@@ -5481,12 +5904,12 @@ Operacion y verificacion:
 Objetivo: seguir limpiando `ParamascotasPanelComponent` para que pedidos no mezcle UI con filtros, totales, breakdowns y graficos de dominio.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.ts` centraliza filtros combinados de pedidos por rango/busqueda/canal/pago, filtro por estado, conteos, totales, ticket promedio, tarjetas resumen, filas de estado, desgloses, previews prioritarios y charts Apex.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva senales, paginacion y callbacks de etiquetas, pero delega analitica de pedidos al nuevo servicio.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.ts` tambien delega el chart agregado de estados de pedidos al mismo servicio para evitar duplicar labels/colores.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.spec.ts` cubre filtros, aliases de estado, totales, resumenes, desgloses, ordenamiento operativo y opciones de charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que builders/estructuras de analitica de pedidos vuelvan a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica operativa de pedidos pertenece a `ParamascotasOrderAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.ts` centraliza filtros combinados de pedidos por rango/busqueda/canal/pago, filtro por estado, conteos, totales, ticket promedio, tarjetas resumen, filas de estado, desgloses, previews prioritarios y charts Apex.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva senales, paginacion y callbacks de etiquetas, pero delega analitica de pedidos al nuevo servicio.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.ts` tambien delega el chart agregado de estados de pedidos al mismo servicio para evitar duplicar labels/colores.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-analytics.service.spec.ts` cubre filtros, aliases de estado, totales, resumenes, desgloses, ordenamiento operativo y opciones de charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que builders/estructuras de analitica de pedidos vuelvan a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica operativa de pedidos pertenece a `ParamascotasOrderAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /(paramascotas-backend|paramascotas-panel/operations/admin-orders) loads without fatal operational errors"` (`2/2`) y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-backend-layout.spec.ts` (`3/3`).
@@ -5498,11 +5921,11 @@ Operacion y verificacion:
 Objetivo: continuar la separacion API-first/modular moviendo reglas de usuarios fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-user-analytics.service.ts` centraliza filtros por rol/estado, busqueda operativa, resumen de usuarios, filas de roles/seguridad/revenue, tarjetas destacadas, iniciales, bloqueo, verificacion, direccion, telefono, busqueda de pedidos y graficos Apex.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` mantiene filtros, paginacion y acciones visibles, pero delega calculos de usuarios al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-user-analytics.service.spec.ts` cubre filtros, resumenes, bloqueo por seguridad, revenue, direccion, busqueda y charts.
-- `Dashboard/tools/check-architecture.mjs` bloquea que la analitica de usuarios vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que segmentacion, seguridad y revenue de usuarios pertenecen a `ParamascotasUserAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-user-analytics.service.ts` centraliza filtros por rol/estado, busqueda operativa, resumen de usuarios, filas de roles/seguridad/revenue, tarjetas destacadas, iniciales, bloqueo, verificacion, direccion, telefono, busqueda de pedidos y graficos Apex.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` mantiene filtros, paginacion y acciones visibles, pero delega calculos de usuarios al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-user-analytics.service.spec.ts` cubre filtros, resumenes, bloqueo por seguridad, revenue, direccion, busqueda y charts.
+- `dashboard/tools/check-architecture.mjs` bloquea que la analitica de usuarios vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que segmentacion, seguridad y revenue de usuarios pertenecen a `ParamascotasUserAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/(catalog/users|finance/discount-codes)"` (`2/2`).
@@ -5514,11 +5937,11 @@ Operacion y verificacion:
 Objetivo: seguir moviendo reglas de negocio fuera de `ParamascotasPanelComponent` y dejar la pantalla de cupones alineada con la arquitectura API-first/modular.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-discount-analytics.service.ts` centraliza estados operativos de cupones (`activo`, `inactivo`, `agotado`, `programado`, `vencido`), resumenes, filas de estado, filtros, filas de atencion, clases derivadas y graficos Apex.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva senales de UI y acciones, pero delega analitica de cupones al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-discount-analytics.service.spec.ts` cubre estados, resumenes, filtros, atencion y opciones de graficos.
-- `Dashboard/tools/check-architecture.mjs` bloquea que esa analitica vuelva a componentes visuales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica operativa de cupones pertenece a `ParamascotasDiscountAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-discount-analytics.service.ts` centraliza estados operativos de cupones (`activo`, `inactivo`, `agotado`, `programado`, `vencido`), resumenes, filas de estado, filtros, filas de atencion, clases derivadas y graficos Apex.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva senales de UI y acciones, pero delega analitica de cupones al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-discount-analytics.service.spec.ts` cubre estados, resumenes, filtros, atencion y opciones de graficos.
+- `dashboard/tools/check-architecture.mjs` bloquea que esa analitica vuelva a componentes visuales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que la analitica operativa de cupones pertenece a `ParamascotasDiscountAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/finance/discount-codes"` (`1/1`).
@@ -5530,8 +5953,8 @@ Operacion y verificacion:
 Objetivo: corregir la navegacion de submenus del dashboard, especialmente en menu replegado y en grupos no cubiertos por las pruebas previas.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` reemplaza la navegacion manual de submenus por `routerLink` + `queryParams`, dejando el cierre del menu/flyout como efecto visual y sin cancelar el click del enlace.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` amplia la cobertura de submenus para desktop y menu replegado, incluyendo `Precios y finanzas` y `Monitoreo`, ademas de Reportes/Catalogo/Operacion.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` reemplaza la navegacion manual de submenus por `routerLink` + `queryParams`, dejando el cierre del menu/flyout como efecto visual y sin cancelar el click del enlace.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` amplia la cobertura de submenus para desktop y menu replegado, incluyendo `Precios y finanzas` y `Monitoreo`, ademas de Reportes/Catalogo/Operacion.
 - Se redeplego solo el contenedor `dashboard` con `npm run docker:up`; el gateway QA local sirve el bundle `main-HD6RIDUX.js`.
 
 Operacion y verificacion:
@@ -5543,11 +5966,11 @@ Operacion y verificacion:
 Objetivo: seguir desacoplando `ParamascotasPanelComponent` y mover reglas de negocio de `Productos x Compra` a un servicio de dominio de catalogo/inventario.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.ts` centraliza filas de productos vs compras, cruces con ventas del reporte, filtros `con/sin`, riesgos de compra, resumen, pedidos relacionados, lotes, totales de facturas de compra y graficos de ventas/unidades.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la seleccion de filtros, carga de detalle por API y callbacks visuales de imagen, pero delega los calculos al servicio.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.spec.ts` cubre construccion de filas, filtros de riesgo, resumen, pedidos relacionados, orden de lotes y totales/mismatch de factura.
-- `Dashboard/tools/check-architecture.mjs` bloquea que la analitica de `Productos x Compra` vuelva a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que esa analitica pertenece a `ParamascotasProductPurchaseAnalyticsService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.ts` centraliza filas de productos vs compras, cruces con ventas del reporte, filtros `con/sin`, riesgos de compra, resumen, pedidos relacionados, lotes, totales de facturas de compra y graficos de ventas/unidades.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` conserva la seleccion de filtros, carga de detalle por API y callbacks visuales de imagen, pero delega los calculos al servicio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-purchase-analytics.service.spec.ts` cubre construccion de filas, filtros de riesgo, resumen, pedidos relacionados, orden de lotes y totales/mismatch de factura.
+- `dashboard/tools/check-architecture.mjs` bloquea que la analitica de `Productos x Compra` vuelva a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que esa analitica pertenece a `ParamascotasProductPurchaseAnalyticsService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `git diff --check` focal, `npm run docker:up`, `npm run docker:health` y Playwright `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/reporting/products-purchases"` (`1/1`).
@@ -5560,11 +5983,11 @@ Operacion y verificacion:
 Objetivo: avanzar la arquitectura API-first/modular sacando reglas de formulario, payload, imagenes y SEO de producto desde `ParamascotasPanelComponent` hacia un servicio de dominio.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` centraliza defaults de formulario, conversion API -> formulario, validacion antes de guardar, sanitizacion del payload, normalizacion de imagenes, tamanos esperados, alt text, SEO y validacion de archivos.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume helpers del servicio para crear/editar/duplicar/guardar productos y para preparar imagenes, sin declarar esas reglas localmente.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` cubre defaults, conversion desde producto API, rechazo de SKU duplicado, sanitizacion de variantes/imagenes/SEO/factura de compra y validacion de colecciones/archivos de imagen.
-- `Dashboard/tools/check-architecture.mjs` bloquea que factories, validadores, normalizadores de imagen, SEO o payload de producto vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que formularios/payloads de producto pertenecen a `ParamascotasProductFormService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.ts` centraliza defaults de formulario, conversion API -> formulario, validacion antes de guardar, sanitizacion del payload, normalizacion de imagenes, tamanos esperados, alt text, SEO y validacion de archivos.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume helpers del servicio para crear/editar/duplicar/guardar productos y para preparar imagenes, sin declarar esas reglas localmente.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-form.service.spec.ts` cubre defaults, conversion desde producto API, rechazo de SKU duplicado, sanitizacion de variantes/imagenes/SEO/factura de compra y validacion de colecciones/archivos de imagen.
+- `dashboard/tools/check-architecture.mjs` bloquea que factories, validadores, normalizadores de imagen, SEO o payload de producto vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que formularios/payloads de producto pertenecen a `ParamascotasProductFormService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:health`, `git diff --check` focal y Playwright `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/catalog/products"` (`1/1`).
@@ -5577,8 +6000,8 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales del sidebar funcionaban, pero los submenus no respondian de forma confiable en el navegador del usuario.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` deja los submenus normales y del flyout replegado con `href` publico calculado por `routeHref(...)`, manteniendo URLs reales bajo `/dashboard/`.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` agrega `navigateSubmenuItem(...)`, que en click normal ejecuta `router.navigateByUrl(...)` y cierra sidebar/flyout, pero conserva Ctrl/Cmd/Shift/Alt-click como enlace normal del navegador.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` deja los submenus normales y del flyout replegado con `href` publico calculado por `routeHref(...)`, manteniendo URLs reales bajo `/dashboard/`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` agrega `navigateSubmenuItem(...)`, que en click normal ejecuta `router.navigateByUrl(...)` y cierra sidebar/flyout, pero conserva Ctrl/Cmd/Shift/Alt-click como enlace normal del navegador.
 - Los items principales del menu siguen con `RouterLink`; el cambio queda acotado a hijos de submenu para no alterar lo que ya funcionaba.
 
 Decision:
@@ -5595,11 +6018,11 @@ Operacion y verificacion:
 Objetivo: avanzar la arquitectura API-first/modular sacando de `ParamascotasPanelComponent` reglas de negocio del catalogo, especialmente variantes y productos agrupados.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.ts` centraliza normalizacion de tipo/categoria, medidas, ejes de variante, nombre base, `variantGroupKey`, resumen de agrupacion, duplicacion de variantes y validacion de valores repetidos.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar esas reglas y consume helpers del servicio para mostrar resumen de variante, duplicar productos, validar y sanitizar atributos antes de guardar.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` cubre normalizacion legacy, metadata de productos agrupados, accesorios por color/talla, renombrado de duplicados y rechazo de variante repetida.
-- `Dashboard/tools/check-architecture.mjs` bloquea que las reglas de variantes agrupadas vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que variantes agrupadas pertenecen a `ParamascotasProductVariantService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.ts` centraliza normalizacion de tipo/categoria, medidas, ejes de variante, nombre base, `variantGroupKey`, resumen de agrupacion, duplicacion de variantes y validacion de valores repetidos.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar esas reglas y consume helpers del servicio para mostrar resumen de variante, duplicar productos, validar y sanitizar atributos antes de guardar.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-variant.service.spec.ts` cubre normalizacion legacy, metadata de productos agrupados, accesorios por color/talla, renombrado de duplicados y rechazo de variante repetida.
+- `dashboard/tools/check-architecture.mjs` bloquea que las reglas de variantes agrupadas vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que variantes agrupadas pertenecen a `ParamascotasProductVariantService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` focal y Playwright `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/catalog/products"` (`1/1`).
@@ -5612,8 +6035,8 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales del sidebar funcionaban, pero los submenus no navegaban de forma confiable en el dashboard publicado bajo `/dashboard/`.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` deja los submenus normales y los submenus del flyout replegado como enlaces Angular reales con `[routerLink]` y `[queryParams]`, igual que los items principales.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` elimina la navegacion manual de submenus (`navigateFromLink`, `navigateToItem` y fallback `location.assign`) para no bloquear el click normal ni pelear con el base path publico.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` deja los submenus normales y los submenus del flyout replegado como enlaces Angular reales con `[routerLink]` y `[queryParams]`, igual que los items principales.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` elimina la navegacion manual de submenus (`navigateFromLink`, `navigateToItem` y fallback `location.assign`) para no bloquear el click normal ni pelear con el base path publico.
 - Los links siguen cerrando el sidebar/flyout despues de un click normal mediante `closeNavigationAfterLinkClick`, pero clicks modificados (`Ctrl`, `Meta`, `Shift`, etc.) quedan como enlaces normales del navegador.
 
 Decision:
@@ -5629,11 +6052,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo logica de negocio en `ParamascotasPanelComponent`, moviendo reglas de estado, filtros y prioridad de pedidos a un servicio de dominio.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-state.service.ts` centraliza tipos y opciones de filtros de pedidos, normalizacion de status, metadata visual, matching por estado, conteos, prioridad operativa y filtros por dia/semana/mes en hora Ecuador.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar `normalizeOrderStatus`, `orderStatusMeta`, `orderPriorityScore` e `isOrderInDateRange`; ahora usa el servicio para pedidos, ventas locales, envios y resumen operativo.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-order-state.service.spec.ts` cubre aliases de status, conteos, prioridad y rangos de fecha.
-- `Dashboard/tools/check-architecture.mjs` bloquea que las reglas de estado/fecha de pedidos vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta la regla de dominio para pedidos.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-state.service.ts` centraliza tipos y opciones de filtros de pedidos, normalizacion de status, metadata visual, matching por estado, conteos, prioridad operativa y filtros por dia/semana/mes en hora Ecuador.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar `normalizeOrderStatus`, `orderStatusMeta`, `orderPriorityScore` e `isOrderInDateRange`; ahora usa el servicio para pedidos, ventas locales, envios y resumen operativo.
+- `dashboard/src/app/features/dashboard/services/paramascotas-order-state.service.spec.ts` cubre aliases de status, conteos, prioridad y rangos de fecha.
+- `dashboard/tools/check-architecture.mjs` bloquea que las reglas de estado/fecha de pedidos vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta la regla de dominio para pedidos.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` focal y Playwright `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/operations/admin-orders"` (`1/1`).
@@ -5646,11 +6069,11 @@ Operacion y verificacion:
 Objetivo: seguir desacoplando `ParamascotasPanelComponent` y mover reglas de negocio de producto hacia servicios de dominio, alineado con la arquitectura API-first/modular.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` centraliza facturas de compra, matching de proveedor, normalizacion de factura, delta de stock, accion de inventario, requisito de factura y validacion de stock inicial/reabastecimiento/ajuste.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar esas funciones localmente y consume helpers del servicio para crear formularios, registrar compras, duplicar variantes, actualizar factura de compra y validar antes de `createProduct/updateProduct`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.spec.ts` cubre normalizacion de proveedor/factura, metadata de compra desde producto, delta de stock, stock inicial, reabastecimiento y ajuste justificado.
-- `Dashboard/tools/check-architecture.mjs` bloquea que factories/validadores de factura de compra e inventario de producto vuelvan a componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que inventario de producto, facturas de compra y validaciones de reabastecimiento pertenecen a servicios de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.ts` centraliza facturas de compra, matching de proveedor, normalizacion de factura, delta de stock, accion de inventario, requisito de factura y validacion de stock inicial/reabastecimiento/ajuste.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de declarar esas funciones localmente y consume helpers del servicio para crear formularios, registrar compras, duplicar variantes, actualizar factura de compra y validar antes de `createProduct/updateProduct`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-inventory.service.spec.ts` cubre normalizacion de proveedor/factura, metadata de compra desde producto, delta de stock, stock inicial, reabastecimiento y ajuste justificado.
+- `dashboard/tools/check-architecture.mjs` bloquea que factories/validadores de factura de compra e inventario de producto vuelvan a componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que inventario de producto, facturas de compra y validaciones de reabastecimiento pertenecen a servicios de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `git diff --check` focal y Playwright `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-panel/catalog/products"` (`1/1`).
@@ -5663,9 +6086,9 @@ Operacion y verificacion:
 Objetivo: corregir el caso reportado donde los menus principales del sidebar funcionaban, pero los submenus no ejecutaban la navegacion de forma confiable en el dashboard publicado bajo `/dashboard/`.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia los enlaces de submenu normal y del flyout replegado a `href` publico calculado con `routeHref(...)`, conservando URLs correctas bajo `/dashboard/`.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` agrega `navigateFromLink(...)`, que en click normal usa la navegacion controlada existente (`router.navigateByUrl` + fallback `location.assign`) y en clicks modificados (`Ctrl`, `Meta`, `Shift`, etc.) deja actuar al navegador como link normal.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` cubre que los submenus con click modificado no sean secuestrados por Angular.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia los enlaces de submenu normal y del flyout replegado a `href` publico calculado con `routeHref(...)`, conservando URLs correctas bajo `/dashboard/`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` agrega `navigateFromLink(...)`, que en click normal usa la navegacion controlada existente (`router.navigateByUrl` + fallback `location.assign`) y en clicks modificados (`Ctrl`, `Meta`, `Shift`, etc.) deja actuar al navegador como link normal.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` cubre que los submenus con click modificado no sean secuestrados por Angular.
 
 Decision:
 - Esta estrategia reemplaza el intento previo de depender solo de `routerLink` nativo en submenus. El submenu queda con `href` real para fallback/abrir en nueva pestana y con navegacion explicita para el click operativo normal.
@@ -5681,11 +6104,11 @@ Operacion y verificacion:
 Objetivo: sacar de `ParamascotasPanelComponent` defaults, normalizacion y payloads de estado de tienda, impuestos y sesiones para mantener settings como dominio/API.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.ts` centraliza defaults y normalizacion de `storeStatus`, `taxSettings` y `sessionSettings`, ademas de payloads `settings/store-status`, `settings/tax` y `settings/session`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.spec.ts` cubre mensaje default de pausa, clamps de credito tributario, min/max de sesiones y payloads operativos.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume los helpers del servicio y deja de construir payloads inline para guardar estado de tienda, impuestos y sesiones.
-- `Dashboard/tools/check-architecture.mjs` bloquea que defaults/normalizadores/payloads de settings vuelvan a declararse dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que ajustes operativos deben normalizarse en servicios como `ParamascotasSettingsPayloadService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.ts` centraliza defaults y normalizacion de `storeStatus`, `taxSettings` y `sessionSettings`, ademas de payloads `settings/store-status`, `settings/tax` y `settings/session`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-settings-payload.service.spec.ts` cubre mensaje default de pausa, clamps de credito tributario, min/max de sesiones y payloads operativos.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume los helpers del servicio y deja de construir payloads inline para guardar estado de tienda, impuestos y sesiones.
+- `dashboard/tools/check-architecture.mjs` bloquea que defaults/normalizadores/payloads de settings vuelvan a declararse dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que ajustes operativos deben normalizarse en servicios como `ParamascotasSettingsPayloadService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -5697,11 +6120,11 @@ Operacion y verificacion:
 Objetivo: sacar de `ParamascotasPanelComponent` la validacion y payload de usuarios para mantener usuarios como dominio/API y no como logica de pantalla.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-user-payload.service.ts` centraliza fabrica de formulario, normalizacion de rol, coercion de booleanos, telefono desde perfil, conversion API -> formulario y payload `create/update user`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-user-payload.service.spec.ts` cubre formulario vacio, roles `service/admin/customer`, contacto desde `profile`, payload create/update y validaciones de nombre, email, password y documento.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega crear/editar/guardar usuario al servicio y consume helpers de usuario desde el dominio.
-- `Dashboard/tools/check-architecture.mjs` bloquea que helpers/payloads de usuario vuelvan a declararse dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que formularios, validacion y payloads de usuario pertenecen a `ParamascotasUserPayloadService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-user-payload.service.ts` centraliza fabrica de formulario, normalizacion de rol, coercion de booleanos, telefono desde perfil, conversion API -> formulario y payload `create/update user`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-user-payload.service.spec.ts` cubre formulario vacio, roles `service/admin/customer`, contacto desde `profile`, payload create/update y validaciones de nombre, email, password y documento.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega crear/editar/guardar usuario al servicio y consume helpers de usuario desde el dominio.
+- `dashboard/tools/check-architecture.mjs` bloquea que helpers/payloads de usuario vuelvan a declararse dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que formularios, validacion y payloads de usuario pertenecen a `ParamascotasUserPayloadService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5715,11 +6138,11 @@ Operacion y verificacion:
 Objetivo: sacar de `ParamascotasPanelComponent` el armado de formularios y payloads de gastos/recurrencias para que la UI no conserve contratos de backend financieros.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.ts` ahora centraliza, ademas de parseo y calculo monetario, las fabricas de formularios de gasto/recurrencia, conversion de recurrencia API -> formulario y payloads de `admin/expenses` y `admin/expense-recurrences`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.spec.ts` agrega cobertura de defaults con fecha Ecuador, payload de gasto, payload de recurrencia y conversion de recurrencia existente a formulario.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega creacion/reset de formularios, edicion de recurrencias y payloads financieros al servicio.
-- `Dashboard/tools/check-architecture.mjs` bloquea que `createDefaultExpenseForm`, `createDefaultRecurrenceForm`, `recurrenceToForm`, `expensePayload` y `recurrencePayload` vuelvan como funciones locales en componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que formularios/payloads de gastos y recurrencias pertenecen al servicio de dominio financiero.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.ts` ahora centraliza, ademas de parseo y calculo monetario, las fabricas de formularios de gasto/recurrencia, conversion de recurrencia API -> formulario y payloads de `admin/expenses` y `admin/expense-recurrences`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.spec.ts` agrega cobertura de defaults con fecha Ecuador, payload de gasto, payload de recurrencia y conversion de recurrencia existente a formulario.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega creacion/reset de formularios, edicion de recurrencias y payloads financieros al servicio.
+- `dashboard/tools/check-architecture.mjs` bloquea que `createDefaultExpenseForm`, `createDefaultRecurrenceForm`, `recurrenceToForm`, `expensePayload` y `recurrencePayload` vuelvan como funciones locales en componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que formularios/payloads de gastos y recurrencias pertenecen al servicio de dominio financiero.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5733,11 +6156,11 @@ Operacion y verificacion:
 Objetivo: sacar de `ParamascotasPanelComponent` el armado de payload y calculos de venta historica para mantener el flujo API-first con UI separada del contrato backend.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-historical-sale.service.ts` centraliza fabrica de formulario/linea, calculo de gross/net/IVA/costo/utilidad y payload `admin/historical-sales`.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-historical-sale.service.spec.ts` cubre fecha Ecuador, calculos con IVA/exentos, normalizacion monetaria, textos opcionales y preservacion de identidad interna de producto agrupado.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega totales, alta de lineas, reset y payload historico al servicio, preservando que `product_id` sea la identidad seleccionada (`internalId`) para variantes agrupadas.
-- `Dashboard/tools/check-architecture.mjs` bloquea que fabricas/payloads de venta historica vuelvan a declararse dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que ventas historicas y sus calculos previos deben vivir en servicios de dominio como `ParamascotasHistoricalSaleService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-historical-sale.service.ts` centraliza fabrica de formulario/linea, calculo de gross/net/IVA/costo/utilidad y payload `admin/historical-sales`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-historical-sale.service.spec.ts` cubre fecha Ecuador, calculos con IVA/exentos, normalizacion monetaria, textos opcionales y preservacion de identidad interna de producto agrupado.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` delega totales, alta de lineas, reset y payload historico al servicio, preservando que `product_id` sea la identidad seleccionada (`internalId`) para variantes agrupadas.
+- `dashboard/tools/check-architecture.mjs` bloquea que fabricas/payloads de venta historica vuelvan a declararse dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que ventas historicas y sus calculos previos deben vivir en servicios de dominio como `ParamascotasHistoricalSaleService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5751,11 +6174,11 @@ Operacion y verificacion:
 Objetivo: sacar de `ParamascotasPanelComponent` las reglas de margen, sugerencia de PVP y riesgo de rentabilidad para avanzar la separacion API-first entre UI y dominio.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pricing-engine.service.ts` centraliza normalizacion de margenes/calculos/reglas, opciones de riesgo, filas de pricing por producto, resumen, filtros, simulacion de PVP y graficos derivados de pricing.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-pricing-engine.service.spec.ts` cubre defaults de configuracion, ordenamiento de margenes, riesgo por costo faltante/margen negativo, filtros y simulacion de precio.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume el motor de pricing y deja de declarar `buildPricingProductRows`, `pricingSuggestionForCost`, `buildPricingSummary`, `filterPricingRows`, `PRICING_RISK_OPTIONS` y graficos de pricing como helpers locales.
-- `Dashboard/tools/check-architecture.mjs` bloquea que el motor de precios/margenes vuelva a declararse dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que reglas de rentabilidad y pricing deben vivir en servicios de dominio como `ParamascotasPricingEngineService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pricing-engine.service.ts` centraliza normalizacion de margenes/calculos/reglas, opciones de riesgo, filas de pricing por producto, resumen, filtros, simulacion de PVP y graficos derivados de pricing.
+- `dashboard/src/app/features/dashboard/services/paramascotas-pricing-engine.service.spec.ts` cubre defaults de configuracion, ordenamiento de margenes, riesgo por costo faltante/margen negativo, filtros y simulacion de precio.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume el motor de pricing y deja de declarar `buildPricingProductRows`, `pricingSuggestionForCost`, `buildPricingSummary`, `filterPricingRows`, `PRICING_RISK_OPTIONS` y graficos de pricing como helpers locales.
+- `dashboard/tools/check-architecture.mjs` bloquea que el motor de precios/margenes vuelva a declararse dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que reglas de rentabilidad y pricing deben vivir en servicios de dominio como `ParamascotasPricingEngineService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5769,11 +6192,11 @@ Operacion y verificacion:
 Objetivo: sacar de `ParamascotasPanelComponent` las reglas de IVA/PVP de producto para avanzar la separacion API-first entre UI y dominio.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-tax.service.ts` centraliza tasa efectiva de IVA, alias de exento, conversion PVP bruto/neto, precio anterior neto/bruto y redondeo monetario de producto.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-tax.service.spec.ts` cubre `tax.rate`, `tax.multiplier`, atributos legacy `purchase_tax_rate`, alias `tax_exempt/taxExempt`, precio neto y PVP de formulario.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas funciones desde el servicio y deja de declarar helpers locales `productTaxRate`, `productNetPrice`, `productFormGrossPrice`, `isTaxExemptProduct` y equivalentes.
-- `Dashboard/tools/check-architecture.mjs` bloquea que helpers fiscales de producto vuelvan a declararse dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que reglas de IVA/PVP de producto deben vivir en servicios de dominio como `ParamascotasProductTaxService`.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-tax.service.ts` centraliza tasa efectiva de IVA, alias de exento, conversion PVP bruto/neto, precio anterior neto/bruto y redondeo monetario de producto.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-tax.service.spec.ts` cubre `tax.rate`, `tax.multiplier`, atributos legacy `purchase_tax_rate`, alias `tax_exempt/taxExempt`, precio neto y PVP de formulario.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` consume esas funciones desde el servicio y deja de declarar helpers locales `productTaxRate`, `productNetPrice`, `productFormGrossPrice`, `isTaxExemptProduct` y equivalentes.
+- `dashboard/tools/check-architecture.mjs` bloquea que helpers fiscales de producto vuelvan a declararse dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que reglas de IVA/PVP de producto deben vivir en servicios de dominio como `ParamascotasProductTaxService`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5786,8 +6209,8 @@ Operacion y verificacion:
 Objetivo: corregir el reporte donde los menus principales del sidebar funcionaban, pero los submenus podian no navegar de forma consistente.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` importa `RouterLink`, expone `tenantQueryParams()` y agrega `closeNavigationAfterLinkClick()` para cerrar flyout/sidebar sin cancelar el click.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia enlaces reales de menu simple, submenu normal y flyout replegado a `[routerLink]` + `[queryParams]`, dejando que Angular genere el `href` publico bajo `/dashboard`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` importa `RouterLink`, expone `tenantQueryParams()` y agrega `closeNavigationAfterLinkClick()` para cerrar flyout/sidebar sin cancelar el click.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` cambia enlaces reales de menu simple, submenu normal y flyout replegado a `[routerLink]` + `[queryParams]`, dejando que Angular genere el `href` publico bajo `/dashboard`.
 - Se mantiene `routeHref()` para fallback/logo, pero los submenus ya no dependen de `navigateToItem()` ni de `preventDefault()` para operar.
 
 Operacion y verificacion:
@@ -5803,11 +6226,11 @@ Operacion y verificacion:
 Objetivo: sacar del componente la normalizacion y validacion de cupones/descuentos, dejando el contrato comercial como servicio de dominio.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-discount-payload.service.ts` centraliza normalizacion de codigo, validacion de tipo/valor, porcentaje maximo, vigencia, campos opcionales y payload backend de descuentos.
+- `dashboard/src/app/features/dashboard/services/paramascotas-discount-payload.service.ts` centraliza normalizacion de codigo, validacion de tipo/valor, porcentaje maximo, vigencia, campos opcionales y payload backend de descuentos.
 - `ParamascotasPanelComponent` usa `ParamascotasDiscountPayloadService` en `saveDiscount()` y deja de declarar helpers `discountFormToPayload`, `normalizeDiscountCode`, parseos numericos y validacion de fechas.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-discount-payload.service.spec.ts` cubre normalizacion, campos opcionales, redondeo de usos, porcentaje invalido y rango de fechas invalido.
-- `Dashboard/tools/check-architecture.mjs` bloquea reglas/payload de descuentos dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que contratos comerciales como cupones deben vivir en servicios/adapters.
+- `dashboard/src/app/features/dashboard/services/paramascotas-discount-payload.service.spec.ts` cubre normalizacion, campos opcionales, redondeo de usos, porcentaje invalido y rango de fechas invalido.
+- `dashboard/tools/check-architecture.mjs` bloquea reglas/payload de descuentos dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que contratos comerciales como cupones deben vivir en servicios/adapters.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5819,11 +6242,11 @@ Operacion y verificacion:
 Objetivo: seguir separando UI y negocio financiero, moviendo el parseo y reconciliacion de montos de gastos fuera de `ParamascotasPanelComponent`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.ts` centraliza subtotal/IVA/total de gastos, parseo de moneda con coma/punto, heuristica vigente de IVA como tasa o monto, redondeo, enteros de recurrencia y validacion de fechas financieras.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.ts` centraliza subtotal/IVA/total de gastos, parseo de moneda con coma/punto, heuristica vigente de IVA como tasa o monto, redondeo, enteros de recurrencia y validacion de fechas financieras.
 - `ParamascotasPanelComponent` usa `resolveParamascotasExpenseMoney`, `parseParamascotasExpenseInteger` y `validateParamascotasExpenseDate` para payloads de gastos y recurrencias, sin mantener calculos locales duplicados.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.spec.ts` cubre moneda estilo Ecuador, IVA como tasa segun la heuristica actual, subtotal+total, negativos, fechas invalidas e intervalos.
-- `Dashboard/tools/check-architecture.mjs` bloquea calculos de gastos/IVA dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que calculos financieros de formularios deben vivir en servicios de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-expense-money.service.spec.ts` cubre moneda estilo Ecuador, IVA como tasa segun la heuristica actual, subtotal+total, negativos, fechas invalidas e intervalos.
+- `dashboard/tools/check-architecture.mjs` bloquea calculos de gastos/IVA dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que calculos financieros de formularios deben vivir en servicios de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5835,12 +6258,12 @@ Operacion y verificacion:
 Objetivo: sacar del componente monolitico una regla fiscal sensible de Ecuador, evitando que el limite de consumidor final y el documento oficial queden quemados en UI.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-final-consumer-policy.service.ts` centraliza identificacion de consumidor final (`9999999999999` y aliases), limite oficial de USD 50.00, redondeo de centavos y mensaje visible.
+- `dashboard/src/app/features/dashboard/services/paramascotas-final-consumer-policy.service.ts` centraliza identificacion de consumidor final (`9999999999999` y aliases), limite oficial de USD 50.00, redondeo de centavos y mensaje visible.
 - `ParamascotasPanelComponent` usa `ParamascotasFinalConsumerPolicyService` para venta local y conversion de cotizaciones, y usa el helper exportado para trazabilidad/resumen de calidad.
 - `ParamascotasLocalSalePayloadService` reutiliza `PARAMASCOTAS_FINAL_CONSUMER_IDENTIFICATION` en lugar de repetir el documento oficial.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-final-consumer-policy.service.spec.ts` cubre aliases, limite con centavos y mensaje visible.
-- `Dashboard/tools/check-architecture.mjs` bloquea constantes/documento/mensaje de consumidor final dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que reglas fiscales y POS deben vivir en servicios de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-final-consumer-policy.service.spec.ts` cubre aliases, limite con centavos y mensaje visible.
+- `dashboard/tools/check-architecture.mjs` bloquea constantes/documento/mensaje de consumidor final dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que reglas fiscales y POS deben vivir en servicios de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5852,12 +6275,12 @@ Operacion y verificacion:
 Objetivo: seguir cerrando acoplamientos de UI moviendo URLs `mailto:` y textos de contacto a servicios reutilizables, con guardrails aplicables a componentes y templates.
 
 Cambios:
-- `Dashboard/src/app/core/services/email-link.service.ts` centraliza validacion de email y construccion segura de links `mailto:` con asunto/cuerpo opcionales.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-email-message.service.ts` encapsula los mensajes de correo Paramascotas para seguimiento de usuarios y pedidos, delegando la URL base al servicio core.
+- `dashboard/src/app/core/services/email-link.service.ts` centraliza validacion de email y construccion segura de links `mailto:` con asunto/cuerpo opcionales.
+- `dashboard/src/app/features/dashboard/services/paramascotas-email-message.service.ts` encapsula los mensajes de correo Paramascotas para seguimiento de usuarios y pedidos, delegando la URL base al servicio core.
 - `ParamascotasPanelComponent` deja de armar asuntos, cuerpos y URLs `mailto:`; solo solicita la URL del servicio y abre la accion.
-- `Dashboard/src/app/features/users/pages/users-grid/users-grid.component.{ts,html}` deja de concatenar `mailto:` en TS/template y usa `EmailLinkService`.
-- `Dashboard/tools/check-architecture.mjs` bloquea construccion de emails en componentes y templates.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que mensajes de canales externos deben vivir en servicios/adapters de dominio.
+- `dashboard/src/app/features/users/pages/users-grid/users-grid.component.{ts,html}` deja de concatenar `mailto:` en TS/template y usa `EmailLinkService`.
+- `dashboard/tools/check-architecture.mjs` bloquea construccion de emails en componentes y templates.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que mensajes de canales externos deben vivir en servicios/adapters de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5870,12 +6293,12 @@ Operacion y verificacion:
 Objetivo: avanzar la arquitectura API-first/modular sacando del componente monolitico la logica de busqueda de productos que impacta catalogo, POS y productos agrupados.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.ts` centraliza normalizacion, aliases, terminos de medida, claves legacy, scoring de busqueda, filtros select y helpers de identidad de productos.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.ts` centraliza normalizacion, aliases, terminos de medida, claves legacy, scoring de busqueda, filtros select y helpers de identidad de productos.
 - `ParamascotasPanelComponent` deja de declarar `PRODUCT_SEARCH_*`, builders de texto de busqueda y scoring; ahora filtra productos mediante `ParamascotasProductCatalogSearchService`.
 - Los helpers `paramascotasProductIdentityKeys`, `paramascotasProductEntityId`, `paramascotasProductMatchesIdentity` y `paramascotasProductsByIdentity` pasan a ser funciones exportadas del servicio de dominio, reutilizables por catalogo, inventario, compras y POS.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.spec.ts` cubre aliases (`dog`/`felino`), medidas (`14 g`), SKU, ids legacy y opciones de filtro.
-- `Dashboard/tools/check-architecture.mjs` bloquea `PRODUCT_SEARCH_*` y builders/scoring de busqueda de productos dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que busqueda, matching, aliases y scoring de catalogo deben vivir en servicios de dominio.
+- `dashboard/src/app/features/dashboard/services/paramascotas-product-catalog-search.service.spec.ts` cubre aliases (`dog`/`felino`), medidas (`14 g`), SKU, ids legacy y opciones de filtro.
+- `dashboard/tools/check-architecture.mjs` bloquea `PRODUCT_SEARCH_*` y builders/scoring de busqueda de productos dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que busqueda, matching, aliases y scoring de catalogo deben vivir en servicios de dominio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5887,11 +6310,11 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo logica de negocio en `ParamascotasPanelComponent`, sacando construccion de mensajes y URLs WhatsApp de la UI y resolviendo la prueba de cotizacion WhatsApp que quedo fallando tras extraer impresion.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-whatsapp-message.service.ts` centraliza normalizacion de telefonos Ecuador y URLs `wa.me` para usuarios, cotizaciones y pedidos.
+- `dashboard/src/app/features/dashboard/services/paramascotas-whatsapp-message.service.ts` centraliza normalizacion de telefonos Ecuador y URLs `wa.me` para usuarios, cotizaciones y pedidos.
 - `ParamascotasPanelComponent` delega al servicio los links WhatsApp de clientes, cotizaciones y ordenes; el componente conserva solo la orquestacion de acciones UI.
-- `Dashboard/src/app/core/services/browser-interaction.service.ts` tolera ventanas/documentos de impresion simulados sin `document.open()` o `document.close()`, evitando que la impresion de cotizacion aborte la notificacion visual de WhatsApp en pruebas.
-- `Dashboard/tools/check-architecture.mjs` bloquea construccion `wa.me` dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que mensajes para canales externos deben vivir en servicios/adapters del modulo.
+- `dashboard/src/app/core/services/browser-interaction.service.ts` tolera ventanas/documentos de impresion simulados sin `document.open()` o `document.close()`, evitando que la impresion de cotizacion aborte la notificacion visual de WhatsApp en pruebas.
+- `dashboard/tools/check-architecture.mjs` bloquea construccion `wa.me` dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que mensajes para canales externos deben vivir en servicios/adapters del modulo.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5904,11 +6327,11 @@ Operacion y verificacion:
 Objetivo: seguir separando documentos de negocio de la UI, sacando la plantilla HTML imprimible de cotizaciones del componente monolitico de Paramascotas.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-quotation-print.service.ts` centraliza la construccion del HTML imprimible de cotizaciones, con escape de datos, items, totales, IVA, descuento y estilos de impresion.
+- `dashboard/src/app/features/dashboard/services/paramascotas-quotation-print.service.ts` centraliza la construccion del HTML imprimible de cotizaciones, con escape de datos, items, totales, IVA, descuento y estilos de impresion.
 - `ParamascotasPanelComponent` ahora solo prepara el resumen visual existente y delega `buildPrintHtml(...)` al servicio antes de llamar `BrowserInteractionService.printHtml(...)`.
-- `Dashboard/tools/check-architecture.mjs` bloquea builders `build*PrintHtml` y CSS `@media print` dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que documentos imprimibles no deben construirse en componentes.
-- `Dashboard/src/app/features/dashboard/services/paramascotas-quotation-print.service.spec.ts` agrega cobertura de tipo para escape y contenido del HTML generado.
+- `dashboard/tools/check-architecture.mjs` bloquea builders `build*PrintHtml` y CSS `@media print` dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que documentos imprimibles no deben construirse en componentes.
+- `dashboard/src/app/features/dashboard/services/paramascotas-quotation-print.service.spec.ts` agrega cobertura de tipo para escape y contenido del HTML generado.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -5921,12 +6344,12 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo acoplamiento de negocio en `ParamascotasPanelComponent`, moviendo contratos de mutacion POS/cotizacion a servicios tipados del modulo.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-local-sale-payload.service.ts` centraliza payloads de cotizacion de orden, venta local, cotizacion local y conversion de cotizacion, incluyendo `payment_details`, direccion, cliente, items y redondeo de pagos.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` tipa `ParamascotasConvertQuotationPayload` y reutiliza `ParamascotasLocalOrderPaymentDetails` para evitar `Record<string, unknown>` en conversiones.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` consume `convertQuotation(...)` con payload tipado.
+- `dashboard/src/app/features/dashboard/services/paramascotas-local-sale-payload.service.ts` centraliza payloads de cotizacion de orden, venta local, cotizacion local y conversion de cotizacion, incluyendo `payment_details`, direccion, cliente, items y redondeo de pagos.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` tipa `ParamascotasConvertQuotationPayload` y reutiliza `ParamascotasLocalOrderPaymentDetails` para evitar `Record<string, unknown>` en conversiones.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` consume `convertQuotation(...)` con payload tipado.
 - `ParamascotasPanelComponent` deja de construir inline `payment_details`, `delivery_method: 'pickup'` e items de venta local; el componente queda como orquestador UI/estado.
-- `Dashboard/tools/check-architecture.mjs` bloquea payloads de pago/delivery/items dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que payloads de mutaciones de negocio deben vivir en servicios/adapters del modulo.
+- `dashboard/tools/check-architecture.mjs` bloquea payloads de pago/delivery/items dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que payloads de mutaciones de negocio deben vivir en servicios/adapters del modulo.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -5939,11 +6362,11 @@ Operacion y verificacion:
 Objetivo: avanzar la arquitectura API-first/modular quitando logica de armado de archivos de negocio del componente monolitico de Paramascotas.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/paramascotas-native-report-export.service.ts` centraliza la construccion del workbook nativo de reportes Paramascotas, incluyendo resumen, pedidos, productos, categorias, tendencias financieras, compras, productos x compra e incidencias de trazabilidad.
+- `dashboard/src/app/features/dashboard/services/paramascotas-native-report-export.service.ts` centraliza la construccion del workbook nativo de reportes Paramascotas, incluyendo resumen, pedidos, productos, categorias, tendencias financieras, compras, productos x compra e incidencias de trazabilidad.
 - `ParamascotasPanelComponent` queda como orquestador: obtiene el reporte desde estado/API, llama al servicio de exportacion y descarga mediante `BrowserInteractionService`.
 - Los calculos puros de tendencia financiera usados por exportaciones y charts se movieron a funciones compartidas del servicio para evitar duplicacion dentro del componente.
-- `Dashboard/tools/check-architecture.mjs` bloquea construccion de workbooks y helpers de exportacion dentro de componentes.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que exportaciones, workbooks y documentos imprimibles deben vivir en servicios/adapters del modulo, no en UI.
+- `dashboard/tools/check-architecture.mjs` bloquea construccion de workbooks y helpers de exportacion dentro de componentes.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que exportaciones, workbooks y documentos imprimibles deben vivir en servicios/adapters del modulo, no en UI.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -5955,11 +6378,11 @@ Operacion y verificacion:
 Objetivo: corregir el caso donde el menu lateral respondia al click, pero los submenus podian quedar sin navegar de forma confiable en el estado replegado.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` centraliza el corte de eventos de navegacion y usa `stopImmediatePropagation()` para evitar que listeners heredados del template intercepten clicks de submenus.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` deja de interceptar `pointerdown/mousedown` dentro del flyout replegado; el contenedor solo detiene el `click`, de modo que los enlaces de submenu navegan de forma consistente en navegador real.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` asegura que, en sidebar movil/overlay abierto, los labels de botones de grupo y carets vuelvan a mostrarse aunque el sidebar haya quedado marcado como `active`.
-- `Dashboard/src/dashboard-overrides.css` elimina reglas globales antiguas que forzaban submenus por `.sidebar.active` en anchos medianos y podian competir con el estado real del componente.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura para abrir un grupo ya activo (`Operacion`) en sidebar replegado, navegar desde su submenu y navegar desde un submenu normal de escritorio bajo `/dashboard`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` centraliza el corte de eventos de navegacion y usa `stopImmediatePropagation()` para evitar que listeners heredados del template intercepten clicks de submenus.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` deja de interceptar `pointerdown/mousedown` dentro del flyout replegado; el contenedor solo detiene el `click`, de modo que los enlaces de submenu navegan de forma consistente en navegador real.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` asegura que, en sidebar movil/overlay abierto, los labels de botones de grupo y carets vuelvan a mostrarse aunque el sidebar haya quedado marcado como `active`.
+- `dashboard/src/dashboard-overrides.css` elimina reglas globales antiguas que forzaban submenus por `.sidebar.active` en anchos medianos y podian competir con el estado real del componente.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura para abrir un grupo ya activo (`Operacion`) en sidebar replegado, navegar desde su submenu y navegar desde un submenu normal de escritorio bajo `/dashboard`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, Playwright focal de submenus (`6/6`) y Playwright post-deploy de base `/dashboard` + grupo activo.
@@ -5971,10 +6394,10 @@ Operacion y verificacion:
 Objetivo: cerrar el acoplamiento restante en servicios CRUD genericos, donde `ApiResource.endpointKeys` seguia declarando strings literales aunque ya existia `DASHBOARD_API_ENDPOINT_KEYS`.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` amplia `DASHBOARD_API_ENDPOINT_KEYS` para `users`, `roles`, `invoicing`, `products`, `monitoring.events`, `workspace.email` y `workspace.blog`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` amplia `DASHBOARD_API_ENDPOINT_KEYS` para `users`, `roles`, `invoicing`, `products`, `monitoring.events`, `workspace.email` y `workspace.blog`.
 - `UsersApiService`, `RolesApiService`, `ProductsApiService`, `InvoicesApiService`, `MonitoringApiService`, `WorkspaceEmailApiService` y `WorkspaceBlogApiService` usan aliases `DASHBOARD_API_ENDPOINT_KEYS.*` dentro de `endpointKeys`.
-- `Dashboard/tools/check-architecture.mjs` bloquea strings literales dentro de `ApiResource.endpointKeys`.
-- `Dashboard/docs/API-FIRST-MODULES.md` actualiza el ejemplo CRUD para usar aliases centrales.
+- `dashboard/tools/check-architecture.mjs` bloquea strings literales dentro de `ApiResource.endpointKeys`.
+- `dashboard/docs/API-FIRST-MODULES.md` actualiza el ejemplo CRUD para usar aliases centrales.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -5985,10 +6408,10 @@ Operacion y verificacion:
 Objetivo: eliminar el acoplamiento restante donde servicios de datos y helpers locales repetian claves de endpoint como strings (`apiCatalog.url('inventory.stock')`, `apiPath('ecommerce.orders')`, etc.) aunque el catalogo API ya era tipado.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` agrega `DASHBOARD_API_ENDPOINT_KEYS`, mapa de aliases nombrados tipado con `DashboardApiEndpointKey`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` agrega `DASHBOARD_API_ENDPOINT_KEYS`, mapa de aliases nombrados tipado con `DashboardApiEndpointKey`.
 - Servicios de tenant context, auth, dashboard base, inventario, monitoreo, workspace, tenant-admin, `ParamascotasBackendApiService` y `ParamascotasAdminApiService` consumen `DASHBOARD_API_ENDPOINT_KEYS` en lugar de pasar strings literales a `apiCatalog.url(...)`, `publicUrl(...)`, `apiPath(...)` o `putSetting(...)`.
-- `Dashboard/tools/check-architecture.mjs` exige `DASHBOARD_API_ENDPOINT_KEYS`, bloquea literales en `apiCatalog.url/publicUrl/path/endpoint/endpointModule(...)` y bloquea literales en helpers locales `apiPath(...)`/`putSetting(...)`.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que todo endpoint nuevo debe registrarse en el catalogo API y consumirse mediante aliases de `DASHBOARD_API_ENDPOINT_KEYS`.
+- `dashboard/tools/check-architecture.mjs` exige `DASHBOARD_API_ENDPOINT_KEYS`, bloquea literales en `apiCatalog.url/publicUrl/path/endpoint/endpointModule(...)` y bloquea literales en helpers locales `apiPath(...)`/`putSetting(...)`.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que todo endpoint nuevo debe registrarse en el catalogo API y consumirse mediante aliases de `DASHBOARD_API_ENDPOINT_KEYS`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -5999,11 +6422,11 @@ Operacion y verificacion:
 Objetivo: quitar de las facades de features el acoplamiento a recursos/acciones (`authorization.canAction('products', 'create')`, etc.) y usar los permisos nombrados derivados del catalogo modular.
 
 Cambios:
-- Facades de `users`, `roles`, `products`, `invoices`, `inventory` y `monitoring` ahora validan `canCreate/canUpdate/canDelete` con `authorization.canAll(...)` sobre permisos de `Dashboard/src/app/core/modules/dashboard-module-access.config.ts`.
+- Facades de `users`, `roles`, `products`, `invoices`, `inventory` y `monitoring` ahora validan `canCreate/canUpdate/canDelete` con `authorization.canAll(...)` sobre permisos de `dashboard/src/app/core/modules/dashboard-module-access.config.ts`.
 - `InvoicesFacade.create(...)` ahora valida `canCreate()` antes de ejecutar la mutacion, alineandose con update/delete y con el permiso de UI existente.
 - `dashboard-module-access.config.ts` expone `dashboardPermissionOptionsForModules(...)` para que `RolesFacade` no importe `tenant-permissions` directamente al construir grupos de permisos.
-- `Dashboard/tools/check-architecture.mjs` bloquea en codigo productivo de `features` el uso de `canAction(...)`, imports directos de `tenant-permissions` y checks `canAll/canAny/canMatch` con permisos literales.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que facades y componentes consumen permisos nombrados desde la capa modular central.
+- `dashboard/tools/check-architecture.mjs` bloquea en codigo productivo de `features` el uso de `canAction(...)`, imports directos de `tenant-permissions` y checks `canAll/canAny/canMatch` con permisos literales.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que facades y componentes consumen permisos nombrados desde la capa modular central.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -6014,11 +6437,11 @@ Operacion y verificacion:
 Objetivo: eliminar el acoplamiento donde cada `*.routes.ts` de feature repetia `module: 'products'`, `module: 'users'`, `module: 'invoicing'`, etc., aunque esa relacion ya existe en `TENANT_MODULE_CATALOG.routeSources`.
 
 Cambios:
-- `Dashboard/src/app/core/routing/route-data.ts` exporta `PrivateRoutePermissionAccess` para reutilizar el contrato de permisos de rutas.
-- `Dashboard/src/app/core/modules/dashboard-route-access.config.ts` agrega `privateRouteSourceRoute(...)`, `moduleForRouteSource(...)` y `DASHBOARD_ROUTE_SOURCE_MODULES`, derivados desde `TENANT_MODULE_OPTIONS`.
+- `dashboard/src/app/core/routing/route-data.ts` exporta `PrivateRoutePermissionAccess` para reutilizar el contrato de permisos de rutas.
+- `dashboard/src/app/core/modules/dashboard-route-access.config.ts` agrega `privateRouteSourceRoute(...)`, `moduleForRouteSource(...)` y `DASHBOARD_ROUTE_SOURCE_MODULES`, derivados desde `TENANT_MODULE_OPTIONS`.
 - Las rutas de `business`, `dashboard`, `inventory`, `monitoring`, `products`, `tenant-admin`, `ui-kit`, `users` y `workspace` usan `privateRouteSourceRoute('route-source', ...)`; ya no declaran `module: '...'` localmente.
-- `Dashboard/tools/check-architecture.mjs` reconoce `privateRouteSourceRoute(...)`, deriva metadata de rutas desde el catalogo tenant y bloquea `privateModuleRoute(...)`/`module: '...'` dentro de route files de features.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que los route files de features deben declarar la fuente de rutas, no el modulo propietario.
+- `dashboard/tools/check-architecture.mjs` reconoce `privateRouteSourceRoute(...)`, deriva metadata de rutas desde el catalogo tenant y bloquea `privateModuleRoute(...)`/`module: '...'` dentro de route files de features.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que los route files de features deben declarar la fuente de rutas, no el modulo propietario.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check` (`Navigation check passed (76 links)`).
@@ -6029,10 +6452,10 @@ Operacion y verificacion:
 Objetivo: eliminar el acoplamiento de componentes visuales a recursos/permisos internos (`tenantPermission(...)`, `platform-admin`) y dejar esas decisiones en una capa modular central.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-module-access.config.ts` centraliza permisos nombrados por modulo/dominio y los deriva desde `TENANT_MODULE_OPTIONS`; tambien agrupa casos cruzados como `USER_CREATE_PERMISSIONS` (`users.create + roles.read`) y `TENANT_ADMIN_PERMISSIONS.platformAdmin`.
+- `dashboard/src/app/core/modules/dashboard-module-access.config.ts` centraliza permisos nombrados por modulo/dominio y los deriva desde `TENANT_MODULE_OPTIONS`; tambien agrupa casos cruzados como `USER_CREATE_PERMISSIONS` (`users.create + roles.read`) y `TENANT_ADMIN_PERMISSIONS.platformAdmin`.
 - Componentes de productos, usuarios, roles, facturacion, inventario, monitoreo y pantallas publicas de bloqueo dejan de importar `tenantPermission`/`PLATFORM_ADMIN_PERMISSION` y consumen permisos nombrados desde `dashboard-module-access.config.ts`.
-- `Dashboard/tools/check-architecture.mjs` valida que los componentes no construyan permisos ni importen `tenant-permissions` directamente, y reconoce `TENANT_ADMIN_PERMISSIONS.platformAdmin` en metadata de rutas.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que los permisos visibles en UI deben registrarse en `dashboard-module-access.config.ts`.
+- `dashboard/tools/check-architecture.mjs` valida que los componentes no construyan permisos ni importen `tenant-permissions` directamente, y reconoce `TENANT_ADMIN_PERMISSIONS.platformAdmin` en metadata de rutas.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que los permisos visibles en UI deben registrarse en `dashboard-module-access.config.ts`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check`.
@@ -6043,12 +6466,12 @@ Operacion y verificacion:
 Objetivo: cerrar el acoplamiento donde los endpoints estaban registrados en `dashboard-api.config.ts`, pero `DashboardApiCatalogService.url(...)`, helpers y `ApiResource.endpointKeys` todavia aceptaban `string`, permitiendo typos hasta runtime.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` exporta `DashboardApiEndpointKey`, derivado de `DASHBOARD_MODULE_API_ENDPOINTS_BY_MODULE`, y conserva permisos derivados por `dashboardModuleApiEndpoints(...)`.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` tipa `endpoint(...)`, `path(...)`, `url(...)`, `publicUrl(...)` y `endpointModule(...)` con `DashboardApiEndpointKey`.
-- `Dashboard/src/app/core/http/api-resource.ts` tipa `ApiResourceEndpointKeys` con `DashboardApiEndpointKey`; los servicios CRUD (`users`, `roles`, `products`, `invoices`, `monitoring`, `workspace email/blog`) declaran `endpointKeys` con `satisfies ApiResourceEndpointKeys`.
-- `Dashboard/src/app/core/auth/auth-api.service.ts`, `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` y el registry del panel Paramascotas usan `DashboardApiEndpointKey` en helpers que reciben claves de endpoint.
-- `Dashboard/tools/check-architecture.mjs` bloquea volver a `endpointKey: string`, exige `DashboardApiEndpointKey` y exige `satisfies ApiResourceEndpointKeys` en recursos CRUD.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta el contrato tipado para agregar y consumir endpoints.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` exporta `DashboardApiEndpointKey`, derivado de `DASHBOARD_MODULE_API_ENDPOINTS_BY_MODULE`, y conserva permisos derivados por `dashboardModuleApiEndpoints(...)`.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` tipa `endpoint(...)`, `path(...)`, `url(...)`, `publicUrl(...)` y `endpointModule(...)` con `DashboardApiEndpointKey`.
+- `dashboard/src/app/core/http/api-resource.ts` tipa `ApiResourceEndpointKeys` con `DashboardApiEndpointKey`; los servicios CRUD (`users`, `roles`, `products`, `invoices`, `monitoring`, `workspace email/blog`) declaran `endpointKeys` con `satisfies ApiResourceEndpointKeys`.
+- `dashboard/src/app/core/auth/auth-api.service.ts`, `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` y el registry del panel Paramascotas usan `DashboardApiEndpointKey` en helpers que reciben claves de endpoint.
+- `dashboard/tools/check-architecture.mjs` bloquea volver a `endpointKey: string`, exige `DashboardApiEndpointKey` y exige `satisfies ApiResourceEndpointKeys` en recursos CRUD.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta el contrato tipado para agregar y consumir endpoints.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check` (`Navigation check passed (76 links)`).
@@ -6059,11 +6482,11 @@ Operacion y verificacion:
 Objetivo: cerrar un acoplamiento debil donde `TENANT_MODULE_CATALOG.routeSources` decidia que rutas habilita cada modulo, pero `DashboardRouteSourceKey` seguia siendo `string`, dejando errores de registro para runtime.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-catalog.ts` exporta `TenantRouteSourceKey`, derivado de las claves reales declaradas en `TENANT_MODULE_CATALOG.routeSources`.
-- `Dashboard/src/app/core/modules/dashboard-route.config.ts` deriva `DashboardRouteSourceKey` desde `TenantRouteSourceKey`, evitando que fuentes de rutas arbitrarias se cuelen en la composicion privada.
-- `Dashboard/src/app/app-route-sources.ts` registra `DASHBOARD_ROUTE_SOURCE_MAP` con `satisfies DashboardRouteSourceMap`, de modo que `type:check` falla si una fuente declarada en el catalogo no tiene rutas fisicas registradas o si sobra una clave no declarada.
-- `Dashboard/tools/check-architecture.mjs` exige que las fuentes de rutas sigan derivadas del catalogo y que el mapa fisico este tipado con `satisfies DashboardRouteSourceMap`.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que `TenantRouteSourceKey` y `DashboardRouteSourceMap` son el contrato oficial para agregar fuentes de rutas.
+- `dashboard/src/app/core/tenant/tenant-module-catalog.ts` exporta `TenantRouteSourceKey`, derivado de las claves reales declaradas en `TENANT_MODULE_CATALOG.routeSources`.
+- `dashboard/src/app/core/modules/dashboard-route.config.ts` deriva `DashboardRouteSourceKey` desde `TenantRouteSourceKey`, evitando que fuentes de rutas arbitrarias se cuelen en la composicion privada.
+- `dashboard/src/app/app-route-sources.ts` registra `DASHBOARD_ROUTE_SOURCE_MAP` con `satisfies DashboardRouteSourceMap`, de modo que `type:check` falla si una fuente declarada en el catalogo no tiene rutas fisicas registradas o si sobra una clave no declarada.
+- `dashboard/tools/check-architecture.mjs` exige que las fuentes de rutas sigan derivadas del catalogo y que el mapa fisico este tipado con `satisfies DashboardRouteSourceMap`.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que `TenantRouteSourceKey` y `DashboardRouteSourceMap` son el contrato oficial para agregar fuentes de rutas.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check` (`Navigation check passed (76 links)`).
@@ -6074,10 +6497,10 @@ Operacion y verificacion:
 Objetivo: corregir el reporte donde el menu replegado ya respondia en los grupos principales, pero los submenus no eran confiables para seleccionar opciones.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html}` elimina la apertura de flyout por hover/focus en sidebar replegado; los grupos con hijos ahora abren/cierran el submenu solo con click explicito.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html}` elimina la apertura de flyout por hover/focus en sidebar replegado; los grupos con hijos ahora abren/cierran el submenu solo con click explicito.
 - Se elimina el estado interno `collapsedFlyoutPinned`, porque al quedar click-only ya no hay diferencia entre preview temporal y submenu fijado.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` actualiza la expectativa para que hover no abra el flyout.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida que hover no abra submenus replegados, que click si los abra, y que los hijos naveguen en desktop replegado y mobile.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` actualiza la expectativa para que hover no abra el flyout.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida que hover no abra submenus replegados, que click si los abra, y que los hijos naveguen en desktop replegado y mobile.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "collapsed sidebar|mobile sidebar expands submenu"` (`3/3`) contra el contenedor reconstruido.
@@ -6089,12 +6512,12 @@ Operacion y verificacion:
 Objetivo: quitar la repeticion de `tenantPermission(...)` en los archivos `*.routes.ts`, alineando rutas con el mismo patron modular usado en endpoints API y navegacion.
 
 Cambios:
-- `Dashboard/src/app/core/routing/route-data.ts` agrega `privateModuleRoute(...)`, que deriva por defecto `<modulo>.read` y permite excepciones con `permissionAccess` o permisos especiales explicitos.
-- `Dashboard/src/app/features/*/*.routes.ts` migra rutas privadas operativas a `privateModuleRoute(...)`, manteniendo paths, features, modulos y componentes existentes.
-- `Dashboard/tools/check-architecture.mjs` acepta y verifica `privateModuleRoute(...)`, bloqueando `tenantPermission(...)` repetido en rutas de feature.
-- `Dashboard/tools/check-navigation.mjs` entiende metadata generada por `privateModuleRoute(...)`, manteniendo la validacion del menu contra rutas y permisos.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` cubre que `privateModuleRoute(...)` derive permisos como `invoicing.read` y `products.read`.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta `privateModuleRoute(...)` como patron oficial para rutas privadas de features.
+- `dashboard/src/app/core/routing/route-data.ts` agrega `privateModuleRoute(...)`, que deriva por defecto `<modulo>.read` y permite excepciones con `permissionAccess` o permisos especiales explicitos.
+- `dashboard/src/app/features/*/*.routes.ts` migra rutas privadas operativas a `privateModuleRoute(...)`, manteniendo paths, features, modulos y componentes existentes.
+- `dashboard/tools/check-architecture.mjs` acepta y verifica `privateModuleRoute(...)`, bloqueando `tenantPermission(...)` repetido en rutas de feature.
+- `dashboard/tools/check-navigation.mjs` entiende metadata generada por `privateModuleRoute(...)`, manteniendo la validacion del menu contra rutas y permisos.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` cubre que `privateModuleRoute(...)` derive permisos como `invoicing.read` y `products.read`.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta `privateModuleRoute(...)` como patron oficial para rutas privadas de features.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` (`Navigation check passed (76 links)`), `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "monitoring tenant sidebar|tenant navigation hides platform admin|tenant landing follows"`, `npm run docker:up` y `npm run docker:health`.
@@ -6104,11 +6527,11 @@ Operacion y verificacion:
 Objetivo: quitar la repeticion de `module` y `tenantPermission(...)` dentro de cada item del blueprint de navegacion, manteniendo un unico punto central para declarar menus por modulo.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-navigation.config.ts` agrega `moduleNavigationItem(...)`, `permissionAccess` y `defaultPermissions` para derivar modulo y permisos del menu desde el bloque correspondiente.
+- `dashboard/src/app/core/modules/dashboard-navigation.config.ts` agrega `moduleNavigationItem(...)`, `permissionAccess` y `defaultPermissions` para derivar modulo y permisos del menu desde el bloque correspondiente.
 - El blueprint conserva las mismas secciones, etiquetas, iconos y rutas, pero ya no copia `module: '...'` ni `permissions: [tenantPermission(...)]` en cada item operativo.
-- `Dashboard/tools/check-architecture.mjs` bloquea regresar a permisos/modulos repetidos por item y exige el helper de navegacion modular.
-- `Dashboard/tools/check-navigation.mjs` ahora interpreta `moduleNavigationItem(...)`, `permissionAccess` y `defaultPermissions`, por lo que mantiene la validacion de 76 enlaces contra rutas y permisos despues del refactor.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta el patron de navegacion modular con `moduleNavigationItem(...)`.
+- `dashboard/tools/check-architecture.mjs` bloquea regresar a permisos/modulos repetidos por item y exige el helper de navegacion modular.
+- `dashboard/tools/check-navigation.mjs` ahora interpreta `moduleNavigationItem(...)`, `permissionAccess` y `defaultPermissions`, por lo que mantiene la validacion de 76 enlaces contra rutas y permisos despues del refactor.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta el patron de navegacion modular con `moduleNavigationItem(...)`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check` (`Navigation check passed (76 links)`), `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "monitoring tenant sidebar|tenant navigation hides platform admin|tenant landing follows"`, `npm run docker:up` y `npm run docker:health`.
@@ -6118,12 +6541,12 @@ Operacion y verificacion:
 Objetivo: eliminar la preferencia hardcodeada por `/home` en la navegacion del Dashboard, para que el destino inicial del tenant dependa de los modulos contratados y del orden del blueprint central.
 
 Cambios:
-- `Dashboard/src/app/core/navigation/navigation.service.ts` deja de priorizar `/home` y calcula `defaultRoute` desde el primer destino visible de `DASHBOARD_NAVIGATION_BLUEPRINT` luego de filtrar por modulos y permisos.
-- `Dashboard/src/app/core/http/interceptors/error.interceptor.ts` usa `/` como fallback de retorno al login cuando la sesion expira y no hay URL actual, dejando que `tenantLandingGuard` resuelva el modulo correcto.
-- `Dashboard/src/app/core/navigation/navigation.service.spec.ts` verifica que un tenant con `monitoring` + `ui-kit` aterrice en `/monitoring`, no en `/home`.
-- `Dashboard/tests/e2e/smoke.spec.ts` agrega cobertura runtime para `/?tenant=monitoring-demo`, validando redireccion a `/monitoring?tenant=monitoring-demo`.
-- `Dashboard/tools/check-architecture.mjs` bloquea volver a acoplar `NavigationService.defaultRoute` a `/home` o a preferencias fuera del blueprint filtrado.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta que la prioridad de landing se cambia en el blueprint central, no en servicios.
+- `dashboard/src/app/core/navigation/navigation.service.ts` deja de priorizar `/home` y calcula `defaultRoute` desde el primer destino visible de `DASHBOARD_NAVIGATION_BLUEPRINT` luego de filtrar por modulos y permisos.
+- `dashboard/src/app/core/http/interceptors/error.interceptor.ts` usa `/` como fallback de retorno al login cuando la sesion expira y no hay URL actual, dejando que `tenantLandingGuard` resuelva el modulo correcto.
+- `dashboard/src/app/core/navigation/navigation.service.spec.ts` verifica que un tenant con `monitoring` + `ui-kit` aterrice en `/monitoring`, no en `/home`.
+- `dashboard/tests/e2e/smoke.spec.ts` agrega cobertura runtime para `/?tenant=monitoring-demo`, validando redireccion a `/monitoring?tenant=monitoring-demo`.
+- `dashboard/tools/check-architecture.mjs` bloquea volver a acoplar `NavigationService.defaultRoute` a `/home` o a preferencias fuera del blueprint filtrado.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta que la prioridad de landing se cambia en el blueprint central, no en servicios.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "monitoring tenant sidebar|tenant navigation hides platform admin|tenant landing follows"`.
@@ -6133,11 +6556,11 @@ Operacion y verificacion:
 Objetivo: eliminar la repeticion de permisos endpoint por endpoint en el catalogo API central, dejando que cada bloque de modulo derive sus permisos desde `dashboardModuleApiEndpoints(...)`.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` extiende `dashboardModuleApiEndpoints(...)` con `defaultPermissions`, mantiene `permissionAccess` para excepciones y normaliza `users`, `invoicing`, `products`, `inventory`, `monitoring`, `workspace` y `tenant-admin`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` extiende `dashboardModuleApiEndpoints(...)` con `defaultPermissions`, mantiene `permissionAccess` para excepciones y normaliza `users`, `invoicing`, `products`, `inventory`, `monitoring`, `workspace` y `tenant-admin`.
 - El catalogo API conserva las mismas claves, backends, metodos, rutas y descripciones, pero deja de copiar `tenantPermission(...)` por endpoint fuera del bootstrap `dashboard.summary`.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` agrega expectativas de permisos derivados para ecommerce, users/roles, invoicing, inventory, monitoring, workspace y tenant-admin.
-- `Dashboard/tools/check-architecture.mjs` exige que todos los modulos operativos con endpoints usen `dashboardModuleApiEndpoints(...)`, valida `defaultPermissions: [PLATFORM_ADMIN_PERMISSION]` para tenant-admin y bloquea `permissions: [tenantPermission(...)]` repetidos por endpoint.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta `defaultPermissions` y establece que los modulos operativos no deben copiar permisos endpoint por endpoint.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` agrega expectativas de permisos derivados para ecommerce, users/roles, invoicing, inventory, monitoring, workspace y tenant-admin.
+- `dashboard/tools/check-architecture.mjs` exige que todos los modulos operativos con endpoints usen `dashboardModuleApiEndpoints(...)`, valida `defaultPermissions: [PLATFORM_ADMIN_PERMISSION]` para tenant-admin y bloquea `permissions: [tenantPermission(...)]` repetidos por endpoint.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta `defaultPermissions` y establece que los modulos operativos no deben copiar permisos endpoint por endpoint.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "monitoring tenant sidebar|tenant navigation hides platform admin"`.
@@ -6148,11 +6571,11 @@ Operacion y verificacion:
 Objetivo: reducir el acoplamiento y la duplicacion en el catalogo API, evitando repetir `tenantPermission('ecommerce', 'update')` en cada endpoint operativo de Paramascotas.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` agrega `dashboardModuleApiEndpoints(...)`, que aplica permisos por defecto desde el modulo del bloque y permite excepciones con `permissionAccess` o permisos especiales explicitos.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` agrega `dashboardModuleApiEndpoints(...)`, que aplica permisos por defecto desde el modulo del bloque y permite excepciones con `permissionAccess` o permisos especiales explicitos.
 - El bloque `ecommerce` del catalogo API ahora deriva por defecto `ecommerce.update` desde `dashboardModuleApiEndpoints('ecommerce', ..., { defaultPermissionAccess: 'update' })`, conservando rutas, backends, metodos y descripciones existentes.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` verifica que endpoints ecommerce como productos, cotizaciones de ordenes y RIDE PDF reciban permisos derivados.
-- `Dashboard/tools/check-architecture.mjs` bloquea volver a repetir `tenantPermission('ecommerce', 'update')` endpoint por endpoint y exige el helper central.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta el patron de endpoints por modulo con permiso por defecto, `permissionAccess` para excepciones y `permissions` solo para permisos especiales.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` verifica que endpoints ecommerce como productos, cotizaciones de ordenes y RIDE PDF reciban permisos derivados.
+- `dashboard/tools/check-architecture.mjs` bloquea volver a repetir `tenantPermission('ecommerce', 'update')` endpoint por endpoint y exige el helper central.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta el patron de endpoints por modulo con permiso por defecto, `permissionAccess` para excepciones y `permissions` solo para permisos especiales.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint` y `npm run arch:check` en `Dashboard`.
@@ -6162,10 +6585,10 @@ Operacion y verificacion:
 Objetivo: evitar que reglas especiales como el modulo base `dashboard` o la configuracion adicional de Ecommerce dependan de strings repetidos en tenant-admin, fixtures o facades.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-catalog.ts` exporta `BASE_TENANT_MODULE_KEY`, `ECOMMERCE_TENANT_MODULE_KEY`, `tenantContractModules()` y `tenantHasEcommerceModule()`.
-- `Dashboard/src/app/core/tenant/tenant-fixture.store.ts` usa `tenantContractModules()` para contratos fixture y `tenantHasEcommerceModule()` para sincronizar configuracion ecommerce.
-- `Dashboard/src/app/features/tenant-admin/data/tenant-admin.fixtures.ts`, `tenant-admin.component.ts` y `tenant-admin.facade.ts` dejan de decidir la logica operativa con strings `dashboard`/`ecommerce` y consumen los helpers del catalogo.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts`, `Dashboard/tools/check-architecture.mjs` y `Dashboard/docs/API-FIRST-MODULES.md` documentan/verifican que estos contratos especiales sigan centralizados.
+- `dashboard/src/app/core/tenant/tenant-module-catalog.ts` exporta `BASE_TENANT_MODULE_KEY`, `ECOMMERCE_TENANT_MODULE_KEY`, `tenantContractModules()` y `tenantHasEcommerceModule()`.
+- `dashboard/src/app/core/tenant/tenant-fixture.store.ts` usa `tenantContractModules()` para contratos fixture y `tenantHasEcommerceModule()` para sincronizar configuracion ecommerce.
+- `dashboard/src/app/features/tenant-admin/data/tenant-admin.fixtures.ts`, `tenant-admin.component.ts` y `tenant-admin.facade.ts` dejan de decidir la logica operativa con strings `dashboard`/`ecommerce` y consumen los helpers del catalogo.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts`, `dashboard/tools/check-architecture.mjs` y `dashboard/docs/API-FIRST-MODULES.md` documentan/verifican que estos contratos especiales sigan centralizados.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6177,10 +6600,10 @@ Operacion y verificacion:
 Objetivo: cerrar el borde donde alta/edicion de tenants podia aceptar claves de modulos no registradas en la arquitectura modular central.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/data/tenant-admin.fixtures.ts` valida `enabledModules` contra `TENANT_MODULE_OPTIONS`, agrega `dashboard` como modulo base y rechaza payloads invalidos con `400 TENANT_MODULES_INVALID`.
-- `Dashboard/src/app/features/tenant-admin/data/tenant-admin-api.service.spec.ts` cubre create/update con un modulo inexistente (`ghost-service`) y espera rechazo de contrato.
-- `Dashboard/tools/check-architecture.mjs` bloquea que tenant-admin vuelva a deduplicar `payload.enabledModules` sin validacion de catalogo.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta el contrato de `enabledModules`: toda clave debe existir en `TENANT_MODULE_CATALOG` y los fixtures/APIs de desarrollo deben rechazar desconocidos.
+- `dashboard/src/app/features/tenant-admin/data/tenant-admin.fixtures.ts` valida `enabledModules` contra `TENANT_MODULE_OPTIONS`, agrega `dashboard` como modulo base y rechaza payloads invalidos con `400 TENANT_MODULES_INVALID`.
+- `dashboard/src/app/features/tenant-admin/data/tenant-admin-api.service.spec.ts` cubre create/update con un modulo inexistente (`ghost-service`) y espera rechazo de contrato.
+- `dashboard/tools/check-architecture.mjs` bloquea que tenant-admin vuelva a deduplicar `payload.enabledModules` sin validacion de catalogo.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta el contrato de `enabledModules`: toda clave debe existir en `TENANT_MODULE_CATALOG` y los fixtures/APIs de desarrollo deben rechazar desconocidos.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6193,9 +6616,9 @@ Operacion y verificacion:
 Objetivo: cerrar el caso reportado donde el menu replegado respondia en los grupos principales, pero los submenus podian sentirse inoperables o no evidenciar cambio de vista.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` fuerza los enlaces de menu y submenu a ocupar el ancho completo, con cursor y capa propia, para que toda la fila sea clicable y no solo el texto.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ahora verifica que el click de submenu cambie tambien el H1 renderizado, no solo la URL, en desktop replegado y mobile.
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` valida el caso publico real: login por `https://paramascotasec.com/dashboard`, MFA, sidebar replegado, submenu `Reportes > Reporte de ventas` y render del reporte; tambien actualiza la expectativa POS a la nueva barra `Agregar producto`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` fuerza los enlaces de menu y submenu a ocupar el ancho completo, con cursor y capa propia, para que toda la fila sea clicable y no solo el texto.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` ahora verifica que el click de submenu cambie tambien el H1 renderizado, no solo la URL, en desktop replegado y mobile.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` valida el caso publico real: login por `https://paramascotasec.com/dashboard`, MFA, sidebar replegado, submenu `Reportes > Reporte de ventas` y render del reporte; tambien actualiza la expectativa POS a la nueva barra `Agregar producto`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6207,12 +6630,12 @@ Operacion y verificacion:
 Objetivo: impedir que un servicio frontend resuelva URLs de endpoints pertenecientes a modulos no contratados por el tenant cargado.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-access.service.ts` agrega un estado transversal liviano de modulos habilitados y estado activo del tenant.
-- `Dashboard/src/app/core/tenant/tenant-context.service.ts` actualiza/limpia ese estado al cargar, cambiar o fallar el contexto tenant; `hasModule()` ahora delega en esa capa.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` relaciona cada endpoint con su `ModuleKey`, expone `endpointModule()` y hace que `url()`/`publicUrl()` rechacen endpoints de modulos deshabilitados cuando ya existe contexto tenant cargado. Los endpoints bootstrap del modulo `dashboard` siguen disponibles para login, sesion y resolucion de contexto.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` cubre el caso `billing-only` que permite `invoicing.invoices` y rechaza `ecommerce.products`.
-- `Dashboard/tools/check-architecture.mjs` exige que el catalogo API valide contra `TenantModuleAccessService`.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta la validacion runtime de endpoints por modulo contratado.
+- `dashboard/src/app/core/tenant/tenant-module-access.service.ts` agrega un estado transversal liviano de modulos habilitados y estado activo del tenant.
+- `dashboard/src/app/core/tenant/tenant-context.service.ts` actualiza/limpia ese estado al cargar, cambiar o fallar el contexto tenant; `hasModule()` ahora delega en esa capa.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` relaciona cada endpoint con su `ModuleKey`, expone `endpointModule()` y hace que `url()`/`publicUrl()` rechacen endpoints de modulos deshabilitados cuando ya existe contexto tenant cargado. Los endpoints bootstrap del modulo `dashboard` siguen disponibles para login, sesion y resolucion de contexto.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` cubre el caso `billing-only` que permite `invoicing.invoices` y rechaza `ecommerce.products`.
+- `dashboard/tools/check-architecture.mjs` exige que el catalogo API valide contra `TenantModuleAccessService`.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta la validacion runtime de endpoints por modulo contratado.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6224,11 +6647,11 @@ Operacion y verificacion:
 Objetivo: evitar que el modo fixture conserve listas paralelas de modulos que contradigan la arquitectura API-first por servicios contratados.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-fixture.store.ts` exporta `allTenantModuleKeys` derivado de `TENANT_MODULE_OPTIONS`; el tenant demo ya no mantiene una lista manual de todos los modulos.
+- `dashboard/src/app/core/tenant/tenant-fixture.store.ts` exporta `allTenantModuleKeys` derivado de `TENANT_MODULE_OPTIONS`; el tenant demo ya no mantiene una lista manual de todos los modulos.
 - El mismo store agrega `tenantFixtureRecordBySlug()` y `fixtureModulesForTenant()` para que otros fixtures obtengan modulos habilitados desde el registro tenant fixture, no desde arrays propios.
-- `Dashboard/src/app/core/auth/auth.fixtures.ts` elimina `fixtureSessionModules`; las sesiones fallback calculan permisos read-only con `fixtureModulesForTenant(tenantSlug)`.
-- `Dashboard/src/app/core/tenant/tenant.fixtures.spec.ts` valida que el tenant demo devuelva exactamente las claves de `TENANT_MODULE_OPTIONS`.
-- `Dashboard/tools/check-architecture.mjs` bloquea reintroducir una lista manual de modulos para auth fixtures o un `fullTenantModules` escrito a mano en el store tenant.
+- `dashboard/src/app/core/auth/auth.fixtures.ts` elimina `fixtureSessionModules`; las sesiones fallback calculan permisos read-only con `fixtureModulesForTenant(tenantSlug)`.
+- `dashboard/src/app/core/tenant/tenant.fixtures.spec.ts` valida que el tenant demo devuelva exactamente las claves de `TENANT_MODULE_OPTIONS`.
+- `dashboard/tools/check-architecture.mjs` bloquea reintroducir una lista manual de modulos para auth fixtures o un `fullTenantModules` escrito a mano en el store tenant.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6241,11 +6664,11 @@ Operacion y verificacion:
 Objetivo: cerrar fuentes paralelas restantes en la arquitectura API-first y evitar que nuevos modulos generen endpoints o menus fuera del catalogo central.
 
 Cambios:
-- `Dashboard/src/app/core/navigation/navigation.registry.ts` se elimina; la unica fuente de navegacion queda en `core/modules/dashboard-navigation.config.ts`, consumida por `DashboardModuleRegistryService`.
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` deriva `DashboardApiBackendKey` desde `DASHBOARD_API_BACKENDS`; ya no hay union manual para backends logicos.
-- `Dashboard/tools/check-architecture.mjs` bloquea que vuelva `navigation.registry.ts`, que vuelva una union manual de `DashboardApiBackendKey`, que servicios API pasen endpoints crudos a `ApiClientService`, y exige que el generador derive acciones desde `TENANT_MODULE_CATALOG.permissionActions`.
-- `Dashboard/tools/generate-feature.mjs` ahora lee `permissionActions` del catalogo tenant cuando el modulo existe; por ejemplo, `monitoring` genera endpoints `read/create/update` y ya no propone `delete`.
-- `Dashboard/docs/API-FIRST-MODULES.md`, `FEATURE-BLUEPRINT.md`, `MODULE-API-BLUEPRINT.md` y `ARCHITECTURE.md` documentan que los backends y acciones generadas salen de catalogos centrales.
+- `dashboard/src/app/core/navigation/navigation.registry.ts` se elimina; la unica fuente de navegacion queda en `core/modules/dashboard-navigation.config.ts`, consumida por `DashboardModuleRegistryService`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` deriva `DashboardApiBackendKey` desde `DASHBOARD_API_BACKENDS`; ya no hay union manual para backends logicos.
+- `dashboard/tools/check-architecture.mjs` bloquea que vuelva `navigation.registry.ts`, que vuelva una union manual de `DashboardApiBackendKey`, que servicios API pasen endpoints crudos a `ApiClientService`, y exige que el generador derive acciones desde `TENANT_MODULE_CATALOG.permissionActions`.
+- `dashboard/tools/generate-feature.mjs` ahora lee `permissionActions` del catalogo tenant cuando el modulo existe; por ejemplo, `monitoring` genera endpoints `read/create/update` y ya no propone `delete`.
+- `dashboard/docs/API-FIRST-MODULES.md`, `FEATURE-BLUEPRINT.md`, `MODULE-API-BLUEPRINT.md` y `ARCHITECTURE.md` documentan que los backends y acciones generadas salen de catalogos centrales.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `node tools/generate-feature.mjs qa-api-first-guard --module=monitoring --endpoint=monitoring/qa-api-first-guard --endpoint-key=monitoring.qa-api-first-guard --label="QA API First Guard" --dry-run`, `npm run docker:up` y `npm run docker:health`.
@@ -6257,11 +6680,11 @@ Operacion y verificacion:
 Objetivo: quitar la union manual de modulos y dejar que la identidad de modulos tenant salga de una sola fuente.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-catalog.ts` ahora exporta `ModuleKey` como `keyof typeof TENANT_MODULE_CATALOG` y tambien concentra `PermissionAction`.
-- `Dashboard/src/app/core/tenant/tenant.models.ts` deja de declarar una union paralela y reexporta `ModuleKey`/`PermissionAction` desde el catalogo tenant.
-- `Dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` deriva capacidades con `reduce()` desde `TENANT_MODULE_OPTIONS`, compatible con el tipo derivado del catalogo.
-- `Dashboard/tools/check-architecture.mjs` bloquea volver a declarar una union manual de `ModuleKey`, exige el reexport desde `tenant.models.ts` y valida que el catalogo sea la fuente del tipo.
-- `Dashboard/tools/generate-feature.mjs` y docs de arquitectura/API-first ya no instruyen editar `tenant.models.ts` para registrar modulos.
+- `dashboard/src/app/core/tenant/tenant-module-catalog.ts` ahora exporta `ModuleKey` como `keyof typeof TENANT_MODULE_CATALOG` y tambien concentra `PermissionAction`.
+- `dashboard/src/app/core/tenant/tenant.models.ts` deja de declarar una union paralela y reexporta `ModuleKey`/`PermissionAction` desde el catalogo tenant.
+- `dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` deriva capacidades con `reduce()` desde `TENANT_MODULE_OPTIONS`, compatible con el tipo derivado del catalogo.
+- `dashboard/tools/check-architecture.mjs` bloquea volver a declarar una union manual de `ModuleKey`, exige el reexport desde `tenant.models.ts` y valida que el catalogo sea la fuente del tipo.
+- `dashboard/tools/generate-feature.mjs` y docs de arquitectura/API-first ya no instruyen editar `tenant.models.ts` para registrar modulos.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `node tools/generate-feature.mjs qa-derived-module --module=monitoring --endpoint=monitoring/qa-derived-module --endpoint-key=monitoring.qa-derived-module --label="QA Derived Module" --dry-run`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "tenant navigation hides platform admin|monitoring tenant sidebar"` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "paramascotas route /paramascotas-backend|paramascotas route /paramascotas-panel/reporting/general"`.
@@ -6272,11 +6695,11 @@ Operacion y verificacion:
 Objetivo: eliminar otra lista paralela de arquitectura modular moviendo las fuentes de rutas al catalogo central de modulos tenant.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-catalog.ts` agrega `routeSources` a cada `TenantModuleDefinition`; ahora cada modulo concentra identidad, permisos y fuentes de rutas habilitadas.
-- `Dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` queda como adaptador derivado desde `TENANT_MODULE_OPTIONS`, sin mapa paralelo `modulo -> routeSources`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que las fuentes de ruta de cada modulo coincidan con `TENANT_MODULE_CATALOG[module].routeSources`.
-- `Dashboard/tools/check-architecture.mjs` bloquea que vuelva un mapa paralelo de route sources y exige `routeSources` en `TENANT_MODULE_CATALOG`.
-- `Dashboard/tools/generate-feature.mjs` y docs (`API-FIRST-MODULES.md`, `FEATURE-BLUEPRINT.md`, `MODULE-API-BLUEPRINT.md`, `ARCHITECTURE.md`) ahora indican registrar route sources en el catalogo tenant, y `app-route-sources.ts` solo como mapa fisico de rutas.
+- `dashboard/src/app/core/tenant/tenant-module-catalog.ts` agrega `routeSources` a cada `TenantModuleDefinition`; ahora cada modulo concentra identidad, permisos y fuentes de rutas habilitadas.
+- `dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` queda como adaptador derivado desde `TENANT_MODULE_OPTIONS`, sin mapa paralelo `modulo -> routeSources`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que las fuentes de ruta de cada modulo coincidan con `TENANT_MODULE_CATALOG[module].routeSources`.
+- `dashboard/tools/check-architecture.mjs` bloquea que vuelva un mapa paralelo de route sources y exige `routeSources` en `TENANT_MODULE_CATALOG`.
+- `dashboard/tools/generate-feature.mjs` y docs (`API-FIRST-MODULES.md`, `FEATURE-BLUEPRINT.md`, `MODULE-API-BLUEPRINT.md`, `ARCHITECTURE.md`) ahora indican registrar route sources en el catalogo tenant, y `app-route-sources.ts` solo como mapa fisico de rutas.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `node tools/generate-feature.mjs qa-route-source --module=monitoring --endpoint=monitoring/qa-route-source --endpoint-key=monitoring.qa-route-source --label="QA Route Source" --dry-run`, `npm run docker:up`, `npm run docker:health`.
@@ -6288,10 +6711,10 @@ Operacion y verificacion:
 Objetivo: seguir cerrando acoplamientos API-first eliminando residuos de rutas `/api/...` fuera del catalogo central y evitando regresiones en servicios API de features.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/data/paramascotas-backend-api.service.ts` deja de mostrar `/api/admin/dashboard/stats` como fuente textual; ahora recibe la firma publica calculada con `DashboardApiCatalogService.publicUrl('ecommerce.dashboard-stats')` y agrega los query examples sobre esa ruta registrada.
-- `Dashboard/src/app/features/monitoring/README.md` documenta endpoints por clave (`monitoring.summary`, `monitoring.events`, etc.) y paths backend relativos, aclarando que `url(...)` resuelve consumo interno y `publicUrl(...)` documenta APISIX.
-- `Dashboard/tools/check-architecture.mjs` amplía el guardrail para bloquear literales `/api/...` o `/dashboard/api/...` en todos los servicios API revisados, no solo en `paramascotas-panel-api.service.ts`.
-- `Dashboard/src/app/core/auth/auth-api.service.ts` y `Dashboard/src/app/core/tenant/tenant-api.service.ts` dejan de importar `realBackendRequestContext` desde la carpeta `fixtures`; ahora usan el wrapper neutral `backendApiRequestContext()` de `core/http/api-request-context.ts`.
+- `dashboard/src/app/features/dashboard/data/paramascotas-backend-api.service.ts` deja de mostrar `/api/admin/dashboard/stats` como fuente textual; ahora recibe la firma publica calculada con `DashboardApiCatalogService.publicUrl('ecommerce.dashboard-stats')` y agrega los query examples sobre esa ruta registrada.
+- `dashboard/src/app/features/monitoring/README.md` documenta endpoints por clave (`monitoring.summary`, `monitoring.events`, etc.) y paths backend relativos, aclarando que `url(...)` resuelve consumo interno y `publicUrl(...)` documenta APISIX.
+- `dashboard/tools/check-architecture.mjs` amplía el guardrail para bloquear literales `/api/...` o `/dashboard/api/...` en todos los servicios API revisados, no solo en `paramascotas-panel-api.service.ts`.
+- `dashboard/src/app/core/auth/auth-api.service.ts` y `dashboard/src/app/core/tenant/tenant-api.service.ts` dejan de importar `realBackendRequestContext` desde la carpeta `fixtures`; ahora usan el wrapper neutral `backendApiRequestContext()` de `core/http/api-request-context.ts`.
 - El guardrail tambien bloquea imports directos a `fixtures/fixture-backend.context` desde servicios API/productivos, preservando ese archivo como detalle interno de infraestructura HTTP.
 
 Operacion y verificacion:
@@ -6304,8 +6727,8 @@ Operacion y verificacion:
 Objetivo: corregir el caso donde el menu replegado abria grupos principales pero un submenu podia no navegar si Angular cancelaba o fallaba la navegacion interna.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` ahora calcula el destino logico de Angular y tambien el `href` publico bajo `/dashboard`; si `router.navigateByUrl()` devuelve `false` o rechaza, usa el `href` real como fallback.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` agrega cobertura para el fallback cuando se cancela la navegacion de un submenu del flyout replegado.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` ahora calcula el destino logico de Angular y tambien el `href` publico bajo `/dashboard`; si `router.navigateByUrl()` devuelve `false` o rechaza, usa el `href` real como fallback.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` agrega cobertura para el fallback cuando se cancela la navegacion de un submenu del flyout replegado.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6318,11 +6741,11 @@ Operacion y verificacion:
 Objetivo: quitar de `app.config.ts` el conocimiento directo de fixtures por modulo/feature, manteniendo un punto unico para providers de backend simulado de desarrollo.
 
 Cambios:
-- `Dashboard/src/app/app-fixture-handlers.ts` centraliza los providers de fixtures (`APP_FIXTURE_HANDLERS`) de auth, tenant, dashboard, ecommerce/templates, usuarios, inventario, productos, monitoreo, workspace y tenant-admin.
-- `Dashboard/src/app/app.config.ts` deja de importar `@features/*/*.fixtures` y solo registra `...APP_FIXTURE_HANDLERS`, manteniendo el bootstrap enfocado en router, HTTP, interceptores y environment.
-- `Dashboard/tools/check-architecture.mjs` permite el nuevo archivo raiz y bloquea que `app.config.ts` vuelva a importar features o archivos `*.fixtures.ts` directamente.
-- `Dashboard/tools/generate-feature.mjs` imprime el snippet de fixtures apuntando a `app-fixture-handlers.ts`.
-- `Dashboard/docs/API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `MODULE-API-BLUEPRINT.md` documentan que los fixtures se registran en `app-fixture-handlers.ts`, no en `app.config.ts`.
+- `dashboard/src/app/app-fixture-handlers.ts` centraliza los providers de fixtures (`APP_FIXTURE_HANDLERS`) de auth, tenant, dashboard, ecommerce/templates, usuarios, inventario, productos, monitoreo, workspace y tenant-admin.
+- `dashboard/src/app/app.config.ts` deja de importar `@features/*/*.fixtures` y solo registra `...APP_FIXTURE_HANDLERS`, manteniendo el bootstrap enfocado en router, HTTP, interceptores y environment.
+- `dashboard/tools/check-architecture.mjs` permite el nuevo archivo raiz y bloquea que `app.config.ts` vuelva a importar features o archivos `*.fixtures.ts` directamente.
+- `dashboard/tools/generate-feature.mjs` imprime el snippet de fixtures apuntando a `app-fixture-handlers.ts`.
+- `dashboard/docs/API-FIRST-MODULES.md`, `ARCHITECTURE.md` y `MODULE-API-BLUEPRINT.md` documentan que los fixtures se registran en `app-fixture-handlers.ts`, no en `app.config.ts`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `node tools/generate-feature.mjs qa-fixtures --module=monitoring --endpoint=monitoring/qa-fixtures --endpoint-key=monitoring.qa-fixtures --label="QA Fixtures" --dry-run`, `npm run docker:up`, `npm run docker:health`.
@@ -6335,11 +6758,11 @@ Operacion y verificacion:
 Objetivo: quitar otra lista paralela de modulos en la configuracion API, evitando declarar entradas vacias para modulos sin endpoints y manteniendo el mapa publico completo derivado desde el catalogo tenant.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` separa `DASHBOARD_MODULE_API_ENDPOINTS_BY_MODULE` como mapa parcial editable de endpoints reales y deriva `DASHBOARD_MODULE_API_ENDPOINTS` desde `TENANT_MODULE_OPTIONS`, rellenando automaticamente `[]` para modulos sin endpoints.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` separa `DASHBOARD_MODULE_API_ENDPOINTS_BY_MODULE` como mapa parcial editable de endpoints reales y deriva `DASHBOARD_MODULE_API_ENDPOINTS` desde `TENANT_MODULE_OPTIONS`, rellenando automaticamente `[]` para modulos sin endpoints.
 - Se eliminaron entradas vacias manuales para `email-service`, `medical-office` y `ui-kit` del mapa fuente de endpoints.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que `DASHBOARD_MODULE_API_ENDPOINTS` tenga una entrada calculada para cada modulo tenant.
-- `Dashboard/tools/check-architecture.mjs` exige que `dashboard-api.config.ts` derive el mapa publico desde `TENANT_MODULE_OPTIONS`.
-- `Dashboard/tools/generate-feature.mjs` y docs (`API-FIRST-MODULES.md`, `MODULE-API-BLUEPRINT.md`, `FEATURE-BLUEPRINT.md`, `ARCHITECTURE.md`) apuntan al mapa parcial `DASHBOARD_MODULE_API_ENDPOINTS_BY_MODULE` como lugar editable para nuevos endpoints.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que `DASHBOARD_MODULE_API_ENDPOINTS` tenga una entrada calculada para cada modulo tenant.
+- `dashboard/tools/check-architecture.mjs` exige que `dashboard-api.config.ts` derive el mapa publico desde `TENANT_MODULE_OPTIONS`.
+- `dashboard/tools/generate-feature.mjs` y docs (`API-FIRST-MODULES.md`, `MODULE-API-BLUEPRINT.md`, `FEATURE-BLUEPRINT.md`, `ARCHITECTURE.md`) apuntan al mapa parcial `DASHBOARD_MODULE_API_ENDPOINTS_BY_MODULE` como lugar editable para nuevos endpoints.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `node tools/generate-feature.mjs qa-api-first --module=monitoring --endpoint=monitoring/qa-api-first --endpoint-key=monitoring.qa-api-first --label="QA API First" --dry-run`, `npm run docker:up`, `npm run docker:health`.
@@ -6352,11 +6775,11 @@ Operacion y verificacion:
 Objetivo: reducir otro acoplamiento de la arquitectura modular eliminando la lista manual de fuentes de rutas y derivando capacidades de modulos desde el catalogo tenant.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-route.config.ts` deja de mantener una union hardcodeada de `DashboardRouteSourceKey`; las claves de fuentes pasan a ser strings registradas en `app-route-sources.ts`, y `buildDashboardPrivateRoutesFromRegistry()` falla rapido si una capacidad apunta a una fuente no registrada.
-- `Dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` deriva `DASHBOARD_MODULE_CAPABILITIES` desde `TENANT_MODULE_OPTIONS`; solo queda un mapa interno de modulos con fuentes de ruta reales, evitando entradas vacias repetidas para modulos sin pantalla.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` agrega cobertura para el fallo rapido cuando falta una fuente de rutas registrada.
-- `Dashboard/tools/check-architecture.mjs` ahora exige que capacidades se deriven de `TENANT_MODULE_OPTIONS` y bloquea que `DashboardRouteSourceKey` vuelva a ser una union manual.
-- `Dashboard/docs/API-FIRST-MODULES.md` y `MODULE-API-BLUEPRINT.md` aclaran que `app-route-sources.ts` es el registro real de fuentes y que `dashboard-route.config.ts` valida la composicion.
+- `dashboard/src/app/core/modules/dashboard-route.config.ts` deja de mantener una union hardcodeada de `DashboardRouteSourceKey`; las claves de fuentes pasan a ser strings registradas en `app-route-sources.ts`, y `buildDashboardPrivateRoutesFromRegistry()` falla rapido si una capacidad apunta a una fuente no registrada.
+- `dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` deriva `DASHBOARD_MODULE_CAPABILITIES` desde `TENANT_MODULE_OPTIONS`; solo queda un mapa interno de modulos con fuentes de ruta reales, evitando entradas vacias repetidas para modulos sin pantalla.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` agrega cobertura para el fallo rapido cuando falta una fuente de rutas registrada.
+- `dashboard/tools/check-architecture.mjs` ahora exige que capacidades se deriven de `TENANT_MODULE_OPTIONS` y bloquea que `DashboardRouteSourceKey` vuelva a ser una union manual.
+- `dashboard/docs/API-FIRST-MODULES.md` y `MODULE-API-BLUEPRINT.md` aclaran que `app-route-sources.ts` es el registro real de fuentes y que `dashboard-route.config.ts` valida la composicion.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6369,11 +6792,11 @@ Operacion y verificacion:
 Objetivo: eliminar reconstrucciones manuales de rutas internas/publicas en `ParamascotasPanel` y evitar que el generador de features vuelva a crear servicios CRUD con endpoints legacy.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts` resuelve rutas internas con `DashboardApiCatalogService.url(...)` y firmas publicas APISIX con `publicUrl(...)`; ya no recompone `/dashboard/api/...` ni `/api/...` a mano.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.spec.ts` cubre que una fuente del panel use la URL interna `/dashboard/api/...` para HTTP y la firma publica tenantizada para auditoria.
-- `Dashboard/tools/generate-feature.mjs` ahora genera servicios `ApiResource` con `endpointKeys`, imprime snippets para `DASHBOARD_MODULE_API_ENDPOINTS`, `dashboard-module-capabilities.config.ts` y `dashboard-navigation.config.ts`, y deja `--endpoint-key` como opcion explicita.
-- `Dashboard/tools/check-architecture.mjs` bloquea regresiones del generador hacia `protected endpoint = ...`, `navigation.registry.ts` o ausencia de snippets del catalogo API.
-- `Dashboard/docs/API-FIRST-MODULES.md`, `ARCHITECTURE.md`, `FEATURE-BLUEPRINT.md` y `MODULE-API-BLUEPRINT.md` documentan que las pantallas de auditoria/soporte tambien deben derivar rutas desde el catalogo, y que `--endpoint` es ruta backend mientras `--endpoint-key` es clave estable.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts` resuelve rutas internas con `DashboardApiCatalogService.url(...)` y firmas publicas APISIX con `publicUrl(...)`; ya no recompone `/dashboard/api/...` ni `/api/...` a mano.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.spec.ts` cubre que una fuente del panel use la URL interna `/dashboard/api/...` para HTTP y la firma publica tenantizada para auditoria.
+- `dashboard/tools/generate-feature.mjs` ahora genera servicios `ApiResource` con `endpointKeys`, imprime snippets para `DASHBOARD_MODULE_API_ENDPOINTS`, `dashboard-module-capabilities.config.ts` y `dashboard-navigation.config.ts`, y deja `--endpoint-key` como opcion explicita.
+- `dashboard/tools/check-architecture.mjs` bloquea regresiones del generador hacia `protected endpoint = ...`, `navigation.registry.ts` o ausencia de snippets del catalogo API.
+- `dashboard/docs/API-FIRST-MODULES.md`, `ARCHITECTURE.md`, `FEATURE-BLUEPRINT.md` y `MODULE-API-BLUEPRINT.md` documentan que las pantallas de auditoria/soporte tambien deben derivar rutas desde el catalogo, y que `--endpoint` es ruta backend mientras `--endpoint-key` es clave estable.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `node tools/generate-feature.mjs qa-api-first --module=monitoring --endpoint=monitoring/qa-api-first --endpoint-key=monitoring.qa-api-first --label="QA API First" --dry-run`, `npm run docker:health`.
@@ -6387,7 +6810,7 @@ Operacion y verificacion:
 Objetivo: corregir que el menu lateral replegado permitiera activar grupos principales pero dejara los submenus inconsistentes o dificiles de usar.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` diferencia previsualizacion por hover de apertura fijada por click (`collapsedFlyoutPinned`), permite cerrar el mismo submenu con un segundo click y recalcula la posicion del flyout desde el borde real del sidebar.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` diferencia previsualizacion por hover de apertura fijada por click (`collapsedFlyoutPinned`), permite cerrar el mismo submenu con un segundo click y recalcula la posicion del flyout desde el borde real del sidebar.
 - `side-nav.component.html/css` posicionan el flyout con `left/top` calculados, elevan su `z-index`, mantienen `pointer-events` y preservan los `href` publicos bajo `/dashboard/` mientras Angular navega internamente.
 - `side-nav.component.spec.ts` agrega cobertura para hover + click, cierre por segundo click y navegacion de submenus con query tenant.
 - `tests/e2e/paramascotas-real-integrations.spec.ts` ahora valida que el segundo click cierre el flyout y que los submenus replegados sigan navegando.
@@ -6403,13 +6826,13 @@ Operacion y verificacion:
 Objetivo: seguir cerrando duplicaciones de arquitectura API-first, especialmente la lista paralela de permisos por modulo y la falta de trazabilidad entre endpoints internos del Dashboard y rutas publicas esperadas por APISIX.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-catalog.ts` agrega `permissionActions` a cada modulo contratable, dejando en el catalogo central la politica `modulo -> acciones`.
-- `Dashboard/src/app/core/tenant/tenant-permissions.ts` deriva `TENANT_PERMISSION_OPTIONS` desde `TENANT_MODULE_OPTIONS`, conservando permisos especiales de roles y `platform-admin` sin duplicar listas de modulos.
-- `Dashboard/src/app/core/tenant/tenant-permissions.spec.ts` valida que las opciones de permisos, roles readonly y filtros por modulos contratados dependan del catalogo central.
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` agrega `publicBasePath` por backend logico, separando el consumo interno del Dashboard (`basePath`, normalmente `/dashboard/api`) del contrato publico APISIX (`/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}` o facturacion tenantizada).
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` agrega `publicUrl(...)` para mapear cualquier endpoint registrado a su ruta publica esperada, mientras los servicios siguen consumiendo `url(...)`.
-- `Dashboard/docs/API-FIRST-MODULES.md` documenta como agregar modulos, endpoints, consumos internos, rutas publicas APISIX y guardrails. `ARCHITECTURE.md` y `MODULE-API-BLUEPRINT.md` enlazan esa guia.
-- `Dashboard/tools/check-architecture.mjs` ahora exige permisos derivados del catalogo y `publicBasePath/publicUrl` para trazabilidad APISIX.
+- `dashboard/src/app/core/tenant/tenant-module-catalog.ts` agrega `permissionActions` a cada modulo contratable, dejando en el catalogo central la politica `modulo -> acciones`.
+- `dashboard/src/app/core/tenant/tenant-permissions.ts` deriva `TENANT_PERMISSION_OPTIONS` desde `TENANT_MODULE_OPTIONS`, conservando permisos especiales de roles y `platform-admin` sin duplicar listas de modulos.
+- `dashboard/src/app/core/tenant/tenant-permissions.spec.ts` valida que las opciones de permisos, roles readonly y filtros por modulos contratados dependan del catalogo central.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` agrega `publicBasePath` por backend logico, separando el consumo interno del Dashboard (`basePath`, normalmente `/dashboard/api`) del contrato publico APISIX (`/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}` o facturacion tenantizada).
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` agrega `publicUrl(...)` para mapear cualquier endpoint registrado a su ruta publica esperada, mientras los servicios siguen consumiendo `url(...)`.
+- `dashboard/docs/API-FIRST-MODULES.md` documenta como agregar modulos, endpoints, consumos internos, rutas publicas APISIX y guardrails. `ARCHITECTURE.md` y `MODULE-API-BLUEPRINT.md` enlazan esa guia.
+- `dashboard/tools/check-architecture.mjs` ahora exige permisos derivados del catalogo y `publicBasePath/publicUrl` para trazabilidad APISIX.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6423,9 +6846,9 @@ Operacion y verificacion:
 Objetivo: eliminar la ruta legacy que permitia a servicios CRUD declarar endpoints manuales en frontend, reforzando que productos, usuarios, roles, facturas, monitoreo y workspace usen claves del catalogo API central.
 
 Cambios:
-- `Dashboard/src/app/core/http/api-resource.ts` elimina `endpoint` y `legacyEndpoint()`. Las operaciones `list/create/detail/update/remove` ahora fallan rapido si el servicio no declara la clave `endpointKeys` correspondiente.
-- `Dashboard/src/app/core/http/api-resource.spec.ts` valida que un recurso CRUD construya URLs desde `DashboardApiCatalogService.url(...)` con `basePath` registrado y que no exista fallback manual cuando falta una clave.
-- `Dashboard/tools/check-architecture.mjs` agrega guardrails para impedir que `ApiResource` recupere endpoints legacy y para validar que cada `endpointKeys` usado por servicios `data/*-api.service.ts` exista en `core/modules/dashboard-api.config.ts`.
+- `dashboard/src/app/core/http/api-resource.ts` elimina `endpoint` y `legacyEndpoint()`. Las operaciones `list/create/detail/update/remove` ahora fallan rapido si el servicio no declara la clave `endpointKeys` correspondiente.
+- `dashboard/src/app/core/http/api-resource.spec.ts` valida que un recurso CRUD construya URLs desde `DashboardApiCatalogService.url(...)` con `basePath` registrado y que no exista fallback manual cuando falta una clave.
+- `dashboard/tools/check-architecture.mjs` agrega guardrails para impedir que `ApiResource` recupere endpoints legacy y para validar que cada `endpointKeys` usado por servicios `data/*-api.service.ts` exista en `core/modules/dashboard-api.config.ts`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6438,12 +6861,12 @@ Operacion y verificacion:
 Objetivo: cerrar una inconsistencia API-first donde los servicios ya usaban claves del catalogo central, pero las URLs HTTP finales seguian dependiendo del `API_BASE_URL` global y no del backend declarado por cada endpoint.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` agrega `url(endpointKey, params)`, resolviendo `backend.basePath + endpoint.path` desde `DASHBOARD_API_BACKENDS`.
-- `Dashboard/src/app/core/http/api-client.service.ts` y `api-request.util.ts` reconocen URLs ya resueltas por cualquier backend registrado para no prefijarlas otra vez.
-- `Dashboard/src/app/core/http/interceptors/fixture-backend.interceptor.ts` normaliza requests contra todos los `basePath` registrados, manteniendo fixtures locales compatibles con `/api` y `/dashboard/api`.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` agrega `url(endpointKey, params)`, resolviendo `backend.basePath + endpoint.path` desde `DASHBOARD_API_BACKENDS`.
+- `dashboard/src/app/core/http/api-client.service.ts` y `api-request.util.ts` reconocen URLs ya resueltas por cualquier backend registrado para no prefijarlas otra vez.
+- `dashboard/src/app/core/http/interceptors/fixture-backend.interceptor.ts` normaliza requests contra todos los `basePath` registrados, manteniendo fixtures locales compatibles con `/api` y `/dashboard/api`.
 - Servicios de auth, tenant, tenant-admin, inventory, monitoring, workspace, resumen Paramascotas y recursos genericos migran requests HTTP a `apiCatalog.url(...)`.
 - `ParamascotasPanelApiService` conserva `apiCatalog.path(...)` solo para mostrar firma/proxy de auditoria; el request real usa `apiCatalog.url(...)`.
-- `Dashboard/tools/check-architecture.mjs` agrega guardrail para fallar si servicios API vuelven a usar `apiCatalog.path(...)` como URL de request.
+- `dashboard/tools/check-architecture.mjs` agrega guardrail para fallar si servicios API vuelven a usar `apiCatalog.path(...)` como URL de request.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6456,12 +6879,12 @@ Operacion y verificacion:
 Objetivo: separar las rutas ecommerce reales de Paramascotas de las rutas template/UI que convivian en `dashboard.routes.ts`, evitando que modulos distintos dependan del mismo source mixto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` exporta `ecommerceDashboardRoutes` para `paramascotas-backend`/`paramascotas-panel` y `dashboardTemplateRoutes` para `home*`, `widgets` y charts; conserva `dashboardRoutes` solo como agregado local/legacy.
-- `Dashboard/src/app/app-route-sources.ts` registra sources separados `ecommerce` y `dashboard-templates`, dejando de consumir el source mixto.
-- `Dashboard/src/app/core/modules/dashboard-route.config.ts` reemplaza el source key generico `dashboard` por `ecommerce` y `dashboard-templates`.
-- `Dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` asigna `ecommerce -> ecommerce`, `ui-kit -> dashboard-templates + ui-kit` y deja el modulo base `dashboard` sin rutas visuales propias.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` actualiza las expectativas de route sources y confirma que UI Kit y ecommerce ya no comparten source.
-- `Dashboard/tools/check-architecture.mjs` falla si `app-route-sources.ts` vuelve a importar `dashboardRoutes` en lugar de los sources separados.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` exporta `ecommerceDashboardRoutes` para `paramascotas-backend`/`paramascotas-panel` y `dashboardTemplateRoutes` para `home*`, `widgets` y charts; conserva `dashboardRoutes` solo como agregado local/legacy.
+- `dashboard/src/app/app-route-sources.ts` registra sources separados `ecommerce` y `dashboard-templates`, dejando de consumir el source mixto.
+- `dashboard/src/app/core/modules/dashboard-route.config.ts` reemplaza el source key generico `dashboard` por `ecommerce` y `dashboard-templates`.
+- `dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` asigna `ecommerce -> ecommerce`, `ui-kit -> dashboard-templates + ui-kit` y deja el modulo base `dashboard` sin rutas visuales propias.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` actualiza las expectativas de route sources y confirma que UI Kit y ecommerce ya no comparten source.
+- `dashboard/tools/check-architecture.mjs` falla si `app-route-sources.ts` vuelve a importar `dashboardRoutes` en lugar de los sources separados.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6474,10 +6897,10 @@ Operacion y verificacion:
 Objetivo: eliminar el mapa paralelo `module -> routeSources` dentro de `dashboard-modules.config.ts`, reforzando que cada modulo tenga sus capacidades de rutas declaradas en una zona central clara.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` registra `DASHBOARD_MODULE_CAPABILITIES`, con las fuentes de rutas habilitadas por cada `ModuleKey`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.ts` deja de declarar `DASHBOARD_MODULE_ROUTE_SOURCES` y ahora arma cada `DashboardModuleDefinition` con `getDashboardModuleCapabilities(key)`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que las capacidades existan para todos los modulos del tenant catalog y que cada `routeSource` apunte a una fuente registrada.
-- `Dashboard/tools/check-architecture.mjs` falla si `dashboard-modules.config.ts` vuelve a declarar un mapa paralelo de rutas o deja de resolver capacidades desde `dashboard-module-capabilities.config.ts`.
+- `dashboard/src/app/core/modules/dashboard-module-capabilities.config.ts` registra `DASHBOARD_MODULE_CAPABILITIES`, con las fuentes de rutas habilitadas por cada `ModuleKey`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.ts` deja de declarar `DASHBOARD_MODULE_ROUTE_SOURCES` y ahora arma cada `DashboardModuleDefinition` con `getDashboardModuleCapabilities(key)`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que las capacidades existan para todos los modulos del tenant catalog y que cada `routeSource` apunte a una fuente registrada.
+- `dashboard/tools/check-architecture.mjs` falla si `dashboard-modules.config.ts` vuelve a declarar un mapa paralelo de rutas o deja de resolver capacidades desde `dashboard-module-capabilities.config.ts`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6488,10 +6911,10 @@ Operacion y verificacion:
 Objetivo: eliminar otra fuente duplicada de rutas del panel Paramascotas, esta vez dentro del componente visual, para que los CTAs internos tambien dependan del manifiesto central de modulos/vistas.
 
 Cambios:
-- `Dashboard/src/app/core/modules/paramascotas-panel-manifest.config.ts` agrega `ParamascotasPanelRouteKey` y `paramascotasPanelRouteByKey()`, validando en runtime que la clave `grupo.item` exista en el manifiesto central antes de construir la URL.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` reemplaza las rutas hardcodeadas `/paramascotas-panel/...` por `navigatePanel('grupo.item')` para decisiones financieras, trazabilidad, inventario, alertas, usuarios y accesos cruzados de catalogo/operacion/finanzas.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts` cubre que las rutas por clave del manifiesto resuelvan la misma URL esperada que las rutas por grupo/item.
-- `Dashboard/tools/check-architecture.mjs` ahora falla si `ParamascotasPanelComponent` vuelve a declarar rutas `/paramascotas-panel/...` a mano.
+- `dashboard/src/app/core/modules/paramascotas-panel-manifest.config.ts` agrega `ParamascotasPanelRouteKey` y `paramascotasPanelRouteByKey()`, validando en runtime que la clave `grupo.item` exista en el manifiesto central antes de construir la URL.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` reemplaza las rutas hardcodeadas `/paramascotas-panel/...` por `navigatePanel('grupo.item')` para decisiones financieras, trazabilidad, inventario, alertas, usuarios y accesos cruzados de catalogo/operacion/finanzas.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts` cubre que las rutas por clave del manifiesto resuelvan la misma URL esperada que las rutas por grupo/item.
+- `dashboard/tools/check-architecture.mjs` ahora falla si `ParamascotasPanelComponent` vuelve a declarar rutas `/paramascotas-panel/...` a mano.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6503,12 +6926,12 @@ Operacion y verificacion:
 Objetivo: corregir la fragilidad de los submenus de `Integraciones reales`, evitando que la navegacion lateral y el registry del panel Paramascotas declaren dos listas paralelas de vistas.
 
 Cambios:
-- `Dashboard/src/app/core/modules/paramascotas-panel-manifest.config.ts` centraliza grupos, items, labels de navegacion, iconos, tabs del panel anterior, modo de superficie y acciones verificadas de `ParamascotasPanel`.
-- `Dashboard/src/app/core/modules/dashboard-navigation.config.ts` construye los submenus de `Reportes`, `Monitoreo`, `Catalogo`, `Operacion` y `Precios y finanzas` desde ese manifiesto mediante `paramascotasPanelRoute()`, dejando de quemar rutas `/paramascotas-panel/...`.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.ts` consume el mismo manifiesto y solo agrega el mapa de endpoints reales por vista, manteniendo la equivalencia visual/API sin duplicar estructura.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-panel.model.ts` reutiliza los tipos core del manifiesto para evitar divergencias entre capas.
-- `Dashboard/tools/check-architecture.mjs` ahora falla si `dashboard-navigation.config.ts` vuelve a hardcodear subrutas de Paramascotas o deja de usar el manifiesto central.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts` valida que el registry derive sus grupos/items desde `PARAMASCOTAS_PANEL_MANIFEST`.
+- `dashboard/src/app/core/modules/paramascotas-panel-manifest.config.ts` centraliza grupos, items, labels de navegacion, iconos, tabs del panel anterior, modo de superficie y acciones verificadas de `ParamascotasPanel`.
+- `dashboard/src/app/core/modules/dashboard-navigation.config.ts` construye los submenus de `Reportes`, `Monitoreo`, `Catalogo`, `Operacion` y `Precios y finanzas` desde ese manifiesto mediante `paramascotasPanelRoute()`, dejando de quemar rutas `/paramascotas-panel/...`.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.ts` consume el mismo manifiesto y solo agrega el mapa de endpoints reales por vista, manteniendo la equivalencia visual/API sin duplicar estructura.
+- `dashboard/src/app/features/dashboard/models/paramascotas-panel.model.ts` reutiliza los tipos core del manifiesto para evitar divergencias entre capas.
+- `dashboard/tools/check-architecture.mjs` ahora falla si `dashboard-navigation.config.ts` vuelve a hardcodear subrutas de Paramascotas o deja de usar el manifiesto central.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts` valida que el registry derive sus grupos/items desde `PARAMASCOTAS_PANEL_MANIFEST`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6520,13 +6943,13 @@ Operacion y verificacion:
 Objetivo: quitar rutas backend acopladas dentro del registry visual de `ParamascotasPanel`, para que las fuentes del panel anterior tambien dependan del catalogo central API-first.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/models/paramascotas-panel.model.ts` reemplaza `path()` por `endpointKey` y `pathParams`, separando la declaracion de fuente visual de la ruta backend concreta.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts` resuelve cada fuente mediante `DashboardApiCatalogService`, manteniendo solo los query params y la firma de auditoria del panel.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.ts` deja de declarar rutas como `admin/report`, `products`, `orders` o `admin/settings/*`; ahora usa claves `ecommerce.*` registradas en `dashboard-api.config.ts`.
+- `dashboard/src/app/features/dashboard/models/paramascotas-panel.model.ts` reemplaza `path()` por `endpointKey` y `pathParams`, separando la declaracion de fuente visual de la ruta backend concreta.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts` resuelve cada fuente mediante `DashboardApiCatalogService`, manteniendo solo los query params y la firma de auditoria del panel.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.ts` deja de declarar rutas como `admin/report`, `products`, `orders` o `admin/settings/*`; ahora usa claves `ecommerce.*` registradas en `dashboard-api.config.ts`.
 - El mismo registry deja de duplicar firmas `/api/...`; la firma visible y el path proxy se derivan en `ParamascotasPanelApiService` desde `DashboardApiCatalogService` mas query/path params.
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` registra `ecommerce.pos-shifts` para el historial de turnos POS que faltaba en el catalogo central.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts` valida que cada endpoint usado por el panel exista en el catalogo central.
-- `Dashboard/tools/check-architecture.mjs` ahora falla si `paramascotas-panel.registry.ts` vuelve a declarar paths `/api/...` en lugar de `endpointKey`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` registra `ecommerce.pos-shifts` para el historial de turnos POS que faltaba en el catalogo central.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.spec.ts` valida que cada endpoint usado por el panel exista en el catalogo central.
+- `dashboard/tools/check-architecture.mjs` ahora falla si `paramascotas-panel.registry.ts` vuelve a declarar paths `/api/...` en lugar de `endpointKey`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6538,10 +6961,10 @@ Operacion y verificacion:
 Objetivo: mover los contratos transversales de autenticacion y contexto tenant al catalogo central de APIs, separando sesion/tenant de la logica interna de los servicios.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` registra en el modulo base `dashboard` los endpoints de `tenant/context`, proveedores auth, sesion fixture/real, login fixture/real, solicitudes de acceso, recuperacion de clave, auth externa y logout.
-- `Dashboard/src/app/core/auth/auth-api.service.ts` consume esas claves mediante `DashboardApiCatalogService`, manteniendo la separacion actual entre runtime fixture/local y backend real.
-- `Dashboard/src/app/core/tenant/tenant-api.service.ts` consume `dashboard.tenant-context` desde el catalogo y conserva el desempaquetado del envelope real.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que los endpoints core de `dashboard` sigan declarados junto al resto de modulos.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` registra en el modulo base `dashboard` los endpoints de `tenant/context`, proveedores auth, sesion fixture/real, login fixture/real, solicitudes de acceso, recuperacion de clave, auth externa y logout.
+- `dashboard/src/app/core/auth/auth-api.service.ts` consume esas claves mediante `DashboardApiCatalogService`, manteniendo la separacion actual entre runtime fixture/local y backend real.
+- `dashboard/src/app/core/tenant/tenant-api.service.ts` consume `dashboard.tenant-context` desde el catalogo y conserva el desempaquetado del envelope real.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que los endpoints core de `dashboard` sigan declarados junto al resto de modulos.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6553,10 +6976,10 @@ Operacion y verificacion:
 Objetivo: seguir eliminando endpoints backend quemados en servicios del Dashboard, manteniendo la configuracion de APIs por modulo como fuente central.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/data/tenant-admin-api.service.ts` deja de construir `admin/tenants` y rutas hijas manualmente; usa `DashboardApiCatalogService` con `tenant-admin.tenants`, `tenant-admin.tenants.create`, `tenant-admin.tenants.modules` y `tenant-admin.tenants.configuration`.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-backend-api.service.ts` migra `health`, `products`, `admin/dashboard/stats` y `admin/inventory/intelligence` a claves registradas del modulo `ecommerce`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` refuerza los guardrails para tenant-admin y para los endpoints ecommerce usados por el resumen Paramascotas.
-- `Dashboard/tests/e2e/smoke.spec.ts` se alinea con el label central actual `Facturacion` en la matriz rapida.
+- `dashboard/src/app/features/tenant-admin/data/tenant-admin-api.service.ts` deja de construir `admin/tenants` y rutas hijas manualmente; usa `DashboardApiCatalogService` con `tenant-admin.tenants`, `tenant-admin.tenants.create`, `tenant-admin.tenants.modules` y `tenant-admin.tenants.configuration`.
+- `dashboard/src/app/features/dashboard/data/paramascotas-backend-api.service.ts` migra `health`, `products`, `admin/dashboard/stats` y `admin/inventory/intelligence` a claves registradas del modulo `ecommerce`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` refuerza los guardrails para tenant-admin y para los endpoints ecommerce usados por el resumen Paramascotas.
+- `dashboard/tests/e2e/smoke.spec.ts` se alinea con el label central actual `Facturacion` en la matriz rapida.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6567,10 +6990,10 @@ Operacion y verificacion:
 Objetivo: corregir que el menu lateral replegado permitiera usar entradas principales pero no dejara operar de forma confiable los submenus.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html,css}` refuerza el flyout del sidebar replegado: los grupos con hijos abren submenu por click y por entrada de puntero/foco cuando no hay otro flyout activo, preservan `aria-expanded`, mantienen enlaces bajo `/dashboard` y evitan que un hover accidental reemplace el submenu antes de hacer click.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html,css}` refuerza el flyout del sidebar replegado: los grupos con hijos abren submenu por click y por entrada de puntero/foco cuando no hay otro flyout activo, preservan `aria-expanded`, mantienen enlaces bajo `/dashboard` y evitan que un hover accidental reemplace el submenu antes de hacer click.
 - Cuando un flyout ya esta abierto, pasar el puntero hacia el panel no cambia el grupo activo; para cambiar entre grupos replegados se usa click explicito sobre el icono del grupo, evitando que los enlaces del submenu se desmonten antes de seleccionarlos.
 - El flyout ya no queda bloqueado por la regla responsive intermedia; solo se oculta en movil real, donde los submenus se expanden inline dentro del overlay.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` y `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agregan cobertura para submenu replegado por puntero, rutas con base publica, navegacion de Reportes/Catalogo/Operacion y cambio explicito entre flyouts de grupos.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.spec.ts` y `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agregan cobertura para submenu replegado por puntero, rutas con base publica, navegacion de Reportes/Catalogo/Operacion y cambio explicito entre flyouts de grupos.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6581,9 +7004,9 @@ Operacion y verificacion:
 Objetivo: completar la migracion de `ParamascotasAdminApiService` para que settings, precios, descuentos, gastos, periodos financieros, ajustes, ventas historicas y CSRF de mutaciones no construyan rutas backend directamente.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` agrega claves por accion para actualizaciones de settings, pricing, creacion de descuentos/gastos, gastos recurrentes (`create/update/delete`) y mantiene los contratos financieros existentes con metodo explicito.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` reemplaza las rutas directas restantes por `this.apiPath(...)`, incluyendo `withMutationHeaders()` via `ecommerce.auth-session`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que las nuevas claves de settings/finanzas/descuentos/gastos sigan registradas en el modulo `ecommerce`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` agrega claves por accion para actualizaciones de settings, pricing, creacion de descuentos/gastos, gastos recurrentes (`create/update/delete`) y mantiene los contratos financieros existentes con metodo explicito.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` reemplaza las rutas directas restantes por `this.apiPath(...)`, incluyendo `withMutationHeaders()` via `ecommerce.auth-session`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` valida que las nuevas claves de settings/finanzas/descuentos/gastos sigan registradas en el modulo `ecommerce`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6596,9 +7019,9 @@ Operacion y verificacion:
 Objetivo: seguir reduciendo acoplamiento API en `ParamascotasAdminApiService`, que aun concentraba rutas ecommerce escritas a mano pese al catalogo central de endpoints.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` inyecta `DashboardApiCatalogService` y migra a claves centrales los endpoints de productos, imagenes, RIDE PDF/reemision, pedidos, cotizacion server-side, detalle/factura de orden, estadisticas, inteligencia de inventario, facturas de compra, POS, cotizaciones, reportes y usuarios operativos.
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` agrega claves faltantes `ecommerce.products.detail`, `ecommerce.billing-rides.pdf`, `ecommerce.admin-users.create` y `ecommerce.admin-users.update`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` cubre esas claves dentro del registry central.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` inyecta `DashboardApiCatalogService` y migra a claves centrales los endpoints de productos, imagenes, RIDE PDF/reemision, pedidos, cotizacion server-side, detalle/factura de orden, estadisticas, inteligencia de inventario, facturas de compra, POS, cotizaciones, reportes y usuarios operativos.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` agrega claves faltantes `ecommerce.products.detail`, `ecommerce.billing-rides.pdf`, `ecommerce.admin-users.create` y `ecommerce.admin-users.update`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` cubre esas claves dentro del registry central.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -6613,9 +7036,9 @@ Pendiente:
 Objetivo: reducir acoplamiento API restante en servicios Workspace, donde chat, calendario y kanban todavia armaban rutas `workspace/...` directamente en sus servicios.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` agrega claves faltantes para `workspace.calendar.create`, `workspace.chat.messages` y `workspace.chat.messages.send`.
-- `Dashboard/src/app/features/workspace/data/workspace-chat-api.service.ts`, `workspace-calendar-api.service.ts` y `workspace-kanban-api.service.ts` ahora resuelven rutas con `DashboardApiCatalogService.path(...)`; ya no codifican manualmente paths ni parametros con `encodeURIComponent`.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` verifica que las claves Workspace usadas por esos servicios sigan registradas en el modulo central.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` agrega claves faltantes para `workspace.calendar.create`, `workspace.chat.messages` y `workspace.chat.messages.send`.
+- `dashboard/src/app/features/workspace/data/workspace-chat-api.service.ts`, `workspace-calendar-api.service.ts` y `workspace-kanban-api.service.ts` ahora resuelven rutas con `DashboardApiCatalogService.path(...)`; ya no codifican manualmente paths ni parametros con `encodeURIComponent`.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` verifica que las claves Workspace usadas por esos servicios sigan registradas en el modulo central.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`.
@@ -6627,9 +7050,9 @@ Operacion y verificacion:
 Objetivo: quitar de `tenant-admin.component.ts` otra fuente paralela de verdad sobre servicios contratados, presets SaaS y columnas de cobertura, para que el dashboard siga avanzando hacia configuracion central API-first/modular.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-module-catalog.ts` ahora exporta `TENANT_MODULE_PRESETS`, `DEFAULT_TENANT_MODULE_PRESET_KEY`, `TENANT_QUICK_MATRIX_COLUMNS`, tipos publicos de preset/matriz y `tenantModulePresetDefinition()`.
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.ts` deja de declarar localmente presets `platform-core`, `ecommerce-base`, `retail-ops`, `inventory-finance` y la matriz rapida; solo consume el catalogo central.
-- `Dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` agrega guardrail para validar que presets y columnas de matriz apunten a modulos registrados y a tipos de negocio existentes.
+- `dashboard/src/app/core/tenant/tenant-module-catalog.ts` ahora exporta `TENANT_MODULE_PRESETS`, `DEFAULT_TENANT_MODULE_PRESET_KEY`, `TENANT_QUICK_MATRIX_COLUMNS`, tipos publicos de preset/matriz y `tenantModulePresetDefinition()`.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.ts` deja de declarar localmente presets `platform-core`, `ecommerce-base`, `retail-ops`, `inventory-finance` y la matriz rapida; solo consume el catalogo central.
+- `dashboard/src/app/core/modules/dashboard-modules.config.spec.ts` agrega guardrail para validar que presets y columnas de matriz apunten a modulos registrados y a tipos de negocio existentes.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y Playwright focal de submenus (`mobile sidebar expands submenu`, `collapsed submenu`).
@@ -6641,10 +7064,10 @@ Operacion y verificacion:
 Objetivo: quitar de `app.routes.ts` el armado manual de todas las fuentes de rutas privadas del dashboard, para que el shell consuma un registry y no vuelva a ser el punto donde se conectan modulos feature uno por uno.
 
 Cambios:
-- `Dashboard/src/app/app-route-sources.ts` centraliza `DASHBOARD_ROUTE_SOURCE_MAP` y `APP_PUBLIC_ROUTES`; es el archivo de composition root para asociar route source keys con los `*.routes.ts` de cada feature.
-- `Dashboard/src/app/app.routes.ts` deja de importar rutas privadas de features directamente y solo consume `DASHBOARD_ROUTE_SOURCE_MAP` junto a `buildDashboardPrivateRoutesFromRegistry(...)`.
-- `Dashboard/tools/check-architecture.mjs` permite el nuevo archivo raiz `app-route-sources.ts` y agrega guardrail para bloquear imports directos `@features/*/*.routes` desde `app.routes.ts`.
-- `Dashboard/tools/generate-feature.mjs` actualiza las instrucciones de registro para apuntar a `app-route-sources.ts`, no al shell route file.
+- `dashboard/src/app/app-route-sources.ts` centraliza `DASHBOARD_ROUTE_SOURCE_MAP` y `APP_PUBLIC_ROUTES`; es el archivo de composition root para asociar route source keys con los `*.routes.ts` de cada feature.
+- `dashboard/src/app/app.routes.ts` deja de importar rutas privadas de features directamente y solo consume `DASHBOARD_ROUTE_SOURCE_MAP` junto a `buildDashboardPrivateRoutesFromRegistry(...)`.
+- `dashboard/tools/check-architecture.mjs` permite el nuevo archivo raiz `app-route-sources.ts` y agrega guardrail para bloquear imports directos `@features/*/*.routes` desde `app.routes.ts`.
+- `dashboard/tools/generate-feature.mjs` actualiza las instrucciones de registro para apuntar a `app-route-sources.ts`, no al shell route file.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run arch:check`, `npm run lint`, `npm run docker:up` y `npm run docker:health`.
@@ -6655,11 +7078,11 @@ Operacion y verificacion:
 Objetivo: eliminar otra fuente de acoplamiento API en el frontend, donde servicios basados en `ApiResource` todavia declaraban rutas como `endpoint = 'products'`, `endpoint = 'invoices'`, etc.
 
 Cambios:
-- `Dashboard/src/app/core/http/api-resource.ts` ahora soporta `endpointKeys` por accion (`list`, `detail`, `create`, `replace`, `update`, `remove`) y resuelve paths desde `DashboardApiCatalogService`; mantiene fallback legacy solo para compatibilidad, pero ya no hay servicios feature usandolo.
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` completa claves faltantes y corrige metodos reales para productos, facturas, usuarios, roles, monitoreo y blog/workspace (`PATCH`/`DELETE` cuando corresponde).
+- `dashboard/src/app/core/http/api-resource.ts` ahora soporta `endpointKeys` por accion (`list`, `detail`, `create`, `replace`, `update`, `remove`) y resuelve paths desde `DashboardApiCatalogService`; mantiene fallback legacy solo para compatibilidad, pero ya no hay servicios feature usandolo.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` completa claves faltantes y corrige metodos reales para productos, facturas, usuarios, roles, monitoreo y blog/workspace (`PATCH`/`DELETE` cuando corresponde).
 - Migrados a claves centrales: `InvoicesApiService`, `ProductsApiService`, `MonitoringApiService`, `UsersApiService`, `RolesApiService`, `WorkspaceEmailApiService` y `WorkspaceBlogApiService`.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` cubre parametros codificados para `productId`, `eventId`, `invoiceId`, `userId`, `roleId` y `postId`.
-- `Dashboard/tools/check-architecture.mjs` agrega guardrail: cualquier `data/*-api.service.ts` que extienda `ApiResource` debe usar `endpointKeys` y no puede declarar `protected override readonly endpoint = ...`.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` cubre parametros codificados para `productId`, `eventId`, `invoiceId`, `userId`, `roleId` y `postId`.
+- `dashboard/tools/check-architecture.mjs` agrega guardrail: cualquier `data/*-api.service.ts` que extienda `ApiResource` debe usar `endpointKeys` y no puede declarar `protected override readonly endpoint = ...`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -6670,10 +7093,10 @@ Operacion y verificacion:
 Objetivo: avanzar el dashboard API-first reduciendo la duplicacion entre `dashboard-api.config.ts` y los servicios de datos que aun escribian endpoints como strings propios.
 
 Cambios:
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` agrega `DashboardApiCatalogService`, que resuelve endpoints por `key` desde `DASHBOARD_MODULE_API_ENDPOINTS`, renderiza parametros de path con `encodeURIComponent` y falla si falta un parametro, sobran parametros o la clave no esta registrada.
-- `Dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` documenta el contrato de resolucion, parametros codificados, errores explicitos y unicidad de claves de endpoints.
-- `Dashboard/src/app/features/inventory/data/inventory-api.service.ts` deja de quemar `inventory/items` y variantes; ahora consume `inventory.stock`, `inventory.stock-detail` e `inventory.stock-adjust` desde el catalogo central.
-- `Dashboard/src/app/features/dashboard/data/dashboard-api.service.ts` deja de quemar `dashboard/summary` y consume `dashboard.summary` desde el catalogo central.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.ts` agrega `DashboardApiCatalogService`, que resuelve endpoints por `key` desde `DASHBOARD_MODULE_API_ENDPOINTS`, renderiza parametros de path con `encodeURIComponent` y falla si falta un parametro, sobran parametros o la clave no esta registrada.
+- `dashboard/src/app/core/modules/dashboard-api-catalog.service.spec.ts` documenta el contrato de resolucion, parametros codificados, errores explicitos y unicidad de claves de endpoints.
+- `dashboard/src/app/features/inventory/data/inventory-api.service.ts` deja de quemar `inventory/items` y variantes; ahora consume `inventory.stock`, `inventory.stock-detail` e `inventory.stock-adjust` desde el catalogo central.
+- `dashboard/src/app/features/dashboard/data/dashboard-api.service.ts` deja de quemar `dashboard/summary` y consume `dashboard.summary` desde el catalogo central.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -6684,11 +7107,11 @@ Operacion y verificacion:
 Objetivo: corregir que los grupos del menu replegado abrieran, pero sus submenus no fueran confiables al operar el dashboard publicado bajo el prefijo `/dashboard/`.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` agrega `routeHref()` base-aware: el `href` publico respeta el `<base href="/dashboard/">`, mientras `navigateByUrl()` sigue usando rutas internas del router sin duplicar el prefijo.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.ts` agrega `routeHref()` base-aware: el `href` publico respeta el `<base href="/dashboard/">`, mientras `navigateByUrl()` sigue usando rutas internas del router sin duplicar el prefijo.
 - `side-nav.component.html` usa `routeHref()` en logo, enlaces principales, submenus normales y flyout replegado; el flyout ahora detiene `pointerdown`, `mousedown` y `click` para que no se cierre antes de navegar.
 - `side-nav.component.css` marca visualmente el link activo dentro del flyout replegado.
 - `side-nav.component.spec.ts` cubre el contrato de `href` con base `/dashboard/` y navegacion interna sin `%3Ftenant`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba Playwright que entra por `/dashboard/paramascotas-backend`, repliega el menu, abre `Operacion` y navega a `Venta en local` desde el submenu.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba Playwright que entra por `/dashboard/paramascotas-backend`, repliega el menu, abre `Operacion` y navega a `Venta en local` desde el submenu.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "collapsed submenu links keep"` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "fixed sidebar|mobile sidebar"`.
@@ -6699,10 +7122,10 @@ Operacion y verificacion:
 Objetivo: seguir desacoplando `ParamascotasPanelComponent` para que la UI no concentre infraestructura ni logica reutilizable, dentro del avance hacia un dashboard API-first y modular.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/file-export.service.ts` centraliza la serializacion descargable de CSV y Excel XML como `Blob`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de construir `Blob` locales para reportes, plan de compra y ranking de productos; ahora delega esa responsabilidad al servicio de exportacion.
-- `Dashboard/src/app/features/dashboard/services/file-export.service.spec.ts` documenta el contrato de escape CSV y MIME de Excel XML.
-- `Dashboard/tools/check-architecture.mjs` agrega guardrail para impedir `new Blob(...)` dentro de componentes; los componentes deben usar servicios/adaptadores.
+- `dashboard/src/app/features/dashboard/services/file-export.service.ts` centraliza la serializacion descargable de CSV y Excel XML como `Blob`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deja de construir `Blob` locales para reportes, plan de compra y ranking de productos; ahora delega esa responsabilidad al servicio de exportacion.
+- `dashboard/src/app/features/dashboard/services/file-export.service.spec.ts` documenta el contrato de escape CSV y MIME de Excel XML.
+- `dashboard/tools/check-architecture.mjs` agrega guardrail para impedir `new Blob(...)` dentro de componentes; los componentes deben usar servicios/adaptadores.
 
 Follow-up:
 - `FileExportService` ahora tambien concentra el contrato y render de workbook Excel XML (`FileExportWorkbookWorksheet`, celdas, filas de titulo/subtitulo/header y serializacion XML).
@@ -6720,9 +7143,9 @@ Operacion y verificacion:
 Objetivo: sacar reglas de consulta por dia/semana/mes/ano/total desde `ParamascotasPanelComponent`, manteniendo el comportamiento de reportes, ranking y gastos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/services/report-period.service.ts` centraliza `ReportPeriodScope`, opciones de periodo, normalizacion de mes/dia/ano, queries de reporte, queries de gastos y etiquetas de periodo.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` usa `ReportPeriodService` para inicializar periodos Ecuador, construir parametros de reportes/ranking/finanzas y normalizar cambios de filtros.
-- `Dashboard/src/app/features/dashboard/services/report-period.service.spec.ts` documenta los contratos de query para `day`, `week`, `month`, `year`, `historical`, rangos de gastos y etiquetas.
+- `dashboard/src/app/features/dashboard/services/report-period.service.ts` centraliza `ReportPeriodScope`, opciones de periodo, normalizacion de mes/dia/ano, queries de reporte, queries de gastos y etiquetas de periodo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` usa `ReportPeriodService` para inicializar periodos Ecuador, construir parametros de reportes/ranking/finanzas y normalizar cambios de filtros.
+- `dashboard/src/app/features/dashboard/services/report-period.service.spec.ts` documenta los contratos de query para `day`, `week`, `month`, `year`, `historical`, rangos de gastos y etiquetas.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up` y `npm run docker:health`.
@@ -6734,8 +7157,8 @@ Operacion y verificacion:
 Objetivo: corregir que los menus principales del sidebar respondieran, pero los submenus no quedaran accesibles de forma confiable en modo replegado o en pantallas angostas.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html,css}` mantiene abierto el flyout del grupo replegado aunque se haga un segundo click sobre el mismo icono, agrega `aria-expanded` y estado visual al boton activo, cierra con `Escape` o click externo y habilita scroll vertical propio en el area del menu.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` refuerza la prueba desktop replegada para asegurar que el subflyout persista y agrega cobertura mobile para abrir `Reportes`, ver `Reporte de ventas` y navegar sin codificar mal el query de tenant.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.{ts,html,css}` mantiene abierto el flyout del grupo replegado aunque se haga un segundo click sobre el mismo icono, agrega `aria-expanded` y estado visual al boton activo, cierra con `Escape` o click externo y habilita scroll vertical propio en el area del menu.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` refuerza la prueba desktop replegada para asegurar que el subflyout persista y agrega cobertura mobile para abrir `Reportes`, ver `Reporte de ventas` y navegar sin codificar mal el query de tenant.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "fixed sidebar|mobile sidebar expands submenu"` (`2/2`).
@@ -6746,10 +7169,10 @@ Operacion y verificacion:
 Objetivo: cerrar las deudas detectadas en el primer registro modular para que rutas, navegacion, permisos y APIs queden validados desde una fuente central coherente.
 
 Cambios:
-- `Dashboard/tools/check-navigation.mjs` ahora valida `DASHBOARD_NAVIGATION_BLUEPRINT` en `core/modules/dashboard-navigation.config.ts`, no el re-export legacy `navigation.registry.ts`; tambien entiende rutas parametrizadas como `paramascotas-panel/:group/:view`.
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` marca las pantallas demo `home*` y `widgets` como `ui-kit`, alineando permisos/rutas con la navegacion que las expone bajo `Recursos UI`.
+- `dashboard/tools/check-navigation.mjs` ahora valida `DASHBOARD_NAVIGATION_BLUEPRINT` en `core/modules/dashboard-navigation.config.ts`, no el re-export legacy `navigation.registry.ts`; tambien entiende rutas parametrizadas como `paramascotas-panel/:group/:view`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` marca las pantallas demo `home*` y `widgets` como `ui-kit`, alineando permisos/rutas con la navegacion que las expone bajo `Recursos UI`.
 - `NavigationService` deja de caer a `/home` cuando no hay rutas visibles; usa `/module-unavailable`, y `AuthRedirectService` normaliza retornos inseguros hacia `/` para que el landing guard elija segun modulos contratados.
-- `Dashboard/src/app/core/modules/dashboard-api.config.ts` amplia el registro de endpoints por modulo con contratos reales de ecommerce/POS/cotizaciones/pedidos/reportes/compras/gastos/descuentos/workspace/monitoring/inventario/tenant-admin, corrigiendo rutas obsoletas como `tenant-admin/tenants` a `admin/tenants`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` amplia el registro de endpoints por modulo con contratos reales de ecommerce/POS/cotizaciones/pedidos/reportes/compras/gastos/descuentos/workspace/monitoring/inventario/tenant-admin, corrigiendo rutas obsoletas como `tenant-admin/tenants` a `admin/tenants`.
 - `dashboard-modules.config.spec.ts` agrega cobertura de endpoints criticos para evitar que la configuracion central vuelva a quedar incompleta.
 
 Operacion y verificacion:
@@ -6757,7 +7180,7 @@ Operacion y verificacion:
 - `npm run arch:check` queda completo en verde: `Architecture check passed`, `Navigation check passed (104 links)` y `no dependency violations`.
 
 Follow-up API registry:
-- `Dashboard/tools/check-architecture.mjs` ahora valida que todo endpoint literal o template simple consumido desde `features/**/data/*-api.service.ts` exista en `Dashboard/src/app/core/modules/dashboard-api.config.ts`.
+- `dashboard/tools/check-architecture.mjs` ahora valida que todo endpoint literal o template simple consumido desde `features/**/data/*-api.service.ts` exista en `dashboard/src/app/core/modules/dashboard-api.config.ts`.
 - El nuevo check detecto y se registraron endpoints reales faltantes: reemision RIDE, desbloqueo de usuarios, settings de sesion/ficha, auditoria de cupones, estados de gastos, recurrencias, previews/cierres financieros, ajustes, ventas historicas, `auth/session`, `health`, detalle de inventario y mutaciones de calendario/Kanban.
 - `dashboard-modules.config.spec.ts` agrega expectativas sobre rutas dinamicas criticas (`admin/billing/rides/:accessKey/cancel-and-reissue`, `admin/financial-periods/:periodKey/preview`, `inventory/items/:itemId`, `workspace/kanban/tasks/:taskId/move`).
 - Pasaron `npm run type:check`, `npm run lint`, `npm run arch:check`, `npm run docker:up`, `npm run docker:health`, smoke focal de navegacion modular (`3/3`) y Playwright focal `fixed sidebar` (`1/1`).
@@ -6767,7 +7190,7 @@ Follow-up API registry:
 Objetivo: avanzar la arquitectura del Dashboard hacia una configuracion central de modulos, APIs, navegacion y fuentes de rutas segun servicios contratados por tenant.
 
 Cambios:
-- `Dashboard/src/app/core/modules/` concentra el registro modular: `dashboard-modules.config.ts`, `dashboard-api.config.ts`, `dashboard-navigation.config.ts`, `dashboard-route.config.ts` y `dashboard-module-registry.service.ts`.
+- `dashboard/src/app/core/modules/` concentra el registro modular: `dashboard-modules.config.ts`, `dashboard-api.config.ts`, `dashboard-navigation.config.ts`, `dashboard-route.config.ts` y `dashboard-module-registry.service.ts`.
 - Cada modulo registrado declara `routeSources`, secciones de navegacion y endpoints API por backend (`dashboard-api`, `paramascotas-api`, `billing-api`); `NavigationService` consume `enabledNavigationSections()` desde el registro filtrado por contexto tenant.
 - `app.routes.ts` ya no concatena manualmente arrays de rutas por feature; usa `buildDashboardPrivateRoutesFromRegistry()` con un mapa fisico de route sources, dejando el orden y pertenencia en el registro modular.
 - `navigation.registry.ts` queda como re-export de compatibilidad hacia `DASHBOARD_NAVIGATION_BLUEPRINT`, evitando dos fuentes reales de navegacion.
@@ -6785,10 +7208,10 @@ Operacion y verificacion:
 Objetivo: corregir que `Venta en local` siguiera viendose apretada, montada y desbordada cuando el sidebar fijo aun estaba visible en anchos tipo laptop/tablet horizontal.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` agrega clases semanticas para las zonas POS `catalogo`, `carrito` y `caja/cobro`, ademas de clases especificas para el formulario de cliente y la busqueda de documento.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` agrega clases semanticas para las zonas POS `catalogo`, `carrito` y `caja/cobro`, ademas de clases especificas para el formulario de cliente y la busqueda de documento.
 - `paramascotas-panel.component.css` agrega un breakpoint POS en `max-width: 1535px`: KPIs y dashboard quedan en dos columnas, el workspace POS pasa a una columna, caja/cobro usa columnas `auto-fit`, el formulario cliente baja a dos columnas y el catalogo evita cards comprimidas.
 - En mobile, el formulario de cliente, la busqueda de documento y las cards de productos vuelven a una columna estable para evitar botones o textos cortados.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura `1365x900` con sidebar fijo, productos con nombres largos y carrito activo, validando cero overflow horizontal, workspace apilado, formulario sin solapes y botones sin texto cortado.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura `1365x900` con sidebar fijo, productos con nombres largos y carrito activo, validando cero overflow horizontal, workspace apilado, formulario sin solapes y botones sin texto cortado.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "local sales stacks cleanly on mobile|overlay menu and clean tablet layout|fixed sidebar on constrained desktop"` (`3/3`).
@@ -6838,7 +7261,7 @@ Septimo follow-up de UX POS:
 - Pasaron `php -l src/Repositories/OrderRepository.php`, `npm run type:check`, `npm run lint`, `./scripts/deploy-development.sh backend`, `npm run docker:up`, `npm run docker:health`, `./scripts/check-container-connectivity.sh development`, prueba focal POS `fixed sidebar on constrained desktop` (`1/1`) y suite focal POS (`7/7`).
 
 Octavo follow-up de UX POS/shell:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.html` agrega `sidebar-collapse-toggle` dentro del bloque de marca del sidebar, con `Contraer menu lateral` / `Expandir menu lateral`, para que el control siga visible aunque el header superior haya quedado fuera por scroll.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.html` agrega `sidebar-collapse-toggle` dentro del bloque de marca del sidebar, con `Contraer menu lateral` / `Expandir menu lateral`, para que el control siga visible aunque el header superior haya quedado fuera por scroll.
 - `side-nav.component.css` deja ese control sticky en el sidebar de escritorio y lo oculta en mobile/tablet, donde sigue aplicando el menu overlay.
 - La prueba `fixed sidebar on constrained desktop` ahora scrollea la vista POS, exige que el boton del sidebar siga visible, lo pulsa y valida que `dashboard-main` entre en modo compacto.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, prueba focal POS `fixed sidebar on constrained desktop` (`1/1`) y suite responsive POS (`3/3`).
@@ -6905,8 +7328,8 @@ Objetivo: dejar evidencia reproducible del diagnostico de login QA por correo y 
 
 Cambios:
 - Se agrega `scripts/audit-dashboard-login.sh`, que inspecciona por correo en QA: tenant, rol, `email_verified`, `failed_login_attempts`, `login_locked_until`, presencia de token activo, `last_login_at` y eventos recientes de `AuthSecurityEvent`, sin imprimir passwords ni secretos.
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` agrega una regresion publica para confirmar que `GET /dashboard/api/auth/session` y `GET /dashboard/api/tenant/context` siguen respondiendo `401 AUTH_REQUIRED` sin sesion real.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura explicita para `Ranking de productos`, validando `Dia`, `Semana`, `Mes`, `Ano` y `Total` contra `admin/dashboard/stats` y `admin/report`.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` agrega una regresion publica para confirmar que `GET /dashboard/api/auth/session` y `GET /dashboard/api/tenant/context` siguen respondiendo `401 AUTH_REQUIRED` sin sesion real.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura explicita para `Ranking de productos`, validando `Dia`, `Semana`, `Mes`, `Ano` y `Total` contra `admin/dashboard/stats` y `admin/report`.
 
 Diagnostico QA confirmado:
 - `evasquez@paramascotasec.com` pertenece al tenant `paramascotasec`, tiene rol `admin`, `email_verified = yes`, `failed_login_attempts = 0`, `active_token_present = yes` y `login_success` reciente el `2026-06-17 11:09:17`.
@@ -6923,9 +7346,9 @@ Operacion y verificacion:
 Objetivo: cerrar la confusion reportada en el login del dashboard cuando una persona tiene cuenta cliente y cuenta admin separadas dentro del tenant, sin relajar permisos reales.
 
 Cambios:
-- `Dashboard/src/app/features/public/pages/sign-in/sign-in.component.ts` aclara en el copy de `Acceso ParaMascotasEC` que una cuenta cliente del ecommerce no abre el panel administrativo.
-- `Dashboard/src/app/features/public/pages/permission-denied/permission-denied.component.ts` endurece el mensaje para cuentas `customer`: ahora explica que la cuenta puede operar el ecommerce publico, pero no el dashboard admin.
-- Se ajustan `Dashboard/src/app/features/public/pages/sign-in/sign-in.component.spec.ts`, `Dashboard/src/app/features/public/pages/permission-denied/permission-denied.component.spec.ts` y `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` al nuevo criterio de guidance.
+- `dashboard/src/app/features/public/pages/sign-in/sign-in.component.ts` aclara en el copy de `Acceso ParaMascotasEC` que una cuenta cliente del ecommerce no abre el panel administrativo.
+- `dashboard/src/app/features/public/pages/permission-denied/permission-denied.component.ts` endurece el mensaje para cuentas `customer`: ahora explica que la cuenta puede operar el ecommerce publico, pero no el dashboard admin.
+- Se ajustan `dashboard/src/app/features/public/pages/sign-in/sign-in.component.spec.ts`, `dashboard/src/app/features/public/pages/permission-denied/permission-denied.component.spec.ts` y `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` al nuevo criterio de guidance.
 
 Diagnostico QA:
 - La autenticacion publica del tenant Paramascotas sigue operativa para cuentas admin reales con MFA y eventos `login_success` recientes en `AuthSecurityEvent`.
@@ -6941,10 +7364,10 @@ Operacion y verificacion:
 Objetivo: corregir el comportamiento visual cuando el dashboard queda en ancho intermedio, especialmente el menu replegado y la pantalla `Venta en local`.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` mueve el cambio a modo overlay hasta `1279px`, oculta el toggle de escritorio en ese rango y deja visible el toggle movil para evitar el sidebar colapsado estrecho con texto cortado.
-- `Dashboard/src/dashboard-overrides.css` alinea el shell global con el mismo breakpoint `1279px`, manteniendo `dashboard-main` a ancho completo y el sidebar como overlay en tablets/laptops angostas.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` reorganiza `Venta en local` para ancho intermedio: workspace en una sola columna, dashboard POS en dos columnas, KPIs en dos columnas y formulario cliente/pago en dos columnas antes del corte movil.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba para viewport `1260x900` que valida menu overlay, ausencia de overflow horizontal y layout limpio del POS; se conserva la prueba mobile existente.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` mueve el cambio a modo overlay hasta `1279px`, oculta el toggle de escritorio en ese rango y deja visible el toggle movil para evitar el sidebar colapsado estrecho con texto cortado.
+- `dashboard/src/dashboard-overrides.css` alinea el shell global con el mismo breakpoint `1279px`, manteniendo `dashboard-main` a ancho completo y el sidebar como overlay en tablets/laptops angostas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` reorganiza `Venta en local` para ancho intermedio: workspace en una sola columna, dashboard POS en dos columnas, KPIs en dos columnas y formulario cliente/pago en dos columnas antes del corte movil.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba para viewport `1260x900` que valida menu overlay, ausencia de overflow horizontal y layout limpio del POS; se conserva la prueba mobile existente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "local sales stacks cleanly on mobile|overlay menu and clean tablet layout"` (`2/2`).
@@ -6955,13 +7378,13 @@ Operacion y verificacion:
 Objetivo: cerrar el tramo prioritario del nuevo Dashboard sobre autenticacion real, filtros temporales de reportes y usabilidad responsive de `Venta en local`, alineandolo con el comportamiento esperado de `/my-account` sin tocar produccion ni SRI productivo.
 
 Cambios:
-- `Dashboard/src/app/core/tenant/tenant-resolver.service.ts` corrige la resolucion de tenant para aliases reservados como `www`, evitando que el dashboard intente resolver el tenant como `www` en lugar de `paramascotasec`.
-- `Dashboard/src/app/features/public/pages/sign-in/sign-in.component.{ts,html}` y `Dashboard/src/app/core/auth/auth.facade.ts` mejoran el login real de Paramascotas con branding del tenant y mensajes claros para `AUTH_LOGIN_INVALID`, `AUTH_LOGIN_LOCKED` y `AUTH_EMAIL_NOT_VERIFIED`, manteniendo visible la recuperacion de clave.
-- `Dashboard/src/app/features/public/pages/permission-denied/permission-denied.component.{ts,html,css}` ahora distingue mejor entre una sesion `Cliente` y una sesion `Admin tenant`, mostrando cuenta actual, perfil detectado y una explicacion concreta cuando falta `platform-admin` o cuando la cuenta autenticada no es admin del tenant.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.{ts,html,css}`, `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts`, `paramascotasec-backend/src/Controllers/DashboardController.php` y `paramascotasec-backend/src/Repositories/OrderRepository.php` extienden reportes y ranking a `day|week|month|year|historical`, con `month` como default visual/API y `historical` como total completo real.
+- `dashboard/src/app/core/tenant/tenant-resolver.service.ts` corrige la resolucion de tenant para aliases reservados como `www`, evitando que el dashboard intente resolver el tenant como `www` en lugar de `paramascotasec`.
+- `dashboard/src/app/features/public/pages/sign-in/sign-in.component.{ts,html}` y `dashboard/src/app/core/auth/auth.facade.ts` mejoran el login real de Paramascotas con branding del tenant y mensajes claros para `AUTH_LOGIN_INVALID`, `AUTH_LOGIN_LOCKED` y `AUTH_EMAIL_NOT_VERIFIED`, manteniendo visible la recuperacion de clave.
+- `dashboard/src/app/features/public/pages/permission-denied/permission-denied.component.{ts,html,css}` ahora distingue mejor entre una sesion `Cliente` y una sesion `Admin tenant`, mostrando cuenta actual, perfil detectado y una explicacion concreta cuando falta `platform-admin` o cuando la cuenta autenticada no es admin del tenant.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.{ts,html,css}`, `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts`, `paramascotasec-backend/src/Controllers/DashboardController.php` y `paramascotasec-backend/src/Repositories/OrderRepository.php` extienden reportes y ranking a `day|week|month|year|historical`, con `month` como default visual/API y `historical` como total completo real.
 - El layout de `Venta en local POS` queda reorganizado para mobile: catalogo, carrito/cliente/totales y caja/cobro/movimientos apilan sin overflow horizontal ni texto superpuesto, preservando validaciones de caja, cliente, descuentos server-side y productos agrupados.
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` deja de depender de credenciales hardcodeadas y agrega cobertura real para MFA admin, host canonico/`www`, customer sin acceso admin, credenciales invalidas, admin no verificado, cuenta bloqueada, recuperacion de clave y contrato real de `admin/report` para `day`, `week`, `month`, `year` y `historical`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura para filtros de reportes por periodo, gastos/finanzas con mapeo correcto de `year` y `total`, ranking con reenvio de periodo a `report`/`stats`, POS mobile sin overflow y comportamiento legacy de productos agrupados/autocompletado de cliente.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` deja de depender de credenciales hardcodeadas y agrega cobertura real para MFA admin, host canonico/`www`, customer sin acceso admin, credenciales invalidas, admin no verificado, cuenta bloqueada, recuperacion de clave y contrato real de `admin/report` para `day`, `week`, `month`, `year` y `historical`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura para filtros de reportes por periodo, gastos/finanzas con mapeo correcto de `year` y `total`, ranking con reenvio de periodo a `report`/`stats`, POS mobile sin overflow y comportamiento legacy de productos agrupados/autocompletado de cliente.
 
 Operacion y verificacion:
 - Pasaron `php -l` sobre backend afectado, `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `tests/e2e/paramascotas-real-auth.spec.ts` (`9/9`) y el subconjunto focal de `tests/e2e/paramascotas-real-integrations.spec.ts` sobre POS/reportes/ranking (`8/8`).
@@ -6974,10 +7397,10 @@ Operacion y verificacion:
 Objetivo: cerrar la diferencia entre `/my-account` y el Dashboard nuevo al registrar una compra/reposicion de producto. El panel anterior pide `Unidades a ingresar` y calcula internamente `stock actual + unidades`; el Dashboard nuevo mostraba el stock final en el campo `Stock`, lo que podia confundir compras reales y ajustes manuales.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` muestra `Unidades a ingresar` solo cuando la accion de inventario es `Compra / reabastecimiento`, junto al resumen `Stock actual -> Resultado`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega helpers para detectar modo reposicion, calcular unidades ingresadas desde el stock persistido y mantener en el formulario el stock final que espera el backend.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega la regresion `product restock uses purchased units while saving final stock`, validando que una compra de 3 unidades sobre stock 5 guarde `quantity=8`, `inventoryAction=restock` y la factura heredada desde la ultima compra.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` actualiza el smoke de `Compra` para leer `productRestockUnits` y endurece la espera del editor antes de editar una variante agrupada existente.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` muestra `Unidades a ingresar` solo cuando la accion de inventario es `Compra / reabastecimiento`, junto al resumen `Stock actual -> Resultado`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega helpers para detectar modo reposicion, calcular unidades ingresadas desde el stock persistido y mantener en el formulario el stock final que espera el backend.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega la regresion `product restock uses purchased units while saving final stock`, validando que una compra de 3 unidades sobre stock 5 guarde `quantity=8`, `inventoryAction=restock` y la factura heredada desde la ultima compra.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` actualiza el smoke de `Compra` para leer `productRestockUnits` y endurece la espera del editor antes de editar una variante agrupada existente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, los focos de reposicion (`2/2`), el subconjunto de productos/variantes/compras (`13/13`), `tests/e2e/paramascotas-list-views.spec.ts` (`9/9`), la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`76/76`, 1.4 min), `tests/e2e/paramascotas-real-auth.spec.ts` (`4/4`), todos los E2E del Dashboard (`tests/e2e`, `201/201`, 1.5 min), `./scripts/check-container-connectivity.sh development`, `./scripts/check-paramascotas.sh`, `./scripts/check-env-secrets.sh all` y `./scripts/e2e-development.sh`.
@@ -6988,9 +7411,9 @@ Operacion y verificacion:
 Objetivo: corregir un riesgo operativo en el nuevo Dashboard: la accion `Duplicar` copiaba la cantidad, lote/vencimiento y claves de familia agrupada del producto fuente. Eso podia crear stock ficticio o dejar una copia completa dentro de una familia de variantes cuando la accion correcta para variantes es `Nueva variante`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ajusta `duplicateProduct()` para que la copia conserve ficha comercial e imagenes, pero arranque con `quantity: 0`, `published: false`, sin `inventoryAction`, sin factura de compra, sin lote/vencimiento heredado y sin `variantBaseName`/`variantGroupKey` original.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ajusta `duplicateProduct()` para que la copia conserve ficha comercial e imagenes, pero arranque con `quantity: 0`, `published: false`, sin `inventoryAction`, sin factura de compra, sin lote/vencimiento heredado y sin `variantBaseName`/`variantGroupKey` original.
 - La copia mantiene un SKU derivado `-COPY`, pero ya no puede duplicar inventario real ni meterse accidentalmente en el grupo publico del producto fuente.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega la regresion `duplicate product starts without inherited stock or grouped identity`, validando el formulario y el POST final (`quantity=0`, `purchaseInvoice=null`, sin lote heredado y sin `variantGroupKey` original).
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega la regresion `duplicate product starts without inherited stock or grouped identity`, validando el formulario y el POST final (`quantity=0`, `purchaseInvoice=null`, sin lote heredado y sin `variantGroupKey` original).
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "duplicate product starts"` (`1/1`), el subconjunto de productos/duplicados (`12/12`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`75/75`, 1.2 min).
@@ -7001,9 +7424,9 @@ Operacion y verificacion:
 Objetivo: alinear el Dashboard nuevo con el flujo del panel anterior cuando se crea una variante desde un producto agrupado o se registra una reposicion. El panel anterior intenta precargar proveedor, documento, factura, fecha y notas desde la ultima compra/lote del producto base; el Dashboard nuevo solo estaba llevando proveedor y tasa, perdiendo contexto util para compras e inventario.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `createPurchaseInvoiceFromSourceProduct()`, tolerante a campos legacy como `lastPurchaseInvoice`, `inventory.lastPurchaseInvoice`, lotes de procurement, `lastPurchaseInvoiceNumber`, `purchase_invoice_number`, `lastPurchaseSupplierDocument` y fechas/notas heredadas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `createPurchaseInvoiceFromSourceProduct()`, tolerante a campos legacy como `lastPurchaseInvoice`, `inventory.lastPurchaseInvoice`, lotes de procurement, `lastPurchaseInvoiceNumber`, `purchase_invoice_number`, `lastPurchaseSupplierDocument` y fechas/notas heredadas.
 - `registerProductPurchase()` y `duplicateProductVariant()` usan ese helper para precargar la factura de compra desde el producto fuente y normalizarla contra proveedores registrados antes de guardar.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion de `Nueva variante` con `inventory.lastPurchaseInvoice`, verificando que el POST conserve `invoiceNumber`, `supplierName`, `supplierDocument`, `issuedAt` y `notes` junto con el nombre `Familia + variante`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion de `Nueva variante` con `inventory.lastPurchaseInvoice`, verificando que el POST conserve `invoiceNumber`, `supplierName`, `supplierDocument`, `issuedAt` y `notes` junto con el nombre `Familia + variante`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "duplicate variant"` (`1/1`), la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`74/74`, 1.2 min) y `./scripts/check-container-connectivity.sh development`.
@@ -7014,9 +7437,9 @@ Operacion y verificacion:
 Objetivo: corregir otra diferencia con `/my-account` al crear una nueva variante desde un producto agrupado. El panel anterior actualizaba el nombre del formulario a `Familia + variante` cuando el usuario cambiaba el nuevo peso/talla/color/presentacion; el Dashboard nuevo dejaba el nombre como solo la familia, aunque los atributos quedaran correctos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia `updateProductAttribute()` para sincronizar drafts de nueva variante mediante `syncDuplicateProductVariantName()`, detectando los metadatos internos `__sourceVariantLabel`/`__variantDefinitionField` y componiendo el nombre con `variantBaseName + variantLabel`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia `updateProductAttribute()` para sincronizar drafts de nueva variante mediante `syncDuplicateProductVariantName()`, detectando los metadatos internos `__sourceVariantLabel`/`__variantDefinitionField` y componiendo el nombre con `variantBaseName + variantLabel`.
 - La sincronizacion usa los mismos resolvers de variantes ya portados desde el panel anterior, por lo que aplica a peso/contenido, presentacion, talla, color, rango o dosis sin crear reglas por campo.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` endurece la regresion de `Nueva variante`: al cambiar de `2 kg` a `4 kg`, el input `Nombre` y el payload POST deben quedar como `Croqueta QA Familia 4 kg`, no solo `Croqueta QA Familia`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` endurece la regresion de `Nueva variante`: al cambiar de `2 kg` a `4 kg`, el input `Nombre` y el payload POST deben quedar como `Croqueta QA Familia 4 kg`, no solo `Croqueta QA Familia`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "duplicate variant"` (`1/1`), el subconjunto `--grep "paramascotas product"` (`10/10`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`74/74`, 1.1 min).
@@ -7027,9 +7450,9 @@ Operacion y verificacion:
 Objetivo: cerrar una brecha adicional con `/my-account` en la busqueda del catalogo admin. El panel anterior no hacia un `includes` literal: normalizaba tokens, unia medidas (`2 kg`/`2kg`), expandia alias (`perro`/`dog`, `gato`/`cat`, ofertas/novedades) y ordenaba por puntaje. El Dashboard nuevo aun podia perder productos agrupados cuando la consulta venia con tokens fuera de orden o alias.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega el indice de busqueda del catalogo con alias legacy, unidades compactas, exclusion de descripciones genericas importadas, metadatos semanticos de oferta/novedad, identidades internas/legacy, atributos completos, `variantOptions`, proveedor de inventario y proveedor de factura.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega el indice de busqueda del catalogo con alias legacy, unidades compactas, exclusion de descripciones genericas importadas, metadatos semanticos de oferta/novedad, identidades internas/legacy, atributos completos, `variantOptions`, proveedor de inventario y proveedor de factura.
 - `filteredProducts()` conserva primero los filtros visibles de catalogo/selector/IVA, y luego puntua/ordena resultados con `getProductCatalogSearchScore()` en lugar de depender de una frase normalizada con `includes`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` amplia la regresion de producto agrupado para validar busqueda por clave de grupo, familia, proveedor, alias `dog` sobre especie `Perro`, tokens desordenados (`familia rojo`), medida compacta (`2kg`) y valor inexistente.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` amplia la regresion de producto agrupado para validar busqueda por clave de grupo, familia, proveedor, alias `dog` sobre especie `Perro`, tokens desordenados (`familia rojo`), medida compacta (`2kg`) y valor inexistente.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "product search"` (`1/1`), el subconjunto `--grep "paramascotas product"` (`10/10`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`74/74`, 1.2 min).
@@ -7040,9 +7463,9 @@ Operacion y verificacion:
 Objetivo: corregir una incompatibilidad con `/my-account`: el panel anterior permite publicar un producto cuando tiene precio y stock mayor a cero, mientras el Dashboard nuevo estaba bloqueando la publicacion si faltaban imagenes, SEO o descripcion larga.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `productHasPublicationBasics()` y cambia `toggleProductPublication()` para bloquear solo cuando falta precio o stock, manteniendo `productCanPublish()` como chequeo de ficha completa/SEO.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `productHasPublicationBasics()` y cambia `toggleProductPublication()` para bloquear solo cuando falta precio o stock, manteniendo `productCanPublish()` como chequeo de ficha completa/SEO.
 - `paramascotas-panel.component.html` separa visualmente `Publicable: precio y stock` de `Ficha/SEO incompleta`, tanto en la tabla como en el modal de vista previa, para que una ficha incompleta no parezca imposible de publicar.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion con producto sin imagenes/SEO completo pero con precio y stock, verificando que `Publicar` envie `published: true`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion con producto sin imagenes/SEO completo pero con precio y stock, verificando que `Publicar` envie `published: true`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "publication follows legacy price and stock rule"` (`1/1`), el subconjunto de productos agrupados/precios/publicacion/imagenes (`12/12`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`74/74`, 1.2 min).
@@ -7053,9 +7476,9 @@ Operacion y verificacion:
 Objetivo: recuperar una paridad puntual con `/my-account` en imagenes de productos: las imagenes subidas bajo `/uploads/` deben agregar un cache key basado en `updatedAt`/`updated_at`/`modifiedAt`/`modified_at` para que una imagen reemplazada no quede vieja en el navegador.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `appendProductImageCacheKey()` y lo usa en `productThumbnailUrl()` y en `productImagePreviewUrl(image, product)` para catalogo y modal de vista previa.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `appendProductImageCacheKey()` y lo usa en `productThumbnailUrl()` y en `productImagePreviewUrl(image, product)` para catalogo y modal de vista previa.
 - `paramascotas-panel.component.html` pasa el producto a las miniaturas del modal, manteniendo URLs cacheadas solo para visualizacion; el editor de formulario conserva las URLs limpias para no guardar `?v=` en payloads.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion con `imageMeta` en `/uploads/products/...` y `updatedAt`, verificando que la imagen de tabla y la vista previa incluyan `v=` con el timestamp codificado.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion con `imageMeta` en `/uploads/products/...` y `updatedAt`, verificando que la imagen de tabla y la vista previa incluyan `v=` con el timestamp codificado.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "cache key to uploaded product images"` (`1/1`), el subconjunto de productos agrupados/precios/imagenes (`11/11`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`73/73`, 1.2 min).
@@ -7066,9 +7489,9 @@ Operacion y verificacion:
 Objetivo: recuperar en el Dashboard nuevo capacidades operativas del panel anterior `/my-account`: filtrar productos del catalogo por categoria, proveedor, marca, mascota, condicion tributaria (`Con IVA` / `IVA 0%`) y filtros rapidos legacy (`Publicables`, `Bloqueados`, `Con stock`, `Sin stock`, `Sin precio`) sin depender solo de busqueda libre ni mezclar esos estados con filtros de imagenes o riesgo.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `ProductTaxFilter`, opciones derivadas del catalogo, estados de filtro para categoria/proveedor/marca/mascota/IVA, filtros rapidos legacy en `ProductCatalogFilter`, setters dedicados, `clearProductFilters()` y filtrado combinado con busqueda/publicacion usando la misma lectura corregida de IVA/exencion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `ProductTaxFilter`, opciones derivadas del catalogo, estados de filtro para categoria/proveedor/marca/mascota/IVA, filtros rapidos legacy en `ProductCatalogFilter`, setters dedicados, `clearProductFilters()` y filtrado combinado con busqueda/publicacion usando la misma lectura corregida de IVA/exencion.
 - `paramascotas-panel.component.html` agrega selectores compactos `Categoria`, `Proveedor`, `Marca`, `Mascota` e `IVA` en la barra de productos; debajo agrega chips compactos `Todos`, `Publicables`, `Bloqueados`, `Con stock`, `Sin stock` y `Sin precio`; cada opcion muestra conteo y cada fila muestra una etiqueta `IVA 15%` o `IVA 0%`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones con productos gravados/exentos y productos sin stock/sin precio, validando etiquetas, filtros por categoria/proveedor/marca/mascota, filtros de IVA, filtros rapidos legacy y limpieza de filtros.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones con productos gravados/exentos y productos sin stock/sin precio, validando etiquetas, filtros por categoria/proveedor/marca/mascota, filtros de IVA, filtros rapidos legacy y limpieza de filtros.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, el foco `--grep "quick filters match legacy stock and price rules|legacy selectors and VAT status"` (`2/2`), el subconjunto de productos agrupados/precios (`10/10`), `tests/e2e/paramascotas-list-views.spec.ts --grep "catalog products"` (`1/1`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`72/72`, 1.2 min).
@@ -7080,9 +7503,9 @@ Operacion y verificacion:
 Objetivo: corregir una brecha de paridad con `/my-account` en la edicion de productos: productos antiguos con `taxExempt`/`tax_exempt` en aliases como `sí`, `si`, `on` o `y` debian tratarse como exentos y no dividir su PVP por IVA al abrir el editor.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` centraliza la lectura de exencion con `isTaxExemptProduct()`, aceptando `tax.exempt`, `taxExempt`, `attributes.taxExempt` y `attributes.tax_exempt` con los aliases booleanos del panel anterior.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` centraliza la lectura de exencion con `isTaxExemptProduct()`, aceptando `tax.exempt`, `taxExempt`, `attributes.taxExempt` y `attributes.tax_exempt` con los aliases booleanos del panel anterior.
 - `productTaxRate()`, `productFormTaxRate()`, `productToForm()` y `sanitizeProductForm()` usan esa normalizacion para mantener precios netos/PVP correctos y enviar `taxExempt` canonico `true/false` al backend.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion con un producto exento heredado `attributes.tax_exempt = 'sí'`, verificando que el editor preserve precio base/PVP sin restar IVA y que el PUT envie `taxExempt: 'true'`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion con un producto exento heredado `attributes.tax_exempt = 'sí'`, verificando que el editor preserve precio base/PVP sin restar IVA y que el PUT envie `taxExempt: 'true'`.
 
 Operacion y verificacion:
 - La regresion fallo primero contra el runtime anterior mostrando `8.6957` para un PVP exento de `10`, confirmando el bug.
@@ -7094,8 +7517,8 @@ Operacion y verificacion:
 Objetivo: continuar la mejora de visibilidad de estadisticas del Dashboard nuevo frente a `/my-account`, corrigiendo que las tarjetas de tendencia financiera por periodo quedaran recortadas dentro de un contenedor con scroll vertical.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` elimina `max-height` y `overflow: auto` de `.paramascotas-trend-grid--compact`, dejando visibles las tarjetas de periodos financieros sin esconder metricas dentro del panel.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que inyecta 10 periodos financieros, entra a `reporting/balance`, cambia a `Mes a mes` y valida que todas las tarjetas se rendericen sin `overflow-y: auto/scroll` ni recorte interno.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` elimina `max-height` y `overflow: auto` de `.paramascotas-trend-grid--compact`, dejando visibles las tarjetas de periodos financieros sin esconder metricas dentro del panel.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que inyecta 10 periodos financieros, entra a `reporting/balance`, cambia a `Mes a mes` y valida que todas las tarjetas se rendericen sin `overflow-y: auto/scroll` ni recorte interno.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, la regresion enfocada `--grep "balance trends keep period metrics"` (`1/1`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`69/69`, 1.1 min).
@@ -7106,8 +7529,8 @@ Operacion y verificacion:
 Objetivo: cerrar una brecha fina de paridad con `/my-account` en productos agrupados/variantes: el panel anterior y backend aceptan `sí` como alias legacy para publicar una variante separada en catalogo, pero el nuevo Dashboard solo reconocia `si`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora normaliza `catalogDisplayMode` con `sí` hacia `separate`, igual que el panel anterior/backend.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion del editor de productos para abrir un producto con `catalogDisplayMode: 'sí'`, verificar que el selector muestre `Separado en catalogo` y confirmar que el PUT envie `catalogDisplayMode: 'separate'`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora normaliza `catalogDisplayMode` con `sí` hacia `separate`, igual que el panel anterior/backend.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion del editor de productos para abrir un producto con `catalogDisplayMode: 'sí'`, verificar que el selector muestre `Separado en catalogo` y confirmar que el PUT envie `catalogDisplayMode: 'separate'`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, la regresion enfocada `--grep "product editor saves net base price"` (`1/1`), el subconjunto agrupados/precio (`9/9`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`68/68`, 1.0 min).
@@ -7118,9 +7541,9 @@ Operacion y verificacion:
 Objetivo: responder al problema de estadisticas ocultas por scroll y tops ambiguos, alineando el reporte de ventas del nuevo Dashboard con una lectura operativa clara frente al panel anterior `/my-account`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` ajusta el bloque financiero `Productos lideres` para que el ranking detalle por fila posicion, ingreso, unidades vendidas, utilidad y margen, en vez de mostrar solo venta neta y utilidad.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` elimina el `max-height`/scroll interno de listas de detalle de reportes y agrega un badge compacto de posicion, evitando que estadisticas importantes queden ocultas dentro de paneles pequenos.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida que el reporte de ventas muestre lideres por metrica, exponga el ranking con `ingreso`, `uds`, `utilidad` y `margen`, y que la lista no quede recortada por scroll interno.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` ajusta el bloque financiero `Productos lideres` para que el ranking detalle por fila posicion, ingreso, unidades vendidas, utilidad y margen, en vez de mostrar solo venta neta y utilidad.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` elimina el `max-height`/scroll interno de listas de detalle de reportes y agrega un badge compacto de posicion, evitando que estadisticas importantes queden ocultas dentro de paneles pequenos.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida que el reporte de ventas muestre lideres por metrica, exponga el ranking con `ingreso`, `uds`, `utilidad` y `margen`, y que la lista no quede recortada por scroll interno.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, la regresion enfocada `--grep "sales report identifies product leaders"` (`1/1`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`68/68`, 1.1 min).
@@ -7131,11 +7554,11 @@ Operacion y verificacion:
 Objetivo: corregir un desajuste critico frente al panel anterior `/my-account`: el nuevo Dashboard estaba rotulando `Precio PVP` pero enviaba ese valor al backend como `price`, que en la DB es precio base sin IVA. Eso podia inflar precios, margenes y futuras ventas al editar productos gravados.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` convierte el PVP devuelto por la API a precio base neto en `productToForm()`, usando `tax.rate`/`tax.multiplier` del backend o la tasa general como respaldo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` convierte el PVP devuelto por la API a precio base neto en `productToForm()`, usando `tax.rate`/`tax.multiplier` del backend o la tasa general como respaldo.
 - El mismo componente calcula el margen del catalogo sobre precio neto y agrega helpers de formulario para editar PVP/PVP anterior recalculando base neta, ademas de mostrar margen neto sin cambiar el contrato backend.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` cambia los rótulos del editor a `Precio base sin IVA`, `PVP venta`, `Precio anterior base` y `PVP anterior`, dejando claro que el backend guarda base neta pero el usuario puede operar con PVP como en `/my-account`.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` declara el bloque `tax` que ya entrega el backend para productos.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que edita un producto gravado con PVP 11.50 / IVA 15%, confirma que el formulario carga base 10.00, permite escribir PVP 13.80 y verifica que el PUT envie `price: 12`, no el PVP.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` cambia los rótulos del editor a `Precio base sin IVA`, `PVP venta`, `Precio anterior base` y `PVP anterior`, dejando claro que el backend guarda base neta pero el usuario puede operar con PVP como en `/my-account`.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` declara el bloque `tax` que ya entrega el backend para productos.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que edita un producto gravado con PVP 11.50 / IVA 15%, confirma que el formulario carga base 10.00, permite escribir PVP 13.80 y verifica que el PUT envie `price: 12`, no el PVP.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, la regresion enfocada `--grep "product editor saves net base price"` (`1/1`), el subset de productos agrupados/precio (`9/9`) y la suite completa `tests/e2e/paramascotas-real-integrations.spec.ts` (`68/68`, 3.7 min).
@@ -7146,9 +7569,9 @@ Operacion y verificacion:
 Objetivo: acercar la gestion de productos del nuevo Dashboard al comportamiento del panel anterior `/my-account`, donde los productos agrupados/variantes se localizan por datos comerciales y no solo por nombre o SKU visible.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` amplia `filteredProducts()` para indexar identidades internas/legacy, descripcion, proveedor, SEO search terms, `variantBaseName`, `variantLabel`, `variantGroupKey`, modo/eje de variante, peso, presentacion, empaque, talla, color, material, rango/edad, dosis, uso/sabor y proveedores de inventario/factura.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` actualiza el placeholder del buscador a `Nombre, SKU, variante, proveedor o grupo`, haciendo explicito el alcance real del filtro.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que carga un producto agrupado y confirma que el catalogo admin lo encuentra por clave de agrupacion, nombre base de familia y proveedor aunque esos valores no sean el nombre principal.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` amplia `filteredProducts()` para indexar identidades internas/legacy, descripcion, proveedor, SEO search terms, `variantBaseName`, `variantLabel`, `variantGroupKey`, modo/eje de variante, peso, presentacion, empaque, talla, color, material, rango/edad, dosis, uso/sabor y proveedores de inventario/factura.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` actualiza el placeholder del buscador a `Nombre, SKU, variante, proveedor o grupo`, haciendo explicito el alcance real del filtro.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que carga un producto agrupado y confirma que el catalogo admin lo encuentra por clave de agrupacion, nombre base de familia y proveedor aunque esos valores no sean el nombre principal.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "product search finds grouped variants"` (`1/1`) y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "grouped|product search|duplicate variant|product form|products purchases|sales ranking"` (`8/8`).
@@ -7159,10 +7582,10 @@ Operacion y verificacion:
 Objetivo: cerrar los fallos de `smoke.spec.ts` detectados al validar permisos/navegacion tras migrar el Dashboard a auth real en el dominio publico, conservando fixtures solo para desarrollo local.
 
 Cambios:
-- `Dashboard/src/app/core/auth/auth-api.service.ts` separa autenticacion fixture/local y autenticacion real/publica: en localhost vuelve a usar `auth/providers`, `auth/password`, `auth/password-reset-requests`, `auth/password-reset-completions`, `auth/me` y `auth/logout`; fuera de localhost usa `auth/session`, `auth/login`, `auth/password-reset/request`, `auth/password-reset/confirm` y bypass de fixtures.
-- `Dashboard/src/app/features/public/pages/auth-callback/auth-callback.component.ts` normaliza primero `returnUrl` y despues adjunta `tenant`, evitando que una URL externa como `https://evil.test` se convierta en una ruta interna falsa antes de ser saneada.
-- `Dashboard/tests/e2e/smoke.spec.ts` queda alineado con la UI compacta vigente: navegacion `Servicios adicionales`/`Recursos UI`, editor de productos abierto bajo demanda, cards de productos/inventario/monitoreo y textos fixture actuales de workspace.
-- `Dashboard/src/app/core/auth/auth-api.service.spec.ts` ajusta el fixture de auth a `localhost`, que es el runtime donde corresponde permitir datos simulados.
+- `dashboard/src/app/core/auth/auth-api.service.ts` separa autenticacion fixture/local y autenticacion real/publica: en localhost vuelve a usar `auth/providers`, `auth/password`, `auth/password-reset-requests`, `auth/password-reset-completions`, `auth/me` y `auth/logout`; fuera de localhost usa `auth/session`, `auth/login`, `auth/password-reset/request`, `auth/password-reset/confirm` y bypass de fixtures.
+- `dashboard/src/app/features/public/pages/auth-callback/auth-callback.component.ts` normaliza primero `returnUrl` y despues adjunta `tenant`, evitando que una URL externa como `https://evil.test` se convierta en una ruta interna falsa antes de ser saneada.
+- `dashboard/tests/e2e/smoke.spec.ts` queda alineado con la UI compacta vigente: navegacion `Servicios adicionales`/`Recursos UI`, editor de productos abierto bajo demanda, cards de productos/inventario/monitoreo y textos fixture actuales de workspace.
+- `dashboard/src/app/core/auth/auth-api.service.spec.ts` ajusta el fixture de auth a `localhost`, que es el runtime donde corresponde permitir datos simulados.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "external auth callback fixture keeps return url"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts` (`73/73`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`4/4`) y `./scripts/check-container-connectivity.sh development`.
@@ -7189,7 +7612,7 @@ Pendientes:
 Objetivo: validar el estado integral del workspace tras los ajustes recientes del Dashboard, incluyendo contratos publicos, capacidades, SEO, Facturador y conectividad Gateway en development/QA.
 
 Operacion y verificacion:
-- Pasaron `npm run capabilities:check` en `paramascotasec/app`, `scripts/check-env-secrets.sh all`, `scripts/check-paramascotas.sh`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`9/9`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts` (`33/33`) y `scripts/e2e-development.sh`.
+- Pasaron `npm run capabilities:check` en `webparamascotas/app`, `scripts/check-env-secrets.sh all`, `scripts/check-paramascotas.sh`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`9/9`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts` (`33/33`) y `scripts/e2e-development.sh`.
 - `scripts/e2e-development.sh` confirmo capability registry valido (`27` capacidades, `101` rutas backend, `17` rutas Facturador), lint/typecheck frontend publico, sintaxis backend, backend health, conectividad development, auditoria SEO sin failures, PHPUnit Facturador `18/18` (`44` assertions) y probes E2E de capacidades OK con reporte en `reports/e2e/development/capability-e2e-report.json`.
 - El entorno se mantuvo en `development`; Facturador y worker reportaron `SRI_ENVIRONMENT=pruebas` y conectividad a `celcer.sri.gob.ec`. No se uso SRI produccion.
 
@@ -7201,7 +7624,7 @@ Advertencias conocidas:
 Objetivo: confirmar y cubrir con regresion que el flujo de reemision de comprobantes no pueda tocar endpoints SRI/Facturador de produccion desde el ambiente development/QA, incluso si un comprobante viene marcado como `produccion`.
 
 Cambios:
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba que simula un RIDE reemitible con `ambiente=produccion`; la UI debe mostrar `Bloqueada QA`, deshabilitar `Bloqueada en QA`, explicar que el documento esta marcado como produccion y no emitir ningun POST a `cancel-and-reissue`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba que simula un RIDE reemitible con `ambiente=produccion`; la UI debe mostrar `Bloqueada QA`, deshabilitar `Bloqueada en QA`, explicar que el documento esta marcado como produccion y no emitir ningun POST a `cancel-and-reissue`.
 - Se verifico que `paramascotasec-backend/src/Services/FacturadorApiService.php` ya bloquea server-side `/api/production/v1/invoices` cuando `APP_ENV` no es `production/prod`, por lo que no se requirio cambio funcional de backend.
 
 Operacion y verificacion:
@@ -7216,10 +7639,10 @@ Pendientes:
 Objetivo: alinear el flujo de cotizaciones del nuevo Dashboard con `/my-account`, donde al crear una cotizacion se imprimia el documento comercial con detalle economico completo, sin forzar envio de correo invalido ni disparar pruebas de mail/RIDE.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` vuelve a imprimir automaticamente la cotizacion recien creada, de forma silenciosa si el navegador bloquea la ventana para no tapar el aviso principal.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` vuelve a imprimir automaticamente la cotizacion recien creada, de forma silenciosa si el navegador bloquea la ventana para no tapar el aviso principal.
 - El HTML imprimible de cotizacion ahora usa `quote_snapshot.items` calculado por backend y muestra producto, cantidad, PVP, total por linea, subtotal, descuento cuando aplica, envio cuando aplica, IVA y total; si falta snapshot conserva fallback simple.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` declara `product_name` opcional en items del snapshot de cotizacion.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` captura la impresion en pruebas, valida que una cotizacion con correo invalido no envie `send_email`, y confirma que el HTML imprimible conserva producto, PVP, IVA y total; el test de WhatsApp distingue impresion local de apertura de WhatsApp sin mandar `send_whatsapp` al backend.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` declara `product_name` opcional en items del snapshot de cotizacion.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` captura la impresion en pruebas, valida que una cotizacion con correo invalido no envie `send_email`, y confirma que el HTML imprimible conserva producto, PVP, IVA y total; el test de WhatsApp distingue impresion local de apertura de WhatsApp sin mandar `send_whatsapp` al backend.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "quotations|billing rides exposes email"` (`4/4`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`65/65`) y `./scripts/check-container-connectivity.sh development`.
@@ -7233,9 +7656,9 @@ Pendientes:
 Objetivo: alinear pedidos operativos y reportes del nuevo Dashboard con `/my-account`, que ya deduplicaba filas de ventas antes de mostrar listados y trazabilidad, evitando conteos/totales inflados cuando el backend devuelve filas repetidas por joins o reintentos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` normaliza `listOrders()` deduplicando por `id` y, si falta, por fecha/cliente/correo/total/items; el cambio aplica centralmente a pedidos, envios, estado de tienda y vistas que reutilizan ordenes.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` normaliza `listOrders()` deduplicando por `id` y, si falta, por fecha/cliente/correo/total/items; el cambio aplica centralmente a pedidos, envios, estado de tienda y vistas que reutilizan ordenes.
 - `getAdminReport()` ahora deduplica `orders` del reporte por la misma regla de estabilidad del panel anterior y corrige `orders_count`, `total`, `net`, `tax` y `shipping` solo cuando esos valores coinciden exactamente con la suma inflada de filas duplicadas.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones que simulan duplicados en `/dashboard/api/orders` y `/dashboard/api/admin/report`, verificando que la UI muestre un solo pedido, un solo registro reciente y totales no inflados.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones que simulan duplicados en `/dashboard/api/orders` y `/dashboard/api/admin/report`, verificando que la UI muestre un solo pedido, un solo registro reciente y totales no inflados.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "deduplicate|admin orders"` (`5/5`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`65/65`) y `./scripts/check-container-connectivity.sh development`.
@@ -7249,9 +7672,9 @@ Pendientes:
 Objetivo: alinear el resumen de facturas de compra del nuevo Dashboard con `/my-account`, evitando KPIs inflados o totales fragiles cuando el listado reciente trae filas repetidas o montos como texto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` normaliza `listPurchaseInvoices()`: convierte importes/unidades/productos a numeros, estabiliza strings y deduplica por `id` o por la combinacion factura/proveedor/fecha/total como hacia el panel anterior.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` normaliza `listPurchaseInvoices()`: convierte importes/unidades/productos a numeros, estabiliza strings y deduplica por `id` o por la combinacion factura/proveedor/fecha/total como hacia el panel anterior.
 - El resumen de inventario y cualquier pantalla que consuma `purchaseInvoices()` reciben ya el contrato limpio, sin mover la logica a una vista puntual.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que simula dos filas identicas con numeros como strings y verifica que `Ultimas facturas de compra` muestre `1 registros`, `8` unidades, `$119,60` y una sola accion.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion que simula dos filas identicas con numeros como strings y verifica que `Ultimas facturas de compra` muestre `1 registros`, `8` unidades, `$119,60` y una sola accion.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "purchase invoice"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts --grep "purchase invoice|initial stock"` (`2/2`) y `./scripts/check-container-connectivity.sh development`.
@@ -7265,11 +7688,11 @@ Pendientes:
 Objetivo: acercar el nuevo Dashboard al comportamiento de `/my-account` en catalogos reutilizables, evitando que proveedores, marcas o valores de variantes/filtros tengan que borrarse y recrearse para corregir datos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega estado de edicion para catalogos (`editingReferenceId`), precarga de registros existentes y actualizacion segura con `updateReferenceValue()`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega estado de edicion para catalogos (`editingReferenceId`), precarga de registros existentes y actualizacion segura con `updateReferenceValue()`.
 - Proveedores y marcas preservan su `id` al editar; los valores simples de catalogos reutilizables se reemplazan sin duplicar ni borrar el resto del catalogo.
 - La validacion de catalogos ahora excluye el registro editado al revisar duplicados, pero sigue bloqueando nombres, documentos de proveedor y valores repetidos contra otros registros.
 - `paramascotas-panel.component.html/css` cambia el formulario a modo `Editar registro`/`Guardar cambios` con `Cancelar`, y agrega accion `Editar` en filas editables.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende proveedores para precargar, bloquear nombre duplicado y guardar cambios en payload; agrega prueba para editar `Pesos/contenidos` sin borrar/recrear y bloquear duplicados.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende proveedores para precargar, bloquear nombre duplicado y guardar cambios en payload; agrega prueba para editar `Pesos/contenidos` sin borrar/recrear y bloquear duplicados.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog|category catalog"` (`3/3`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog|category catalog|reusable catalog"` (`4/4`) y `./scripts/check-container-connectivity.sh development`.
@@ -7283,10 +7706,10 @@ Pendientes:
 Objetivo: recuperar en el nuevo Dashboard un comportamiento del panel anterior `/my-account`: completar o reemplazar imagenes de una categoria publica no debe resetear si la categoria esta visible u oculta en el carril superior y/o bloque destacado.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `editCategoryReferenceImages()`, que precarga en el formulario las 5 URLs actuales de la categoria seleccionada.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `editCategoryReferenceImages()`, que precarga en el formulario las 5 URLs actuales de la categoria seleccionada.
 - `addReferenceValue()` ahora preserva `showInTopSection`, `showInFeaturedSection` y `showInImageSection` al hacer upsert de imagenes de categoria, en vez de volverlas siempre `true`.
 - `paramascotas-panel.component.html/css` agrega la accion compacta `Editar imagenes` en filas de `Categorias publicas`, junto a `Eliminar`, sin romper el layout de lista.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion de categorias: oculta una categoria, edita/reemplaza la imagen superior y verifica que el payload guardado siga con `showInTopSection:false`, `showInFeaturedSection:false` y `showInImageSection:false`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion de categorias: oculta una categoria, edita/reemplaza la imagen superior y verifica que el payload guardado siga con `showInTopSection:false`, `showInFeaturedSection:false` y `showInImageSection:false`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "category catalog"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog|category catalog"` (`3/3`) y `./scripts/check-container-connectivity.sh development`.
@@ -7300,8 +7723,8 @@ Pendientes:
 Objetivo: alinear un detalle pendiente del nuevo Dashboard con `/my-account` en la carga de imagenes de producto: cuando una foto no tiene el tamano exacto, debe ajustarse al canvas requerido sin recortar el producto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia el helper de redimensionado de producto para usar escalado proporcional tipo contain sobre fondo blanco, igual que el panel anterior, en lugar de recorte tipo cover.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega una prueba funcional de subida real: genera un PNG cuadrado, lo sube como miniatura, intercepta el multipart enviado a `/uploads/images` y valida que el archivo resultante sea `640x800`, con banda superior blanca y centro rojo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia el helper de redimensionado de producto para usar escalado proporcional tipo contain sobre fondo blanco, igual que el panel anterior, en lugar de recorte tipo cover.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega una prueba funcional de subida real: genera un PNG cuadrado, lo sube como miniatura, intercepta el multipart enviado a `/uploads/images` y valida que el archivo resultante sea `640x800`, con banda superior blanca y centro rojo.
 - Las pruebas de proveedor/imagenes en esa spec se ajustaron para respetar las reglas ya vigentes de producto `Alimento` con stock: vencimiento obligatorio antes de guardar.
 
 Operacion y verificacion:
@@ -7330,13 +7753,13 @@ Decision:
 Objetivo: evitar que el top de productos del resumen Paramascotas sea ambiguo; debe quedar claro cual producto lidera por unidades, ingresos, utilidad y margen.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.{ts,html,css}` agrega tarjetas compactas dentro de `Ranking de productos`: `Mas vendido`, `Mayor ingreso`, `Mayor utilidad` y `Mayor margen`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.{ts,html,css}` agrega tarjetas compactas dentro de `Ranking de productos`: `Mas vendido`, `Mayor ingreso`, `Mayor utilidad` y `Mayor margen`.
 - Las tarjetas se calculan desde `admin.topProducts` ya disponible, sin nuevos endpoints, y mantienen fallback `Sin datos` cuando el periodo no tenga ventas.
 - El encabezado del ranking explicita que el bloque cruza `venta neta, unidades, utilidad y margen`.
-- `Dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` agrega regresion para exigir que esas etiquetas de liderazgo sigan visibles.
+- `dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` agrega regresion para exigir que esas etiquetas de liderazgo sigan visibles.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-backend-layout.spec.ts --grep "backend"` (`3/3`) y `./scripts/check-container-connectivity.sh development`.
 - `check-container-connectivity.sh development` confirmo Facturador en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso ambiente SRI de produccion.
 
@@ -7348,13 +7771,13 @@ Decision:
 Objetivo: recuperar en el nuevo Dashboard la capacidad del panel anterior `/my-account` de decidir si cada categoria publica aparece en el carril superior y/o en el bloque destacado de la home.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html,css}` agrega checkboxes compactos `Carril superior` y `Bloque destacado` en filas de `Categorias publicas` con imagenes completas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html,css}` agrega checkboxes compactos `Carril superior` y `Bloque destacado` en filas de `Categorias publicas` con imagenes completas.
 - Los controles actualizan `showInTopSection`, `showInFeaturedSection` y `showInImageSection` sin crear referencias visuales vacias para categorias historicas sin imagen.
 - El texto meta de la fila ahora distingue `Carril superior`, `Bloque destacado` y `Oculta en home`, evitando que la visibilidad quede implicita o perdida.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion de categorias para desactivar ambas ubicaciones y verificar el payload guardado.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` extiende la regresion de categorias para desactivar ambas ubicaciones y verificar el payload guardado.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "category catalog"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog|category catalog"` (`3/3`) y `./scripts/check-container-connectivity.sh development`.
 - `check-container-connectivity.sh development` confirmo Facturador en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso ambiente SRI de produccion.
 
@@ -7366,12 +7789,12 @@ Decision:
 Objetivo: corregir que estadisticas importantes del resumen Paramascotas quedaran ocultas por scroll vertical en movil, manteniendo una vista compacta y util.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` deja de forzar `.paramascotas-kpi-grid` a una sola columna bajo `480px`; los 6 KPIs principales quedan en dos columnas compactas con menor alto/padding.
-- `Dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` agrega una regresion movil que exige 6 KPIs totales, 6 visibles dentro del primer viewport, 2 columnas y cero overflow horizontal.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` deja de forzar `.paramascotas-kpi-grid` a una sola columna bajo `480px`; los 6 KPIs principales quedan en dos columnas compactas con menor alto/padding.
+- `dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` agrega una regresion movil que exige 6 KPIs totales, 6 visibles dentro del primer viewport, 2 columnas y cero overflow horizontal.
 
 Operacion y verificacion:
 - Medicion previa en `390x844`: 6 KPIs totales, solo 5 visibles, grid de 1 columna.
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-backend-layout.spec.ts tests/e2e/layout-density.spec.ts --grep "paramascotas backend|mobile report summary"` (`3/3`) y `./scripts/check-container-connectivity.sh development`.
 - `check-container-connectivity.sh development` confirmo Facturador en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso ambiente SRI de produccion.
 
@@ -7383,13 +7806,13 @@ Decision:
 Objetivo: acercar el alta/edicion de productos del nuevo Dashboard al comportamiento del panel anterior `/my-account`, especialmente en validaciones de negocio y duplicacion de variantes agrupadas.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega validacion cliente previa al `create/update` de productos: nombre, marca, tipo, categoria, precio, costo, margen precio >= costo, stock entero, descripcion, SKU obligatorio/unico, especie, talla para ropa, vencimiento para Alimento con stock y campos de variante para cuidado.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega validacion cliente previa al `create/update` de productos: nombre, marca, tipo, categoria, precio, costo, margen precio >= costo, stock entero, descripcion, SKU obligatorio/unico, especie, talla para ropa, vencimiento para Alimento con stock y campos de variante para cuidado.
 - `Nueva variante` ahora se bloquea si el producto base no tiene un valor de variante reconocible; al guardar una variante duplicada, el Dashboard exige que el nuevo valor sea distinto al original.
 - La normalizacion existente sigue generando `variantLabel`, `variantBaseName` y `variantGroupKey`, pero ahora los casos ambiguos se detienen antes de llegar al backend.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones para bloquear precio menor al costo sin POST y para duplicar una variante agrupada, rechazando el mismo peso original y verificando payload correcto al cambiar a `4 kg`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones para bloquear precio menor al costo sin POST y para duplicar una variante agrupada, rechazando el mismo peso original y verificando payload correcto al cambiar a `4 kg`.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "product form|duplicate variant"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog|category catalog|product form|duplicate variant"` (`5/5`) y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`61/61`).
 - `./scripts/check-container-connectivity.sh development` paso por APISIX y confirmo Facturador en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso ambiente SRI de produccion.
 
@@ -7401,13 +7824,13 @@ Decision:
 Objetivo: alinear los catalogos operativos del nuevo Dashboard con el panel anterior `/my-account`, donde una categoria publica no puede agregarse ni completarse visualmente sin todas las imagenes requeridas para la home.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora valida que `Categorias publicas` tenga las 5 imagenes (`Superior 4:5`, `Movil grande`, `Movil pequena`, `Desktop grande`, `Desktop horizontal`) antes de agregar una categoria.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora valida que `Categorias publicas` tenga las 5 imagenes (`Superior 4:5`, `Movil grande`, `Movil pequena`, `Desktop grande`, `Desktop horizontal`) antes de agregar una categoria.
 - `saveReferenceData()` bloquea el guardado si existe una referencia visual de categoria parcialmente cargada, por ejemplo `1/5`, para no persistir datos que romperian la portada publica.
 - Los KPIs y metricas de catalogos ya no consideran una categoria como `media ready` con una sola imagen; solo cuenta como lista cuando tiene `5/5`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones para categoria incompleta al agregar, categoria completa en payload y bloqueo de referencias parciales existentes.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones para categoria incompleta al agregar, categoria completa en payload y bloqueo de referencias parciales existentes.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "category catalog"` (`2/2`) y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog|category catalog"` (`3/3`).
 - `./scripts/check-container-connectivity.sh development` paso por APISIX y confirmo Facturador en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso ambiente SRI de produccion.
 
@@ -7419,29 +7842,29 @@ Decision:
 Objetivo: confirmar que la ruta SaaS `/dashboard/tenant-admin` no se mezcle con el panel operativo Paramascotas y que un admin del tenant autenticado por dominio publico no pueda abrir la consola de tenants por URL directa.
 
 Cambios:
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` amplia el flujo real de login + MFA del admin Paramascotas: tras verificar contexto tenant sin `platform-admin` y panel POS operativo, navega a `/dashboard/tenant-admin?tenant=paramascotasec` y exige `permission-denied`.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` amplia el flujo real de login + MFA del admin Paramascotas: tras verificar contexto tenant sin `platform-admin` y panel POS operativo, navega a `/dashboard/tenant-admin?tenant=paramascotasec` y exige `permission-denied`.
 - La prueba confirma que la pantalla de tenants (`Clientes y paquetes contratados`) no queda visible para admin de tenant, y que el permiso faltante reportado es `platform-admin`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`4/4`) sobre `https://paramascotasec.com/dashboard` resolviendo a `192.168.100.229`.
 
 Decision:
-- `PLATFORM_ADMIN_PERMISSION` en `Dashboard/src/app/features/tenant-admin/tenant-admin.routes.ts` es intencional: `tenant-admin` administra clientes/paquetes SaaS de la plataforma, mientras Paramascotas usa `paramascotas-panel` con permisos tenant (`ecommerce.*`, `products.*`, etc.).
+- `PLATFORM_ADMIN_PERMISSION` en `dashboard/src/app/features/tenant-admin/tenant-admin.routes.ts` es intencional: `tenant-admin` administra clientes/paquetes SaaS de la plataforma, mientras Paramascotas usa `paramascotas-panel` con permisos tenant (`ecommerce.*`, `products.*`, etc.).
 
 ### 2026-06-17 - Dashboard QA: POS bloquea vencidos y busca aliases agrupados
 
 Objetivo: acercar `Venta en local` al comportamiento del panel anterior para productos agrupados, evitando vender articulos vencidos y haciendo que el selector POS encuentre variantes por identidad interna, marca o proveedor, no solo por nombre/SKU visible.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega metadatos opcionales de caducidad y busqueda a `ParamascotasLocalSaleLineItem`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deriva lineas POS con `inventory.expiration`, `attributes.expirationDate`, estado `expired`, aliases `internalId/id/legacyId/legacy_id/product_id`, marca, tipo, proveedor, especie y terminos SEO.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega metadatos opcionales de caducidad y busqueda a `ParamascotasLocalSaleLineItem`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` deriva lineas POS con `inventory.expiration`, `attributes.expirationDate`, estado `expired`, aliases `internalId/id/legacyId/legacy_id/product_id`, marca, tipo, proveedor, especie y terminos SEO.
 - El catalogo POS ahora filtra por ese texto ampliado, ordena vencidos al final y mantiene prioridad por stock/nombre como el panel anterior.
 - `addLocalSaleProduct()` bloquea productos vencidos y sin stock antes de refrescar la cotizacion; la UI muestra `Vencido` y deshabilita `Agregar`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` actualiza el placeholder de busqueda POS para incluir marca, proveedor e ID.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresion donde una variante agrupada se busca por ID interno y se envia a `orders/quote` con `product_id` interno, mientras otra variante vencida se encuentra por proveedor pero queda deshabilitada.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` actualiza el placeholder de busqueda POS para incluir marca, proveedor e ID.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresion donde una variante agrupada se busca por ID interno y se envia a `orders/quote` con `product_id` interno, mientras otra variante vencida se encuentra por proveedor pero queda deshabilitada.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, backend, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "local sales"` (`5/5`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`57/57`) y `./scripts/check-container-connectivity.sh development`.
 - `check-container-connectivity.sh development` confirmo el stack por APISIX y Facturador en `SRI_ENVIRONMENT=pruebas`; no se uso ambiente SRI de produccion.
 
@@ -7454,15 +7877,15 @@ Objetivo: evitar que `Ranking de productos` pierda stock, proveedor, cobertura y
 
 Cambios:
 - `paramascotasec-backend/src/Repositories/OrderRepository.php` ahora incluye `legacy_id` y `sku` en productos de `GET /api/admin/report` y en filas de ranking de `GET /api/admin/dashboard/stats`, igualando el contrato que necesita el panel para productos agrupados/migrados.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` conserva `legacy_id` opcional en filas crudas de ranking, productos del reporte y filas normalizadas de ventas.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cruza ranking de ventas e inteligencia de inventario usando aliases `product_id`/`legacy_id`, no solo `product_id` literal.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` conserva `legacy_id` opcional en filas crudas de ranking, productos del reporte y filas normalizadas de ventas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cruza ranking de ventas e inteligencia de inventario usando aliases `product_id`/`legacy_id`, no solo `product_id` literal.
 - Los lideres comerciales de utilidad y margen ahora excluyen productos vendidos sin costo auditado (`cost <= 0`), evitando mostrar margen 100% por dato incompleto; esos casos quedan como riesgo operativo en `Productos x Compra`.
 - Las acciones recomendadas del ranking tambien evitan duplicar productos sin movimiento cuando cualquier alias de inventario ya aparece vendido en el periodo.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion donde el ranking mensual trae un ID publico y alias interno, mientras inventario trae el ID interno; la UI debe mostrar `Comprar ahora`, proveedor, stock y compra sugerida desde inventario. Tambien cubre que un producto sin costo no gane `Mayor margen`.
-- `npm run capabilities:generate` regenera `paramascotasec/docs/system-capabilities.generated.json` y `paramascotasec/app/src/generated/systemCapabilities.ts`, que estaban desactualizados y bloqueaban el preflight de `scripts/e2e-development.sh`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una regresion donde el ranking mensual trae un ID publico y alias interno, mientras inventario trae el ID interno; la UI debe mostrar `Comprar ahora`, proveedor, stock y compra sugerida desde inventario. Tambien cubre que un producto sin costo no gane `Mayor margen`.
+- `npm run capabilities:generate` regenera `webparamascotas/docs/system-capabilities.generated.json` y `webparamascotas/app/src/generated/systemCapabilities.ts`, que estaban desactualizados y bloqueaban el preflight de `scripts/e2e-development.sh`.
 
 Operacion y verificacion:
-- Se redeplego backend con `./scripts/deploy-development.sh backend` y luego Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, certificados, SRI o datos reales.
+- Se redeplego backend con `./scripts/deploy-development.sh backend` y luego Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, certificados, SRI o datos reales.
 - Validado por API local del Dashboard: `admin/dashboard/stats?period=2026-06&include_report=0` devuelve filas de ranking con `legacy_id` y `sku`, y `admin/report?period=2026-06` devuelve productos del reporte con `legacy_id` y `sku`.
 - Pasaron `php -l src/Repositories/OrderRepository.php`, `npm run type:check`, `npm run lint`, multiples `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "sales report identifies|missing-cost|sales ranking joins grouped variant"` (`3/3`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`56/56`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`4/4`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts` (`33/33`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`8/8`) y `./scripts/check-container-connectivity.sh development` antes y despues del redeploy backend.
 - Tras regenerar capacidades, paso `npm run capabilities:check` y `./scripts/e2e-development.sh` completo: capability registry, frontend lint/typecheck, backend syntax/health, env/secrets, conectividad APISIX, SEO/Merchant, Facturador PHPUnit (`18/18`) y capability E2E probes. El preflight mantiene 6 advertencias operativas ya existentes sobre sucursales/certificados/API keys de pruebas no principales, sin fallos.
@@ -7476,18 +7899,18 @@ Decision:
 Objetivo: corregir la paridad de `Productos x Compra` con el panel anterior cuando un producto agrupado/variante expone un `id` publico distinto de la identidad administrable usada por ventas, compras, lotes FIFO y detalle de producto.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega helpers de identidad de producto compatibles con `internalId`, `id`, `legacyId`, `legacy_id` y `product_id`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega helpers de identidad de producto compatibles con `internalId`, `id`, `legacyId`, `legacy_id` y `product_id`.
 - `Productos x Compra` cruza reporte financiero, pedidos, compras, detalle de lotes y busqueda usando aliases de identidad; asi ventas, utilidad, compras y FIFO ya no quedan en cero cuando el backend reporta ventas por el ID interno de una variante agrupada.
 - Inventario y trazabilidad reutilizan el mismo mapa por identidad para enlazar filas de inteligencia, incidencias y acciones de producto sin depender solo de `product.id`.
 - Las lineas de POS/cotizacion local ahora conservan `productId/internalId` con la identidad administrable resuelta, evitando enviar al backend un posible ID publico de agrupacion.
 - `Venta historica` usa la misma identidad administrable en el selector, calculos de IVA/costo y payload a `POST /api/admin/historical-sales`, evitando registrar ventas historicas con el ID publico de una variante agrupada.
 - Catalogo de productos usa la identidad administrable al editar, registrar compra/restock, publicar/ocultar, retirar y resincronizar seleccion; las listas se actualizan comparando aliases de identidad y no solo `product.id`.
 - Alertas, filas de impuestos y filas de precios tambien usan la identidad administrable para IDs visuales internos, evitando duplicados o cruces ambiguos en variantes agrupadas.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones interceptadas donde `id` publico e `internalId` difieren; una exige que el Dashboard cargue detalle de compras con el ID interno y otra valida que `Venta historica` envie `product_id` interno con costo e IVA correctos.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega regresion para editar y publicar una variante agrupada, verificando que ambos `PUT /dashboard/api/products/{id}` usen `internalId` y nunca el ID publico.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega regresiones interceptadas donde `id` publico e `internalId` difieren; una exige que el Dashboard cargue detalle de compras con el ID interno y otra valida que `Venta historica` envie `product_id` interno con costo e IVA correctos.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega regresion para editar y publicar una variante agrupada, verificando que ambos `PUT /dashboard/api/products/{id}` usen `internalId` y nunca el ID publico.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI o datos reales.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI o datos reales.
 - Pasaron `npm run type:check`, `npm run lint`, multiples `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "internal product identity"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "historical sales"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "products purchases|inventory purchase invoices|local sales"` (`7/7`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts --grep "product edit and publication"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`8/8`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`54/54`) y `./scripts/check-container-connectivity.sh development`.
 - `check-container-connectivity.sh development` confirmo APISIX, frontend, backend, DB, Facturador en `SRI_ENVIRONMENT=pruebas`, endpoints SRI `celcer.sri.gob.ec`, SMTP alcanzable, catalogo publico con 123 productos, rutas legacy bloqueadas y facturador publico anonimo rechazado.
 
@@ -7504,12 +7927,12 @@ Objetivo: auditar formularios y notificaciones publicas fuera de auth/facturas, 
 Cambios:
 - `paramascotasec-backend/src/Controllers/ContactController.php` agrega honeypot server-side (`website`, `company`, `url`) que responde exito generico con `spamFiltered=true` sin guardar mensaje ni enviar correos cuando se llena un campo trampa.
 - `paramascotasec-backend/src/Repositories/ContactMessageRepository.php` agrega conteos recientes por email e IP para aplicar limites horarios configurables antes de guardar/enviar mensajes reales.
-- `paramascotasec/app/src/lib/api/contact.ts` y `paramascotasec/app/src/tenants/paramascotasec.com/pages/contact/page.tsx` incorporan el campo oculto `website` y mantienen las validaciones visibles de nombre, correo, asunto y mensaje.
-- `Dashboard/tests/e2e/paramascotas-public-contact.spec.ts` cubre el formulario publico por `https://paramascotasec.com/pages/contact`, validando errores requeridos y que una solicitud limpia envie el payload esperado.
+- `webparamascotas/app/src/lib/api/contact.ts` y `webparamascotas/app/src/tenants/paramascotasec.com/pages/contact/page.tsx` incorporan el campo oculto `website` y mantienen las validaciones visibles de nombre, correo, asunto y mensaje.
+- `dashboard/tests/e2e/paramascotas-public-contact.spec.ts` cubre el formulario publico por `https://paramascotasec.com/pages/contact`, validando errores requeridos y que una solicitud limpia envie el payload esperado.
 
 Operacion y verificacion:
 - Se redeplego backend con `./scripts/deploy-development.sh backend` y frontend con `./scripts/deploy-development.sh frontend`; no se desplego production ni se tocaron datos de ventas/facturacion.
-- Pasaron `php -l` sobre los archivos PHP tocados, `cd paramascotasec/app && npm run lint`, `cd paramascotasec/app && npm run typecheck`, `cd Dashboard && npm run type:check`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-public-contact.spec.ts` (`1/1`) y `./scripts/check-container-connectivity.sh development`.
+- Pasaron `php -l` sobre los archivos PHP tocados, `cd webparamascotas/app && npm run lint`, `cd webparamascotas/app && npm run typecheck`, `cd dashboard && npm run type:check`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-public-contact.spec.ts` (`1/1`) y `./scripts/check-container-connectivity.sh development`.
 - Validacion directa por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: un POST con `website` lleno devuelve `ok=true`, `id=null`, `delivered=false`, `confirmationDelivered=false` y `spamFiltered=true`, sin disparar correo real.
 - `check-container-connectivity.sh development` confirmo APISIX, frontend, backend, DB, Facturador en `SRI_ENVIRONMENT=pruebas`, endpoints SRI `celcer.sri.gob.ec`, SMTP alcanzable, catalogo publico con 123 productos, rutas legacy bloqueadas y facturador publico anonimo rechazado.
 
@@ -7525,14 +7948,14 @@ Objetivo: cerrar brechas de autenticacion/notificaciones en el Dashboard nuevo, 
 
 Cambios:
 - `paramascotasec-backend/src/Controllers/AuthController.php` acepta `resetPath`/`reset_path` en `POST /api/auth/password-reset/request`, lo normaliza contra una allowlist estricta (`/reset-password` o `/dashboard/reset-password`) y construye el enlace de correo con esa ruta. El flujo publico antiguo sigue usando `/reset-password` por defecto.
-- `Dashboard/src/app/core/auth/auth.models.ts` agrega `resetPath` opcional a `PasswordResetRequestDto`.
-- `Dashboard/src/app/features/public/pages/forgot-password/forgot-password.component.ts` solicita recuperacion con `resetPath: /dashboard/reset-password`, para que admins que empiezan en el Dashboard vuelvan al Dashboard.
-- `Dashboard/src/app/features/public/pages/reset-password/reset-password.component.{ts,html}` alinea la longitud minima con backend/panel anterior: 12 caracteres. Tambien muestra errores inline desde el componente padre para que una clave debil no falle en silencio.
-- `Dashboard/src/app/shared/ui/form-field-error/form-field-error.component.ts` deja de usar `OnPush`, evitando que errores basados en `AbstractControl` queden sin refrescar cuando un formulario marca controles como tocados.
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` agrega prueba no destructiva que intercepta recuperacion de clave, verifica `resetPath=/dashboard/reset-password`, valida el bloqueo frontend de claves menores a 12 caracteres y confirma que no se llama a confirmacion hasta tener una clave valida.
+- `dashboard/src/app/core/auth/auth.models.ts` agrega `resetPath` opcional a `PasswordResetRequestDto`.
+- `dashboard/src/app/features/public/pages/forgot-password/forgot-password.component.ts` solicita recuperacion con `resetPath: /dashboard/reset-password`, para que admins que empiezan en el Dashboard vuelvan al Dashboard.
+- `dashboard/src/app/features/public/pages/reset-password/reset-password.component.{ts,html}` alinea la longitud minima con backend/panel anterior: 12 caracteres. Tambien muestra errores inline desde el componente padre para que una clave debil no falle en silencio.
+- `dashboard/src/app/shared/ui/form-field-error/form-field-error.component.ts` deja de usar `OnPush`, evitando que errores basados en `AbstractControl` queden sin refrescar cuando un formulario marca controles como tocados.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` agrega prueba no destructiva que intercepta recuperacion de clave, verifica `resetPath=/dashboard/reset-password`, valida el bloqueo frontend de claves menores a 12 caracteres y confirma que no se llama a confirmacion hasta tener una clave valida.
 
 Operacion y verificacion:
-- Se redeplego backend con `./scripts/deploy-development.sh backend` y Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production.
+- Se redeplego backend con `./scripts/deploy-development.sh backend` y Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production.
 - Pasaron `php -l paramascotasec-backend/src/Controllers/AuthController.php`, `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts --grep "password recovery"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`4/4`) y `./scripts/check-container-connectivity.sh development`.
 - La suite auth real volvio a validar login admin con MFA por OTP real, tenant scope sin `platform-admin`, bloqueo de usuario customer en rutas administrativas, resincronizacion POS y recuperacion de clave interceptada.
 - `check-container-connectivity.sh development` confirmo APISIX, backend, Dashboard, Facturador QA/pruebas, endpoints SRI `celcer.sri.gob.ec`, SMTP alcanzable, catalogo publico con 123 productos, rutas legacy bloqueadas y facturador publico anonimo rechazado.
@@ -7550,13 +7973,13 @@ Objetivo: completar la auditoria de correos/notificaciones en facturas RIDE comp
 Cambios:
 - `Facturador/src/Billing/Infrastructure/Persistence/InvoiceRepository.php` incluye `mail_sent_at` en el listado historico de facturas RIDE; es el campo que marca los envios automaticos exitosos de documentos autorizados.
 - `Facturador/public/index.php` devuelve `mail_sent_at` tanto en `GET /api/{test|production}/v1/invoices/rides` como en la consulta por referencia, manteniendo el endpoint de prueba de correo sin uso desde el Dashboard.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega `mail_sent_at` al contrato `BillingRidePdf`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html}` clasifica cada RIDE como `Correo enviado`, `Correo pendiente`, `Sin correo` o `Correo espera SRI`; el listado, badges, buscador, selector de estado y detalle de la factura muestran el estado sin agregar acciones que envien correo.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega `mail_sent_at` al contrato `BillingRidePdf`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html}` clasifica cada RIDE como `Correo enviado`, `Correo pendiente`, `Sin correo` o `Correo espera SRI`; el listado, badges, buscador, selector de estado y detalle de la factura muestran el estado sin agregar acciones que envien correo.
 - El resumen de facturas conserva 4 tarjetas compactas; la tarjeta `Total` ahora muestra correos enviados y pendientes para evitar una fila visual extra.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba con facturas interceptadas que valida estados de correo y filtro `Correo pendiente`, y confirma que no se llama a `/mail-test`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba con facturas interceptadas que valida estados de correo y filtro `Correo pendiente`, y confirma que no se llama a `/mail-test`.
 
 Operacion y verificacion:
-- Se redeplego Facturador con `./scripts/deploy-development.sh facturador` y Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production.
+- Se redeplego Facturador con `./scripts/deploy-development.sh facturador` y Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production.
 - Pasaron `php -l` en los archivos PHP tocados, `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "billing rides"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`52/52`) y `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "paramascotas|billing|dashboard"` (`4/4`).
 - Verificacion interna desde `paramascotasec-backend-app` confirmo que `GET ${FACTURADOR_API_URL}${FACTURADOR_API_INVOICES_PATH}/rides?limit=1` ya contiene `mail_sent_at`, usando la API key solo dentro del contenedor y sin imprimir secretos.
 - `./scripts/check-container-connectivity.sh development` paso despues de los deploys y confirmo Facturador/worker en `SRI_ENVIRONMENT=pruebas`, endpoints SRI `celcer.sri.gob.ec`, SMTP alcanzable, catalogo publico con 123 productos, rutas legacy bloqueadas y facturador publico anonimo rechazado.
@@ -7572,15 +7995,15 @@ Pendientes:
 Objetivo: completar la limpieza de lenguaje tecnico visible en el Dashboard, especialmente terminos como `backend`, `proxy`, `SMTP`, `API`, `Endpoints` y referencias directas a `/my-account`, manteniendo la trazabilidad interna y la ruta existente.
 
 Cambios:
-- `Dashboard/src/app/core/navigation/navigation.registry.ts` renombra el item visible `Paramascotas backend` a `Resumen Paramascotas`, sin cambiar la ruta interna `/paramascotas-backend`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.{ts,html}` renombra el titulo visible a `Resumen Paramascotas` y reemplaza mensajes tecnicos de carga/error por textos operativos: salud/catalogo/inventario, servicio publico, base, metricas operativas y vista consolidada.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` elimina ayudas visibles con `backend`, `proxy`, `SMTP`, `API`, `firma de /my-account` y `validado por backend`; quedan mensajes de operador como `calculo validado`, `envio automatico`, `limites vigentes` y `validaciones del sistema`.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.ts` limpia descripciones visibles del panel para no nombrar `/my-account` ni backend, conservando las firmas/rutas internas que usa el comparador.
-- `Dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts` cambia el fallback de error de lectura de `endpoint` a `fuente`.
-- `Dashboard/src/app/core/navigation/navigation.service.spec.ts` y `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` actualizan las expectativas al label `Resumen Paramascotas`.
+- `dashboard/src/app/core/navigation/navigation.registry.ts` renombra el item visible `Paramascotas backend` a `Resumen Paramascotas`, sin cambiar la ruta interna `/paramascotas-backend`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.{ts,html}` renombra el titulo visible a `Resumen Paramascotas` y reemplaza mensajes tecnicos de carga/error por textos operativos: salud/catalogo/inventario, servicio publico, base, metricas operativas y vista consolidada.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` elimina ayudas visibles con `backend`, `proxy`, `SMTP`, `API`, `firma de /my-account` y `validado por backend`; quedan mensajes de operador como `calculo validado`, `envio automatico`, `limites vigentes` y `validaciones del sistema`.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel.registry.ts` limpia descripciones visibles del panel para no nombrar `/my-account` ni backend, conservando las firmas/rutas internas que usa el comparador.
+- `dashboard/src/app/features/dashboard/data/paramascotas-panel-api.service.ts` cambia el fallback de error de lectura de `endpoint` a `fuente`.
+- `dashboard/src/app/core/navigation/navigation.service.spec.ts` y `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` actualizan las expectativas al label `Resumen Paramascotas`.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "route /paramascotas-backend|support mode"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts tests/e2e/paramascotas-backend-layout.spec.ts` (`34/34`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`51/51`) y `./scripts/check-container-connectivity.sh development`.
 - Medicion Playwright directa despues del redeploy confirma que el menu y la ruta muestran `Resumen Paramascotas` y que no aparecen `Paramascotas backend`, `proxy interno`, `Consultando metricas reales del backend`, `Backend publico no disponible` ni `El backend respondio`.
 - `check-container-connectivity.sh development` confirmo APISIX, 123 productos publicos, rutas legacy bloqueadas, rechazo anonimo del facturador publico y Facturador/worker en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso SRI produccion.
@@ -7596,7 +8019,7 @@ Pendientes:
 Objetivo: ampliar la validacion de correos/notificaciones fuera de cotizaciones, cubriendo las acciones de contacto del catalogo de usuarios del Dashboard nuevo.
 
 Cambios:
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva para `paramascotas-panel/catalog/users` que intercepta `GET /dashboard/api/users`, captura `window.open` y valida que las acciones `Email` y `WhatsApp` usen `resolvedEmail` y `resolvedPhone` cuando existen.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva para `paramascotas-panel/catalog/users` que intercepta `GET /dashboard/api/users`, captura `window.open` y valida que las acciones `Email` y `WhatsApp` usen `resolvedEmail` y `resolvedPhone` cuando existen.
 - La misma prueba confirma que no se muestren acciones de contacto para usuarios con correo invalido o telefono no normalizable, y que no se use el email de cuenta original ni el telefono secundario del `profile` cuando hay canales resueltos.
 
 Operacion y verificacion:
@@ -7611,14 +8034,14 @@ Pendientes:
 Objetivo: atender el problema de estadisticas ocultas por scroll vertical y seguir limpiando la experiencia operativa del Dashboard nuevo, especialmente en `Reporte general`, sin perder la trazabilidad contra `/my-account`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` deja que los KPIs principales de reportes usen dos columnas en mobile, en vez de caer a una sola columna; en viewport `390x844` los 6 KPIs de `Reporte general` quedan visibles antes del primer corte vertical y sin overflow horizontal.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` deja que los KPIs principales de reportes usen dos columnas en mobile, en vez de caer a una sola columna; en viewport `390x844` los 6 KPIs de `Reporte general` quedan visibles antes del primer corte vertical y sin overflow horizontal.
 - `paramascotas-panel.component.html` reemplaza textos visibles de soporte como `Endpoints`, `Lecturas API`, `Firma /my-account`, `Proxy Dashboard` y mensajes de `endpoint` por `Fuentes`, `Lecturas verificadas`, `Referencia`, `Uso` y mensajes operativos.
 - `paramascotas-panel.component.ts` cambia los badges de error de lecturas para mostrar `Sin permisos` o `Error de lectura` en vez de `HTTP ###`.
-- `Dashboard/tests/e2e/layout-density.spec.ts` agrega regresion mobile que exige 6 KPIs visibles, 2 columnas y `overflow` horizontal en cero para `paramascotas-panel/reporting/general`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` actualiza la expectativa del soporte visible de `Endpoints` a `Fuentes`.
+- `dashboard/tests/e2e/layout-density.spec.ts` agrega regresion mobile que exige 6 KPIs visibles, 2 columnas y `overflow` horizontal en cero para `paramascotas-panel/reporting/general`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` actualiza la expectativa del soporte visible de `Endpoints` a `Fuentes`.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "mobile report summary"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "support mode"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts` (`33/33`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`50/50`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`7/7`) y `./scripts/check-container-connectivity.sh development`.
 - Medicion Playwright directa despues del redeploy: desktop `1365x900` muestra 6/6 KPIs con 6 columnas; mobile `390x844` muestra 6/6 KPIs con 2 columnas, `overflowX=0`, `supportText` con `Fuentes 0 / 4` y sin `Endpoints` visible.
 - `check-container-connectivity.sh development` confirmo APISIX, 123 productos publicos, rutas legacy bloqueadas, rechazo anonimo del facturador publico y Facturador/worker en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso SRI produccion.
@@ -7631,12 +8054,12 @@ Pendientes:
 Objetivo: mejorar la claridad operativa del Dashboard nuevo, reduciendo textos de contrato interno visibles para usuarios finales y manteniendo intactas las rutas reales, productos agrupados y flujos ya corregidos durante la auditoria contra `/my-account`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` reemplaza referencias visibles a metodos HTTP, rutas `/api`, `/dashboard/api`, `server-side` y mensajes tipo `Consultando /api` por descripciones operativas en usuarios, pagina de producto, envios, POS, cotizaciones, reportes, inventario, rankings, estado de tienda, seguridad, impuestos, precios, descuentos, productos, RIDE/facturas y pedidos.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` reemplaza referencias visibles a metodos HTTP, rutas `/api`, `/dashboard/api`, `server-side` y mensajes tipo `Consultando /api` por descripciones operativas en usuarios, pagina de producto, envios, POS, cotizaciones, reportes, inventario, rankings, estado de tienda, seguridad, impuestos, precios, descuentos, productos, RIDE/facturas y pedidos.
 - La limpieza mantiene los contratos reales en servicios/tests; solo cambia el texto mostrado al operador para que cada bloque explique su utilidad de negocio en lugar de exponer endpoints internos.
 - Durante el tramo se recupero el template desde el sourcemap del build de Dashboard vigente despues de una sobrescritura accidental local por redireccion de shell, y se verifico el archivo recuperado antes de continuar con los cambios.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts --grep "autofills supplier|grouped variant"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "route /paramascotas-panel/(catalog/products|operations/local-sales|operations/admin-orders|operations/billing-rides|finance/taxes|finance/pricing-rules|reporting/general)"` (`7/7`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`7/7`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`50/50`) y `./scripts/check-container-connectivity.sh development`.
 - `rg` confirma que `paramascotas-panel.component.html` ya no muestra `GET/POST/PUT/PATCH/DELETE`, `/api`, `/dashboard/api`, `server-side` ni `Consultando /api`.
 - `check-container-connectivity.sh development` confirmo APISIX, 123 productos publicos, rutas legacy bloqueadas, rechazo anonimo del facturador publico y Facturador/worker en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso SRI produccion.
@@ -7649,13 +8072,13 @@ Pendientes:
 Objetivo: cerrar otra brecha de compras/proveedores entre el Dashboard nuevo y `/my-account`. En el panel anterior, al seleccionar un proveedor registrado en la factura de compra del producto, se autocompletan nombre normalizado, RUC/documento, IVA de compra y `attributes.supplier`; el Dashboard nuevo solo guardaba esos datos al final y no mostraba feedback inmediato al operador.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` actualiza `updatePurchaseInvoiceField()` para resolver proveedores del catalogo maestro al cambiar `supplierName` o `supplierDocument`, rellenar `supplierDocument`, `purchaseTaxRate` y sincronizar `attributes.supplier` en el formulario antes de guardar.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` actualiza `updatePurchaseInvoiceField()` para resolver proveedores del catalogo maestro al cambiar `supplierName` o `supplierDocument`, rellenar `supplierDocument`, `purchaseTaxRate` y sincronizar `attributes.supplier` en el formulario antes de guardar.
 - La misma vista agrega `selectedProductPurchaseSupplier()` para exponer el proveedor resuelto al template.
 - `paramascotas-panel.component.html` muestra un resumen del proveedor seleccionado dentro de `Factura de compra para ingresar stock`: RUC/documento, contacto, canal e IVA compra; si el proveedor no existe en catalogo, advierte que se complete RUC/documento e IVA.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega prueba no destructiva que intercepta `product-reference-data`, selecciona un proveedor con IVA `12.5%` y confirma que el payload de creacion sale con documento, IVA y `attributes.supplier` sin escribirlos manualmente.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega prueba no destructiva que intercepta `product-reference-data`, selecciona un proveedor con IVA `12.5%` y confirma que el payload de creacion sale con documento, IVA y `attributes.supplier` sin escribirlos manualmente.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run docker:health`, `npm run type:check`, `npm run lint`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts --grep "autofills supplier"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`7/7`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`50/50`) y `./scripts/check-container-connectivity.sh development`.
 - La prueba nueva intercepta endpoints y no crea productos reales, stock real ni facturas reales.
 - `check-container-connectivity.sh development` confirmo APISIX, 123 productos publicos, rutas legacy bloqueadas, SMTP accesible y Facturador/worker en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso SRI produccion.
@@ -7668,13 +8091,13 @@ Pendientes:
 Objetivo: alinear el catalogo operativo de proveedores del Dashboard nuevo con `/my-account`. El panel anterior no permitia agregar proveedores sin nombre suficiente, RUC/documento completo, email valido o con nombre/documento duplicado; el Dashboard nuevo podia agregarlos al borrador y dejar que backend sanee o descarte informacion sin explicacion clara al operador.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega validacion local para referencias de proveedores: nombre minimo, documento obligatorio con clave comparable, email valido, IVA de compra entre `0` y `100`, duplicado por nombre y duplicado por documento.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega validacion local para referencias de proveedores: nombre minimo, documento obligatorio con clave comparable, email valido, IVA de compra entre `0` y `100`, duplicado por nombre y duplicado por documento.
 - Al cambiar de catalogo se limpia el error vigente para no arrastrar mensajes entre listas maestras.
 - `paramascotas-panel.component.html` reemplaza el texto tecnico visible `GET/PUT /api/admin/settings/product-reference-data` por una descripcion operativa de listas maestras para productos, compras, proveedores e imagenes publicas.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva que intercepta `product-reference-data`, valida errores locales y confirma que un proveedor valido se guarda con email normalizado y sin duplicados.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva que intercepta `product-reference-data`, valida errores locales y confirma que un proveedor valido se guarda con email normalizado y sin duplicados.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "supplier catalog"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`50/50`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
 - La prueba de proveedores usa endpoints interceptados; no modifica proveedores reales, facturas reales, stock ni comprobantes.
 - `check-container-connectivity.sh development` confirmo contrato publico por APISIX, 123 productos publicos, rutas legacy bloqueadas, SMTP accesible y Facturador/worker en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso SRI produccion.
@@ -7687,13 +8110,13 @@ Pendientes:
 Objetivo: completar la paridad de correos/notificaciones de cotizaciones entre el Dashboard nuevo y `/my-account`, donde el panel anterior activaba correo por defecto si el email era valido y podia abrir WhatsApp con el mensaje listo al crear la cotizacion, sin enviar WhatsApp por backend.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega `sendWhatsApp` al formulario local de venta/cotizacion.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` vuelve a dejar `sendEmail` activo por defecto como en `/my-account`, conserva `send_email=false` cuando no hay email valido, agrega preparacion automatica de WhatsApp al crear cotizacion y reutiliza la normalizacion comun de telefonos ecuatorianos para no generar enlaces `wa.me` invalidos.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega `sendWhatsApp` al formulario local de venta/cotizacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` vuelve a dejar `sendEmail` activo por defecto como en `/my-account`, conserva `send_email=false` cuando no hay email valido, agrega preparacion automatica de WhatsApp al crear cotizacion y reutiliza la normalizacion comun de telefonos ecuatorianos para no generar enlaces `wa.me` invalidos.
 - `paramascotas-panel.component.html` agrega el control `Preparar WhatsApp al crear` con aviso de telefono valido/no valido, sin mostrar advertencias de correo vacio como error antes de que el operador ingrese un email.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` cubre que un email invalido no solicite SMTP y que WhatsApp se prepare con numero `593...` normalizado sin mandar campos de entrega WhatsApp al backend.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` cubre que un email invalido no solicite SMTP y que WhatsApp se prepare con numero `593...` normalizado sin mandar campos de entrega WhatsApp al backend.
 
 Operacion y verificacion:
-- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo Dashboard con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run docker:health`, `npm run type:check`, `npm run lint`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "quotations.*email|quotations prepare WhatsApp|quotation conversion"` (`4/4`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`49/49`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
 - `check-container-connectivity.sh development` confirmo nuevamente contrato publico por APISIX, 123 productos publicos, rutas legacy bloqueadas, SMTP accesible y Facturador/worker en `SRI_ENVIRONMENT=pruebas` contra `celcer.sri.gob.ec`; no se uso SRI produccion.
 
@@ -7705,10 +8128,10 @@ Pendientes:
 Objetivo: corregir una diferencia financiera entre el Dashboard nuevo y `/my-account`. En gastos/recurrentes, el panel anterior reconciliaba subtotal, IVA/porcentaje y total antes de guardar; el Dashboard nuevo podia enviar total incompleto si el operador llenaba subtotal + IVA pero dejaba total vacio, o degradar entradas invalidas a cero.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega resolucion robusta de montos para gastos y recurrencias: parsea moneda con coma/punto, rechaza negativos/no numericos, interpreta IVA como valor o porcentaje segun el caso, deriva subtotal/IVA/total de forma consistente y valida fechas `YYYY-MM-DD`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega resolucion robusta de montos para gastos y recurrencias: parsea moneda con coma/punto, rechaza negativos/no numericos, interpreta IVA como valor o porcentaje segun el caso, deriva subtotal/IVA/total de forma consistente y valida fechas `YYYY-MM-DD`.
 - `createBusinessExpense()`, `saveBusinessExpenseRecurrence()` y `createBusinessExpenseRecurrence()` capturan errores de validacion local y los muestran en la vista sin disparar mutaciones.
 - `paramascotas-panel.component.html` reemplaza textos tecnicos visibles de endpoints en reportes financieros, gastos, venta historica y productos por mensajes operativos utiles para el administrador.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva para gastos: al registrar subtotal `100` + IVA `15` sin total manual, el payload enviado queda `amount=100`, `tax_amount=15`, `total=115`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva para gastos: al registrar subtotal `100` + IVA `15` sin total manual, el payload enviado queda `amount=100`, `tax_amount=15`, `total=115`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "business expenses|discount form"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`48/48`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7723,9 +8146,9 @@ Pendientes:
 Objetivo: alinear la gestion de cupones/descuentos del Dashboard nuevo con `/my-account` y con las reglas reales del backend, evitando que valores invalidos lleguen serializados como `null` o que el operador vea rechazos tardios y poco claros.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` refuerza `discountFormToPayload()`: normaliza codigo en mayusculas sin espacios, valida tipo, valor numerico, porcentaje maximo 100, minimo, maximo descuento, limite de usos y rango `inicio <= fin` antes de llamar a `POST/PUT /api/admin/discounts`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` refuerza `discountFormToPayload()`: normaliza codigo en mayusculas sin espacios, valida tipo, valor numerico, porcentaje maximo 100, minimo, maximo descuento, limite de usos y rango `inicio <= fin` antes de llamar a `POST/PUT /api/admin/discounts`.
 - `paramascotas-panel.component.html` reemplaza el texto tecnico de endpoints por una descripcion operativa de vigencia, cupos y uso acumulado, manteniendo creacion, edicion, activacion/desactivacion, filtros, metricas y auditoria.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva para el formulario de cupones: porcentaje mayor a 100 no muta backend, fecha fin anterior al inicio no muta backend y un cupon valido se envia con payload normalizado (`code`, `min_subtotal`, `max_discount`, `max_uses`, vigencia y estado).
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega prueba no destructiva para el formulario de cupones: porcentaje mayor a 100 no muta backend, fecha fin anterior al inicio no muta backend y un cupon valido se envia con payload normalizado (`code`, `min_subtotal`, `max_discount`, `max_uses`, vigencia y estado).
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "discount form"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`47/47`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7739,10 +8162,10 @@ Pendientes:
 Objetivo: cerrar una brecha de permisos entre el panel nuevo y la seguridad esperada. El backend entrega `ecommerce.read` a usuarios de consulta/customer del tenant, pero las pantallas del nuevo Dashboard Paramascotas son administrativas; permitir su ruta con solo lectura exponia pantallas operativas que luego fallaban por API o podian confundir al usuario.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/dashboard.routes.ts` cambia `paramascotas-backend` y `paramascotas-panel/:group/:view` para requerir `ecommerce.update` en lugar de `ecommerce.read`.
-- `Dashboard/src/app/core/navigation/navigation.registry.ts` actualiza la seccion `Integraciones reales` para que `Paramascotas backend`, reportes, monitoreo, catalogo, operacion y finanzas solo aparezcan a usuarios con permiso operativo `ecommerce.update`.
-- `Dashboard/src/app/core/navigation/navigation.service.spec.ts` distingue explicitamente lector ecommerce (`ecommerce.read`, sin menu administrativo) de operador/admin (`ecommerce.update`, con menu Paramascotas).
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` agrega validacion publica real: un usuario `customer` autenticado por `https://paramascotasec.com/dashboard` conserva `ecommerce.read`, no recibe `ecommerce.update` ni `platform-admin`, y al intentar abrir POS termina en `permission-denied` con permiso requerido `ecommerce.update`.
+- `dashboard/src/app/features/dashboard/dashboard.routes.ts` cambia `paramascotas-backend` y `paramascotas-panel/:group/:view` para requerir `ecommerce.update` en lugar de `ecommerce.read`.
+- `dashboard/src/app/core/navigation/navigation.registry.ts` actualiza la seccion `Integraciones reales` para que `Paramascotas backend`, reportes, monitoreo, catalogo, operacion y finanzas solo aparezcan a usuarios con permiso operativo `ecommerce.update`.
+- `dashboard/src/app/core/navigation/navigation.service.spec.ts` distingue explicitamente lector ecommerce (`ecommerce.read`, sin menu administrativo) de operador/admin (`ecommerce.update`, con menu Paramascotas).
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` agrega validacion publica real: un usuario `customer` autenticado por `https://paramascotasec.com/dashboard` conserva `ecommerce.read`, no recibe `ecommerce.update` ni `platform-admin`, y al intentar abrir POS termina en `permission-denied` con permiso requerido `ecommerce.update`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`3/3`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`46/46`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7757,10 +8180,10 @@ Pendientes:
 Objetivo: anticipar en el nuevo Dashboard una regla critica que backend y Facturador ya aplican: ventas mayores a USD 50.00 no pueden facturarse como consumidor final (`9999999999999`). Antes, el operador podia llegar al submit/conversion y recibir el rechazo tarde; ahora el Dashboard muestra el motivo antes de mutar datos.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega helpers de identificacion de consumidor final por tipo de documento, placeholder `9999999999999` o nombre `Consumidor final`, y compara el total server-side redondeado contra USD 50.00.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega helpers de identificacion de consumidor final por tipo de documento, placeholder `9999999999999` o nombre `Consumidor final`, y compara el total server-side redondeado contra USD 50.00.
 - `localSaleIssues(true)` bloquea `Registrar venta` cuando el carrito POS supera el limite con consumidor final; `quotationConversionIssues()` bloquea convertir una cotizacion equivalente antes de llamar al backend.
 - `paramascotas-panel.component.html` muestra el primer pendiente de venta/cotizacion en avisos inline, desactiva acciones invalidas y advierte que una cotizacion puede guardarse pero no convertirse sin cedula o RUC valido.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega pruebas no destructivas para POS y conversion de cotizaciones, verificando que no se dispare `POST /orders` ni `POST /admin/quotes/{id}/convert` cuando consumidor final supera USD 50.00.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega pruebas no destructivas para POS y conversion de cotizaciones, verificando que no se dispare `POST /orders` ni `POST /admin/quotes/{id}/convert` cuando consumidor final supera USD 50.00.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "final consumer"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`46/46`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7775,11 +8198,11 @@ Pendientes:
 Objetivo: cerrar una brecha operativa de `Venta en local POS` frente a `/my-account`. El panel anterior permitia buscar cliente por cedula/documento antes de facturar, cargando datos de ordenes previas o perfil; el Dashboard nuevo obligaba a reescribir todo manualmente y podia terminar con clientes duplicados, direcciones incompletas o documentos mal reutilizados.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` agrega `lookupPosCustomerByDocument()` sobre el contrato existente `GET /api/admin/pos/customer-by-document`.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` documenta el payload `ParamascotasPosCustomerLookup` con cliente, direccion, documento y origen (`order`/`user_profile`).
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega estado de busqueda, autocompletado de nombre, telefono, email, direccion, ciudad y tipo/numero de documento, conserva valores existentes si el backend no trae un campo y bloquea guardar mientras la busqueda esta en curso.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` agrega `lookupPosCustomerByDocument()` sobre el contrato existente `GET /api/admin/pos/customer-by-document`.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` documenta el payload `ParamascotasPosCustomerLookup` con cliente, direccion, documento y origen (`order`/`user_profile`).
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega estado de busqueda, autocompletado de nombre, telefono, email, direccion, ciudad y tipo/numero de documento, conserva valores existentes si el backend no trae un campo y bloquea guardar mientras la busqueda esta en curso.
 - `paramascotas-panel.component.html` agrega boton `Buscar`, soporte por Enter/blur y mensajes de resultado sin contaminar el nombre accesible del input `Documento`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` cubre el flujo no destructivo con intercept: documento -> `customer-by-document` -> campos de cliente autocompletados y mensaje `Cliente encontrado`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` cubre el flujo no destructivo con intercept: documento -> `customer-by-document` -> campos de cliente autocompletados y mensaje `Cliente encontrado`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "customer by document"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`44/44`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7794,11 +8217,11 @@ Pendientes:
 Objetivo: alinear la conversion de cotizaciones a venta con `/my-account`. El panel anterior bloqueaba conversion si la caja estaba cerrada, ventas pausadas, cotizacion ya convertida o datos de pago incompletos; el Dashboard nuevo solo verificaba seleccion/caja/estado y podia intentar convertir transferencia sin referencia ni detalles completos de pago.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `quotationPaymentAmounts()` y `quotationConversionIssues()` para calcular total/pagado/pendiente/cambio sobre la cotizacion seleccionada, no sobre el carrito actual.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `quotationPaymentAmounts()` y `quotationConversionIssues()` para calcular total/pagado/pendiente/cambio sobre la cotizacion seleccionada, no sobre el carrito actual.
 - `convertSelectedQuotation()` ahora reutiliza esas validaciones: ventas habilitadas, caja abierta, cotizacion no convertida, efectivo suficiente, referencia de transferencia, pagos mixtos con efectivo/electronico/referencia y pendiente cubierto.
 - El payload de conversion vuelve a incluir detalles operativos equivalentes a `/my-account`: `reference`, `cash_received`, `electronic_amount`, `paid_amount`, `pending_amount` y `change_due`, ademas de `channel` y `shift_id`.
 - `paramascotas-panel.component.html` muestra campos de efectivo/electronico segun metodo, resumen de `Total cotizacion`, `Pagado`, `Pendiente`, `Cambio`, y bloquea `Convertir en venta` hasta resolver el primer pendiente.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta cotizaciones, caja y conversion; valida que transferencia sin referencia no llame al backend y que, al ingresar referencia, el payload incluya los montos correctos.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta cotizaciones, caja y conversion; valida que transferencia sin referencia no llame al backend y que, al ingresar referencia, el payload incluya los montos correctos.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "quotation conversion"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`43/43`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7813,9 +8236,9 @@ Pendientes:
 Objetivo: cerrar una brecha de venta local frente a `/my-account`. El backend ya devuelve `discount_rejections` cuando un cupon no aplica por estado, vigencia, minimo o limite, y el panel anterior mostraba esos mensajes; el nuevo Dashboard solo mostraba descuento USD 0 y `sin cupon`, dejando al operador sin causa clara.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `localSaleDiscountRejections()` para normalizar mensajes `message/reason` devueltos por `POST /api/orders/quote`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `localSaleDiscountRejections()` para normalizar mensajes `message/reason` devueltos por `POST /api/orders/quote`.
 - `paramascotas-panel.component.html` muestra un aviso compacto bajo los totales de POS/cotizacion cuando el backend rechaza un cupon, sin alterar calculos ni permitir descuentos cliente-side.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta catalogo POS, caja, cotizaciones y `/dashboard/api/orders/quote`, devuelve un rechazo `BADCOUPON` y verifica que el Dashboard lo muestre junto a descuento `$0,00`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta catalogo POS, caja, cotizaciones y `/dashboard/api/orders/quote`, devuelve un rechazo `BADCOUPON` y verifica que el Dashboard lo muestre junto a descuento `$0,00`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "discount rejection"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`42/42`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7830,10 +8253,10 @@ Pendientes:
 Objetivo: alinear `Envios` del nuevo Dashboard con `/my-account`. El panel anterior mostraba pedidos `pickup/ready_for_pickup/ready` como listos para retiro y permitia abrir `Ver pedido`; el Dashboard nuevo dependia casi solo de `delivery_method=pickup`, dejaba estados de retiro sin clasificar en logistica y mostraba filas sin accion directa.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `isPickupReadyStatus()` y hace que `shippingMethodBucket()` clasifique como pickup los estados `pickup`, `ready_for_pickup` y `ready` cuando no hay metodo explicito.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `isPickupReadyStatus()` y hace que `shippingMethodBucket()` clasifique como pickup los estados `pickup`, `ready_for_pickup` y `ready` cuando no hay metodo explicito.
 - `deliveryLabel()` y `orderDeliveryDescription()` ahora infieren retiro como `/my-account`: metodo explicito, ventana/proveedor de pickup, estados pickup/ready y, solo como respaldo, direccion o costo de envio.
 - `paramascotas-panel.component.html` agrega accion `Detalle` en filas de pedidos de `Pickup` y `Domicilio`, usando el modal real de pedido, y muestra el contacto operativo con la misma prioridad corregida en `orderContact()`.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta pedidos/envios/settings, simula un pedido `ready_for_pickup` sin `delivery_method`, verifica que aparezca en `Pickup` y abre su detalle como `Retiro en tienda`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta pedidos/envios/settings, simula un pedido `ready_for_pickup` sin `delivery_method`, verifica que aparezca en `Pickup` y abre su detalle como `Retiro en tienda`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "ready pickup"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`41/41`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7848,9 +8271,9 @@ Pendientes:
 Objetivo: corregir una diferencia de notificaciones/contacto en pedidos. `/my-account` usa primero datos del pedido y de la direccion de envio para email/telefono operativo; el nuevo Dashboard estaba priorizando `user_email` y facturacion antes de envio, lo que podia abrir email o WhatsApp al contacto equivocado cuando comprador, facturacion y destinatario no coinciden.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia `orderContact()` para priorizar `customer_*`, luego direccion de envio, luego facturacion y finalmente datos de usuario/cuenta.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia `orderContact()` para priorizar `customer_*`, luego direccion de envio, luego facturacion y finalmente datos de usuario/cuenta.
 - El modal de pedido, botones `Email` y `WhatsApp`, mensajes generados y tarjetas de contacto usan ahora el destinatario operativo equivalente al panel anterior.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva con un pedido interceptado que tiene contacto distinto en cuenta, facturacion y envio; valida que la UI muestre envio y que `mailto:`/`wa.me` usen email y telefono de envio.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva con un pedido interceptado que tiene contacto distinto en cuenta, facturacion y envio; valida que la UI muestre envio y que `mailto:`/`wa.me` usen email y telefono de envio.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "contact actions prefer"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`40/40`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7865,10 +8288,10 @@ Pendientes:
 Objetivo: cerrar una brecha con `/my-account` en la gestion de pedidos. El panel anterior recargaba datos administrativos despues de cambiar estado; el nuevo Dashboard solo actualizaba el pedido visible, aunque el backend al cancelar/reactivar/entregar puede afectar inventario FIFO, costos, ventas realizadas y reportes.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `refreshOrderStatusDependencies()` y lo ejecuta tras `updateOrderStatus()` exitoso.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `refreshOrderStatusDependencies()` y lo ejecuta tras `updateOrderStatus()` exitoso.
 - El refresco respeta la seccion activa: `Pedidos` recarga pedidos, `Reporte general` recarga reporte, `Inventario` recarga inventario, `Ranking` recarga ranking y las vistas financieras/reporting nativas recargan su paquete completo con pedidos, productos, inventario, compras, gastos y periodos.
 - Se mantiene la regla del panel anterior para admins: pueden gestionar estado salvo pedidos `canceled/cancelled` o `delivered`; no se eliminaron acciones existentes.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta `GET/PATCH /dashboard/api/orders...`, marca un pedido simulado como `delivered` y verifica que el Dashboard haga un nuevo `GET /orders` posterior al `PATCH`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta `GET/PATCH /dashboard/api/orders...`, marca un pedido simulado como `delivered` y verifica que el Dashboard haga un nuevo `GET /orders` posterior al `PATCH`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "admin orders refreshes"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`39/39`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7883,10 +8306,10 @@ Pendientes:
 Objetivo: cerrar la brecha con `/my-account`, donde los reportes podian descargarse como libro compatible con Excel. El nuevo Dashboard solo tenia exportaciones CSV puntuales para plan de compra y ranking, dejando Reporte general/ventas/balance/trazabilidad/compras sin salida operativa equivalente.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `exportNativeReport()` y un generador local de workbook XML `.xls` compatible con Excel/LibreOffice.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `exportNativeReport()` y un generador local de workbook XML `.xls` compatible con Excel/LibreOffice.
 - La exportacion usa datos ya cargados del Dashboard, sin rutas nuevas ni mutaciones: resumen financiero, pedidos, productos, categorias, tendencias financieras, facturas de compra recientes y, cuando aplica, ventas vs compras e incidencias de trazabilidad.
 - `paramascotas-panel.component.html` agrega `Exportar Excel` en `Reporte general` y en las vistas financieras/reporting nativas junto al control de actualizacion.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida descarga real del archivo desde `Reporte general`, nombre `reporte-general-YYYY-MM-DD.xls`, marca Excel XML y hojas `Resumen`, `Pedidos` y `Productos`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida descarga real del archivo desde `Reporte general`, nombre `reporte-general-YYYY-MM-DD.xls`, marca Excel XML y hojas `Resumen`, `Pedidos` y `Productos`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "general report exports"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`38/38`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7900,10 +8323,10 @@ Pendientes:
 Objetivo: igualar el comportamiento de `/my-account` para comprobantes internos de pedidos completados/entregados. El panel anterior obtenia el HTML del backend, abria una ventana controlada y disparaba impresion/guardar PDF; el nuevo Dashboard solo navegaba a la URL del comprobante.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia `openOrderInvoice()` para abrir una ventana de impresion, mostrar estado de carga, pedir `GET /dashboard/api/orders/{id}/invoice?format=html` con credenciales y escribir el HTML con script `window.print()`/`afterprint`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` cambia `openOrderInvoice()` para abrir una ventana de impresion, mostrar estado de carga, pedir `GET /dashboard/api/orders/{id}/invoice?format=html` con credenciales y escribir el HTML con script `window.print()`/`afterprint`.
 - Si el navegador bloquea el popup o falla el backend, el error se muestra en `ordersError` sin mutar pedidos ni emitir facturas.
 - `paramascotas-panel.component.html` cambia los botones visibles de comprobante a `Imprimir` o `Imprimir / Guardar PDF`, aclarando la accion real para el operador.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta el HTML del comprobante, abre el popup y verifica que el Dashboard escriba el contenido con script de impresion.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta el HTML del comprobante, abre el popup y verifica que el Dashboard escriba el contenido con script de impresion.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "admin orders print"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`37/37`) y `./scripts/check-container-connectivity.sh development`.
@@ -7917,12 +8340,12 @@ Pendientes:
 Objetivo: alinear el detalle de facturas de compra del nuevo Dashboard con `/my-account`, haciendo que el operador pueda abrir facturas recientes desde Inventario y verificar totales de compra contra las lineas que alimentan costos, margenes y reposicion.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `purchaseInvoiceComputedTotals()` y `purchaseInvoiceTotalsMismatch()` para recalcular subtotal, IVA, total, unidades y diferencia contra el total de cabecera usando las lineas reales de la factura.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `purchaseInvoiceComputedTotals()` y `purchaseInvoiceTotalsMismatch()` para recalcular subtotal, IVA, total, unidades y diferencia contra el total de cabecera usando las lineas reales de la factura.
 - `paramascotas-panel.component.html` mueve el modal de detalle de factura de compra a nivel global del panel, por lo que `openProductPurchaseInvoice()` funciona tanto desde `Productos x Compra` como desde `Inventario`.
 - El modal ahora muestra `Total compra` y `Total lineas` en el resumen, y alerta si la cabecera y las lineas difieren por mas de USD 0.01.
 - La lista `Ultimas facturas de compra` de Inventario dejo de ser solo informativa: cada factura reciente es una accion que abre el detalle auditado.
 - `paramascotas-panel.component.css` ajusta las filas compactas accionables y la advertencia de auditoria sin convertirlas en controles pesados.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que abre una factura reciente desde Inventario y valida `Total compra`, `Total lineas`, `Subtotal`, `IVA` y `Total linea`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que abre una factura reciente desde Inventario y valida `Total compra`, `Total lineas`, `Subtotal`, `IVA` y `Total linea`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`36/36`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`) y `./scripts/check-container-connectivity.sh development`.
@@ -7937,9 +8360,9 @@ Pendientes:
 Objetivo: cerrar la brecha de UX con `/my-account` donde productos, inventario y ranking tenian una accion directa `Compra`/`Registrar compra`; en el nuevo Dashboard esas rutas estaban cayendo en edicion generica y obligaban al operador a clasificar manualmente el reabastecimiento.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `registerProductPurchase()`, `registerProductPurchaseById()`, `registerInventoryPurchase()` y busqueda de producto por id/legacy id, preparando el editor con `inventoryAction='restock'`, cantidad actual + unidades sugeridas, costo conocido y factura de compra prellenada con proveedor/IVA cuando hay referencia.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `registerProductPurchase()`, `registerProductPurchaseById()`, `registerInventoryPurchase()` y busqueda de producto por id/legacy id, preparando el editor con `inventoryAction='restock'`, cantidad actual + unidades sugeridas, costo conocido y factura de compra prellenada con proveedor/IVA cuando hay referencia.
 - `paramascotas-panel.component.html` agrega boton `Compra` separado de `Editar` en la tabla de productos, filas de inventario y ranking de ventas/acciones recomendadas; las filas sin recomendacion de compra quedan como seguimiento, no abren reabastecimiento por error.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega una prueba no destructiva: clic en `Compra` desde catalogo abre el editor como `restock`, aumenta stock y muestra `Factura de compra para ingresar stock` sin enviar mutacion.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega una prueba no destructiva: clic en `Compra` desde catalogo abre el editor como `restock`, aumenta stock y muestra `Factura de compra para ingresar stock` sin enviar mutacion.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`6/6`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`35/35`) y `./scripts/check-container-connectivity.sh development`.
@@ -7954,11 +8377,11 @@ Pendientes:
 Objetivo: alinear el editor de productos del nuevo Dashboard con `/my-account` para que el ingreso de stock inicial o reabastecimiento no quede sin factura de compra, proveedor/documento, fecha e IVA, preservando trazabilidad FIFO, costos y reportes de compras.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora calcula la intencion de inventario segun producto nuevo, edicion sin cambio, ajuste manual o `Compra / reabastecimiento`; ya no envia `initial_stock` por defecto en ediciones con stock.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora calcula la intencion de inventario segun producto nuevo, edicion sin cambio, ajuste manual o `Compra / reabastecimiento`; ya no envia `initial_stock` por defecto en ediciones con stock.
 - `sanitizeProductForm()` recibe el producto actual y referencias de proveedores, normaliza la factura de compra, completa documento/IVA desde proveedor cuando coincide y solo envia `purchaseInvoice` cuando hay datos reales o cuando la compra es obligatoria.
 - Se agrega validacion cliente antes del POST: stock inicial y `restock` requieren costo de compra, numero de factura, proveedor, RUC/documento, fecha `YYYY-MM-DD` e IVA 0-100; cambios de stock por ajuste requieren motivo.
 - `paramascotas-panel.component.html/css` agrega una pista compacta en `Factura de compra para ingresar stock`, indicando si el flujo actual es stock inicial, reabastecimiento, ajuste manual, cambio pendiente de clasificar o sin ingreso nuevo.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` actualiza el alta de variante agrupada para incluir factura de compra completa y agrega una prueba no destructiva que bloquea stock inicial sin factura antes de llamar `POST /products`.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` actualiza el alta de variante agrupada para incluir factura de compra completa y agrega una prueba no destructiva que bloquea stock inicial sin factura antes de llamar `POST /products`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`5/5`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`35/35`) y `./scripts/check-container-connectivity.sh development`.
@@ -7973,11 +8396,11 @@ Pendientes:
 Objetivo: cerrar una brecha de paridad entre el nuevo Dashboard y `/my-account` en gestion de imagenes de productos, evitando altas con imagenes incompletas y preservando el contrato que el backend espera para miniaturas y galeria.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` separa errores del editor (`productFormError`) de errores de carga del listado, muestra fallas de subida/guardado junto al formulario y bloquea el guardado mientras existan cargas de imagen activas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` separa errores del editor (`productFormError`) de errores de carga del listado, muestra fallas de subida/guardado junto al formulario y bloquea el guardado mientras existan cargas de imagen activas.
 - El guardado de productos normaliza las imagenes antes de llamar al backend: miniaturas `thumb` a `640x800`, galeria `gallery` a `1200x1500`, `kind`, `altText` con fallback SEO y filtro de URLs vacias.
 - Si falta al menos una miniatura o una imagen de ficha, el Dashboard ya no dispara `POST/PUT /api/products` y muestra el mismo tipo de error operativo del panel anterior.
-- `Dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega el alias legacy `images` al payload de producto; `sanitizeProductForm()` envia `images` con la galeria ademas de `galleryImages`, manteniendo compatibilidad con `/my-account` y el backend.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` ahora valida de forma no destructiva que una variante agrupada envie metadata de agrupacion junto con imagenes normalizadas, y que un producto sin miniatura/ficha quede bloqueado antes del POST.
+- `dashboard/src/app/features/dashboard/models/paramascotas-admin.model.ts` agrega el alias legacy `images` al payload de producto; `sanitizeProductForm()` envia `images` con la galeria ademas de `galleryImages`, manteniendo compatibilidad con `/my-account` y el backend.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` ahora valida de forma no destructiva que una variante agrupada envie metadata de agrupacion junto con imagenes normalizadas, y que un producto sin miniatura/ficha quede bloqueado antes del POST.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`4/4`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`35/35`) y `./scripts/check-container-connectivity.sh development`.
@@ -7992,11 +8415,11 @@ Pendientes:
 Objetivo: avanzar la paridad con `/my-account` en correos/notificaciones de cotizaciones, donde el panel anterior solo solicitaba envio SMTP si el correo era valido y mostraba al operador el resultado devuelto por `email_delivery`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `quotationNotice`, validacion `localSaleCustomerEmailValid()`, helpers `quotationEmailDelivery*()` y `buildQuotationNotice()` para mostrar si la cotizacion fue creada, enviada por correo o creada sin correo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `quotationNotice`, validacion `localSaleCustomerEmailValid()`, helpers `quotationEmailDelivery*()` y `buildQuotationNotice()` para mostrar si la cotizacion fue creada, enviada por correo o creada sin correo.
 - `localQuotationPayload()` ahora envia `send_email=true` solo cuando el checkbox esta activo y el correo del cliente pasa validacion basica; si el correo es invalido, la cotizacion se crea pero no se solicita envio SMTP, igual que en el flujo anterior.
 - `paramascotas-panel.component.html` muestra validacion inline del email, un aviso posterior a crear cotizacion, estado de entrega en detalle/tarjetas/tabla y una columna `Correo` en el historial.
 - `paramascotas-panel.component.css` agrega estilos compactos para el hint y badges de correo sin romper desktop/mobile.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta `POST /dashboard/api/admin/quotes`, marca envio de correo con email invalido y verifica que el payload salga con `send_email=false` y que la UI informe `Cotizacion creada sin correo`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega una prueba no destructiva que intercepta `POST /dashboard/api/admin/quotes`, marca envio de correo con email invalido y verifica que el payload salga con `send_email=false` y que la UI informe `Cotizacion creada sin correo`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "quotations do not request email"` (`1/1`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`35/35`) y `./scripts/check-container-connectivity.sh development`.
@@ -8012,9 +8435,9 @@ Objetivo: auditar la pantalla nueva de facturas/RIDE contra el panel anterior `/
 
 Cambios:
 - `paramascotasec-backend/src/Services/FacturadorApiService.php` agrega una barrera server-side: si `APP_ENV` no es `production/prod`, cualquier endpoint `/api/production/v1/invoices` queda bloqueado, tanto por configuracion `FACTURADOR_API_INVOICES_PATH` como por `ambiente=produccion` recibido al reemitir.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html,css}` agrega resumen compacto `Ambiente SRI`, clasifica RIDE como `Pruebas`, `Produccion`, `Sin ambiente` u `Otro`, muestra el ambiente en lista/detalle y avisa que development opera solo con Facturador QA/pruebas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html,css}` agrega resumen compacto `Ambiente SRI`, clasifica RIDE como `Pruebas`, `Produccion`, `Sin ambiente` u `Otro`, muestra el ambiente en lista/detalle y avisa que development opera solo con Facturador QA/pruebas.
 - En el Dashboard, las reemisiones de documentos marcados como `Produccion` quedan bloqueadas visualmente cuando el build no es productivo; la barrera real queda en backend.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura para que `operations/billing-rides` exponga los controles de ambiente SRI.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` agrega cobertura para que `operations/billing-rides` exponga los controles de ambiente SRI.
 
 Operacion y verificacion:
 - Se redeplego `backend` con `./scripts/deploy-development.sh backend` y `Dashboard` con `npm run docker:up`.
@@ -8031,11 +8454,11 @@ Pendientes:
 Objetivo: continuar la paridad funcional con `/my-account` en compras, costos y margenes por producto, haciendo visibles los casos que afectan utilidad, trazabilidad FIFO y calidad de datos sin cambiar los contratos server-side.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `ProductPurchaseRiskFilter`, `ProductPurchaseRiskRow`, `productPurchaseRiskRows()` y `productPurchaseRowMatchesRisk()`, usando datos ya calculados por backend/productos/reporte: compras, costo ponderado, stock remanente, ventas, utilidad y margen.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `ProductPurchaseRiskFilter`, `ProductPurchaseRiskRow`, `productPurchaseRiskRows()` y `productPurchaseRowMatchesRisk()`, usando datos ya calculados por backend/productos/reporte: compras, costo ponderado, stock remanente, ventas, utilidad y margen.
 - `paramascotas-panel.component.html` agrega un panel clicable de riesgos en `Reporte > Productos x Compra`: `Vendido sin compra/costo`, `Margen negativo`, `Stock sin compra`, `Stock sin venta` y `Todos`.
 - El filtro de riesgo se integra con la lista existente de productos, busqueda y filtros `Con ventas/Con compras`, de modo que el superadmin pueda abrir directamente los productos que requieren correccion o auditoria.
 - `paramascotas-panel.component.css` agrega estilos compactos/responsive para mantener el panel como control operativo, no como bloque decorativo.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` verifica que la ruta `reporting/products-purchases` cargue el panel de riesgos y que `Margen negativo` quede activo al seleccionarlo.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` verifica que la ruta `reporting/products-purchases` cargue el panel de riesgos y que `Margen negativo` quede activo al seleccionarlo.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts --grep "products purchases|products-purchases"` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`33/33`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "paramascotas-panel/reporting/general"` (`2/2`) y `./scripts/check-container-connectivity.sh development`.
@@ -8050,11 +8473,11 @@ Pendientes:
 Objetivo: avanzar la auditoria integral del Dashboard contra `/my-account` corrigiendo una brecha de experiencia y lectura financiera: los reportes mostraban productos lideres casi solo por venta neta, sin dejar claro cual era el mas vendido, el de mayor ingreso, el de mayor utilidad y el de mayor margen.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `ProductMetricLeader` y `buildProductMetricLeaders()`, calculando lideres desde `report.products` con datos server-side ya existentes: `units_sold`, `net_revenue`, `profit` y `margin`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `ProductMetricLeader` y `buildProductMetricLeaders()`, calculando lideres desde `report.products` con datos server-side ya existentes: `units_sold`, `net_revenue`, `profit` y `margin`.
 - `paramascotas-panel.component.html` muestra el bloque compacto `paramascotas-product-leaders` en `Reporte general` y `Reporte de ventas`, antes de las barras de productos, con etiquetas explicitas `Mas vendido`, `Mayor ingreso`, `Mayor utilidad` y `Mayor margen`.
 - `paramascotas-panel.component.css` agrega estilos compactos y responsive para que esos indicadores queden visibles sin crear scroll interno innecesario ni romper mobile.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida que la ruta `reporting/sales` exponga los cuatro lideres por metrica.
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` extiende el flujo real por `https://paramascotasec.com/dashboard` con login + MFA para comprobar que, tras autenticarse por APISIX, el reporte de ventas muestra esos lideres con sesion real.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` valida que la ruta `reporting/sales` exponga los cuatro lideres por metrica.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` extiende el flujo real por `https://paramascotasec.com/dashboard` con login + MFA para comprobar que, tras autenticarse por APISIX, el reporte de ventas muestra esos lideres con sesion real.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`32/32`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "paramascotas-panel/reporting/general"` (`2/2`) y `./scripts/check-container-connectivity.sh development`.
@@ -8069,10 +8492,10 @@ Pendientes:
 Objetivo: iniciar la auditoria integral del nuevo Dashboard contra el panel anterior `/my-account`, corrigiendo primero la brecha critica de gestion de productos agrupados/variantes sin cambiar la logica server-side ni tocar ambiente SRI de produccion.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html,css}` incorpora normalizacion de atributos de variantes basada en la logica del panel anterior: nombre base de agrupacion, etiqueta visible, eje de variante, modo de catalogo y clave `variantGroupKey`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.{ts,html,css}` incorpora normalizacion de atributos de variantes basada en la logica del panel anterior: nombre base de agrupacion, etiqueta visible, eje de variante, modo de catalogo y clave `variantGroupKey`.
 - El editor de productos agrega un bloque compacto de `Variantes y agrupacion` con campos operativos para presentacion, talla, color, material, rango, dosis, uso, empaque y modo de visualizacion, mas resumen visible de grupo/variante antes de guardar.
 - La tabla de productos muestra informacion de agrupacion cuando existe y agrega la accion `Nueva variante`, que duplica un producto como variante nueva preservando el contexto del grupo pero limpiando SKU, lote, expiracion y cantidad inicial.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega una prueba no destructiva que intercepta el alta de producto y verifica que un accesorio con color/talla envie `variantBaseName`, `variantLabel`, `displayAxis`, `variantAxis`, `catalogDisplayMode` y `variantGroupKey` equivalentes al panel anterior.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` agrega una prueba no destructiva que intercepta el alta de producto y verifica que un accesorio con color/talla envie `variantBaseName`, `variantLabel`, `displayAxis`, `variantAxis`, `catalogDisplayMode` y `variantGroupKey` equivalentes al panel anterior.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (`3/3`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (`31/31`), `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` (`2/2`), `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "paramascotas|products|catalog|tenant-admin"` (`8/8`), `npm run docker:health` y `./scripts/check-container-connectivity.sh development`.
@@ -8088,9 +8511,9 @@ Pendientes:
 Objetivo: permitir al superadmin escanear rapidamente que tiene habilitado cada tenant sin abrir fila por fila, manteniendo la pantalla compacta y sin sacar tablas del viewport.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.{ts,html,css}` agrega una `Matriz rapida de cobertura` arriba del listado de tenants, con columnas compactas para `Ecommerce`, `Facturacion`, `Inventario`, `Productos`, `Correo`, `Workspace` y `Monitoreo`, mas conteo de capacidades y accion `Abrir`.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.{ts,html,css}` agrega una `Matriz rapida de cobertura` arriba del listado de tenants, con columnas compactas para `Ecommerce`, `Facturacion`, `Inventario`, `Productos`, `Correo`, `Workspace` y `Monitoreo`, mas conteo de capacidades y accion `Abrir`.
 - La matriz usa tabla responsiva con contenedor propio y pills compactos `Si/No` por modulo, de modo que funcione como tablero de supervision y no solo como formulario de edicion.
-- `Dashboard/tests/e2e/smoke.spec.ts` ahora verifica que la matriz exista y muestre a `ParaMascotasEC` junto a columnas clave como `Ecommerce` y `Facturacion`.
+- `dashboard/tests/e2e/smoke.spec.ts` ahora verifica que la matriz exista y muestre a `ParaMascotasEC` junto a columnas clave como `Ecommerce` y `Facturacion`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "tenant admin|coverage matrix|quick presets"` (`4/4`) y `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "tenant-admin"` (`2/2`).
@@ -8101,9 +8524,9 @@ Operacion y verificacion:
 Objetivo: reducir pasos al crear y reconfigurar tenants, evitando que el superadmin tenga que marcar modulo por modulo para combinaciones repetidas.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.{ts,html,css}` agrega presets rapidos para `Plataforma base`, `Ecommerce base`, `Retail operativo` e `Inventario + facturacion`, disponibles tanto en alta como dentro de la gestion de tenants existentes.
-- `Dashboard/src/app/features/tenant-admin/state/tenant-admin.facade.ts` agrega `applyPreset()`, que encadena `updateModules` y `updateConfiguration` cuando el preset incluye Ecommerce.
-- `Dashboard/tests/e2e/smoke.spec.ts` verifica que tenant-admin exponga presets en la creacion y en la gestion de `ParaMascotasEC`.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.{ts,html,css}` agrega presets rapidos para `Plataforma base`, `Ecommerce base`, `Retail operativo` e `Inventario + facturacion`, disponibles tanto en alta como dentro de la gestion de tenants existentes.
+- `dashboard/src/app/features/tenant-admin/state/tenant-admin.facade.ts` agrega `applyPreset()`, que encadena `updateModules` y `updateConfiguration` cuando el preset incluye Ecommerce.
+- `dashboard/tests/e2e/smoke.spec.ts` verifica que tenant-admin exponga presets en la creacion y en la gestion de `ParaMascotasEC`.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:up`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "tenant admin"` (`3/3`) y `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts tests/e2e/smoke.spec.ts --grep "tenant-admin|tenant admin|Clientes y paquetes contratados"` (`4/4`).
@@ -8117,7 +8540,7 @@ Nota:
 Objetivo: mejorar la comodidad real de la zona de tenants/modulos, reduciendo el bloque excesivamente largo de alta y la saturacion visual al gestionar paquetes SaaS por tenant.
 
 Cambios:
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.ts` agrega estados de expansion para paquetes del alta (`expandedCreateBusinessKey`) y para paquetes dentro de cada tenant (`expandedTenantBusinessKeys`), ademas de helpers de preview por paquete.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.ts` agrega estados de expansion para paquetes del alta (`expandedCreateBusinessKey`) y para paquetes dentro de cada tenant (`expandedTenantBusinessKeys`), ademas de helpers de preview por paquete.
 - `tenant-admin.component.html` convierte la seleccion de paquetes en una experiencia plegable: cada paquete muestra resumen corto y solo expone modulos internos al abrir su detalle; la gestion por tenant replica ese patron para no mostrar todas las casillas y descripciones a la vez.
 - `tenant-admin.component.css` agrega acciones compactas por paquete, previews visuales de modulos y ajustes responsive para que los botones de detalle/ocultar no rompan mobile.
 
@@ -8134,8 +8557,8 @@ Objetivo: quitar el falso superadmin implicito en QA, endurecer la validacion de
 
 Cambios:
 - `paramascotasec-backend/src/Controllers/TenantController.php` deja de tratar a cualquier `admin` como `platform-admin` por estar en `development`; ahora solo lo son `service_auth` o correos explicitamente listados en `platform_admin_emails`.
-- `Dashboard/tests/e2e/paramascotas-real-auth.spec.ts` valida el flujo publico completo por `https://paramascotasec.com/dashboard`: redireccion a `sign-in`, login con password, MFA por OTP real, contexto tenant sin `platform-admin`, estado POS sincronizado y catalogo POS cargado.
-- `Dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.{ts,html,css}` compacta la vista de tenants: busqueda, filtros por estado/enfoque, preview corto de modulos y detalle expandible por fila en lugar de exponer toda la configuracion de cada cliente de una sola vez.
+- `dashboard/tests/e2e/paramascotas-real-auth.spec.ts` valida el flujo publico completo por `https://paramascotasec.com/dashboard`: redireccion a `sign-in`, login con password, MFA por OTP real, contexto tenant sin `platform-admin`, estado POS sincronizado y catalogo POS cargado.
+- `dashboard/src/app/features/tenant-admin/pages/tenant-admin/tenant-admin.component.{ts,html,css}` compacta la vista de tenants: busqueda, filtros por estado/enfoque, preview corto de modulos y detalle expandible por fila en lugar de exponer toda la configuracion de cada cliente de una sola vez.
 
 Operacion y verificacion:
 - Pasaron `npm run type:check`, `npm run lint`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts tests/e2e/paramascotas-real-auth.spec.ts` (`31/31`).
@@ -8153,13 +8576,13 @@ Cambios:
 - `paramascotasec-backend/config/routes.php` publica `GET /api/tenant/context` con `TenantController@context`.
 - `paramascotasec-backend/src/Controllers/TenantController.php` queda operativo como contrato real de contexto tenant, devolviendo `tenant`, `enabledModules`, `permissions`, `roles`, `currentUser` y `branding` en el envelope normal del backend.
 - `paramascotasec-backend/public/index.php` y `src/Core/Auth.php` ya no aceptan `X-Internal-Proxy-Token` como `service_auth` cuando la solicitud entra por host publico; ese privilegio queda limitado a localhost/hosts internos de servicio para desarrollo.
-- `Dashboard/src/app/core/tenant/tenant-api.service.ts` usa fixture tenant context solo en localhost; fuera de localhost consume el backend real `tenant/context` con `realBackendRequestContext()` y desempaqueta `response.data`.
-- `Dashboard/src/app/core/tenant/tenant-resolver.service.ts` expone `shouldUseFixtureTenantContext()` y `shouldUseRealTenantContext()` para separar claramente runtime local vs runtime publico.
-- `Dashboard/src/app/core/auth/auth.guard.ts` ahora exige sesion real cuando el dashboard se abre en host no local, aunque `routeGuardsEnabled` siga desactivado en el build de development; asi Paramascotas en QA entra por login real, mientras localhost conserva el flujo fixture.
+- `dashboard/src/app/core/tenant/tenant-api.service.ts` usa fixture tenant context solo en localhost; fuera de localhost consume el backend real `tenant/context` con `realBackendRequestContext()` y desempaqueta `response.data`.
+- `dashboard/src/app/core/tenant/tenant-resolver.service.ts` expone `shouldUseFixtureTenantContext()` y `shouldUseRealTenantContext()` para separar claramente runtime local vs runtime publico.
+- `dashboard/src/app/core/auth/auth.guard.ts` ahora exige sesion real cuando el dashboard se abre en host no local, aunque `routeGuardsEnabled` siga desactivado en el build de development; asi Paramascotas en QA entra por login real, mientras localhost conserva el flujo fixture.
 - Se ajustan `auth.guard.spec.ts` y `tenant-resolver.service.spec.ts` para cubrir el nuevo criterio de enforcement por host.
 
 Operacion y verificacion:
-- Se redeplego `backend` con `./scripts/deploy-development.sh backend` y luego solo `Dashboard` con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego `backend` con `./scripts/deploy-development.sh backend` y luego solo `Dashboard` con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `php -l` sobre `public/index.php`, `src/Core/Auth.php`, `src/Controllers/TenantController.php`, `config/routes.php`, `npm run lint`, `npm run type:check`, `npm run docker:health`, `./scripts/check-container-connectivity.sh development` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`:
   - `GET /dashboard/api/auth/session` responde `401 AUTH_REQUIRED` sin sesion.
@@ -8176,15 +8599,15 @@ Pendientes:
 Objetivo: responder por que `Venta en local` parecia rota al abrir caja y reducir el riesgo de otras opciones aparentando funcionar cuando en realidad estaban desincronizadas o mal validadas.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora bloquea `Abrir caja` cuando ya hay un turno abierto o cuando el monto inicial es `<= 0`, mostrando un mensaje especifico antes de disparar la mutacion.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora bloquea `Abrir caja` cuando ya hay un turno abierto o cuando el monto inicial es `<= 0`, mostrando un mensaje especifico antes de disparar la mutacion.
 - La misma vista bloquea `Registrar movimiento` cuando no existe turno POS abierto, para no dejar acciones visibles fuera de estado operativo.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` deshabilita el boton `Abrir caja` mientras el monto inicial siga vacio o en cero.
-- Se agrega `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts`, que recorre rutas clave de `Integraciones reales` y valida ausencia de errores fatales, ademas de comprobar que `Venta en local` refleje el estado real de `GET /dashboard/api/admin/pos/shift/active`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` deshabilita el boton `Abrir caja` mientras el monto inicial siga vacio o en cero.
+- Se agrega `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts`, que recorre rutas clave de `Integraciones reales` y valida ausencia de errores fatales, ademas de comprobar que `Venta en local` refleje el estado real de `GET /dashboard/api/admin/pos/shift/active`.
 
 Operacion y verificacion:
 - Se verifico por APISIX con resolucion a `192.168.100.229` que las 27 firmas activas usadas hoy por `Integraciones reales` respondan `200`, incluyendo reportes, catalogo, POS, cotizaciones, facturas PDF, gastos y cupones.
 - El backend real reporta un turno POS abierto: `SHIFT-20260605102440-5CBBAB` con `status = open`; por eso el problema observado no era una caja inutil sino UI desincronizada y validacion floja del formulario.
-- Se redeplego solo `Dashboard` con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`.
+- Se redeplego solo `Dashboard` con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`.
 - Pasaron `npm run lint`, `npm run type:check`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts`, `npm run docker:health` y `./scripts/check-container-connectivity.sh development`.
 
 Decision:
@@ -8195,13 +8618,13 @@ Decision:
 Objetivo: corregir que `Venta en local` siguiera permitiendo `Abrir caja` aunque el backend ya tenia un turno abierto, y endurecer el dashboard para que `/dashboard/api/auth/session` ya no heredara autenticacion falsa desde el proxy interno.
 
 Cambios:
-- `Dashboard/src/app/core/http/interceptors/error.interceptor.ts` ahora desempaqueta el contrato real del backend (`{ ok:false, error:{ message, code, details } }`) para conservar `message` y `code` utiles en toda la UI, en lugar de degradar todo a mensajes HTTP genericos.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` reutiliza ese mensaje real en POS y, cuando `abrir/cerrar caja` falla por conflicto de turno (`ya existe abierto` / `no hay abierto`), vuelve a consultar `GET /api/admin/pos/shift/active` para resincronizar el estado visible.
-- `Dashboard/nginx.conf` separa las rutas `/dashboard/api/auth/*` del proxy admin interno; esas rutas ya no reciben `X-Internal-Proxy-Token`, por lo que `auth/session` vuelve a exigir sesion real del navegador.
-- `Dashboard/src/app/core/auth/auth-api.service.spec.ts` se ajusto lo minimo para que la union `AuthSession | AuthMfaChallenge` no deje roto el `type:check` completo.
+- `dashboard/src/app/core/http/interceptors/error.interceptor.ts` ahora desempaqueta el contrato real del backend (`{ ok:false, error:{ message, code, details } }`) para conservar `message` y `code` utiles en toda la UI, en lugar de degradar todo a mensajes HTTP genericos.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` reutiliza ese mensaje real en POS y, cuando `abrir/cerrar caja` falla por conflicto de turno (`ya existe abierto` / `no hay abierto`), vuelve a consultar `GET /api/admin/pos/shift/active` para resincronizar el estado visible.
+- `dashboard/nginx.conf` separa las rutas `/dashboard/api/auth/*` del proxy admin interno; esas rutas ya no reciben `X-Internal-Proxy-Token`, por lo que `auth/session` vuelve a exigir sesion real del navegador.
+- `dashboard/src/app/core/auth/auth-api.service.spec.ts` se ajusto lo minimo para que la union `AuthSession | AuthMfaChallenge` no deje roto el `type:check` completo.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI, certificados o datos financieros.
+- Se redeplego solo `Dashboard` con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI, certificados o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npx tsc -p tsconfig.app.json --noEmit`, `npm run docker:health` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con resolucion a `192.168.100.229`:
   - `GET https://paramascotasec.com/dashboard/api/auth/session` responde `401 AUTH_REQUIRED` sin sesion, ya no `service admin`.
@@ -8219,11 +8642,11 @@ Objetivo: corregir la falsa falla de `Venta en local`, donde la vista mostraba `
 Cambios:
 - `paramascotasec-backend/src/Repositories/QuotationRepository.php` deja de intentar `CREATE TABLE IF NOT EXISTS "Quotation"` en runtime con el usuario app; ahora solo valida que la tabla exista y devuelve un error explicito de schema no inicializado si falta.
 - `paramascotasec-backend/src/Controllers/QuotationController.php` pasa a inicializar `QuotationRepository` y `OrderRepository` de forma lazy, evitando que una falla del modulo de cotizaciones tumbe el controlador entero durante `__construct()`.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` captura fallas de `listQuotations(12)` dentro de `loadLocalSales()` y sigue cargando POS, productos y estado de tienda aunque cotizaciones falle.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` deja de bloquear `Venta en local` por `quotationError()` y muestra ese caso como aviso informativo aislado, no como error fatal del flujo POS.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` captura fallas de `listQuotations(12)` dentro de `loadLocalSales()` y sigue cargando POS, productos y estado de tienda aunque cotizaciones falle.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` deja de bloquear `Venta en local` por `quotationError()` y muestra ese caso como aviso informativo aislado, no como error fatal del flujo POS.
 
 Operacion y verificacion:
-- Se redeplego `backend` con `cd /home/admincenter/contenedores && ./scripts/deploy-development.sh backend` y luego solo `Dashboard` con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron Gateway, Facturador, certificados, SRI o datos de clientes.
+- Se redeplego `backend` con `cd /home/admincenter/contenedores && ./scripts/deploy-development.sh backend` y luego solo `Dashboard` con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron Gateway, Facturador, certificados, SRI o datos de clientes.
 - Pasaron `php -l` sobre los archivos PHP tocados, `npm run type:check`, `npm run lint`, `npm run docker:health` y `npm run runtime:check` en `Dashboard`.
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/api/admin/quotes?limit=12` y `https://paramascotasec.com/dashboard/api/admin/pos/shift/active` responden `200`.
 - Validado en el runtime local del Dashboard con Playwright: `/dashboard/paramascotas-panel/operations/local-sales` queda sin `Operacion no disponible`, muestra `CAJA Abierta` con el turno `SHIFT-20260605102440-5CBBAB` y cambia la accion disponible a `Cerrar caja`.
@@ -8234,12 +8657,12 @@ Operacion y verificacion:
 Objetivo: evitar que `Venta en local` vuelva a quedar en un estado enganoso cuando falla una sola llamada del bloque POS, y ampliar la verificacion de rutas reales para detectar antes cualquier opcion visible rota.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora carga `productos`, `store-status`, `turno POS` y `cotizaciones` con degradacion parcial tanto en `loadLocalSales()` como en `loadQuotationsPanel()`: si una firma falla, la vista conserva el resto de datos reales y muestra el error especifico correspondiente.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` ahora carga `productos`, `store-status`, `turno POS` y `cotizaciones` con degradacion parcial tanto en `loadLocalSales()` como en `loadQuotationsPanel()`: si una firma falla, la vista conserva el resto de datos reales y muestra el error especifico correspondiente.
 - La misma vista deja de mantener un error POS viejo despues de resincronizar caja: cuando `abrir/cerrar caja` falla por conflicto y la recarga de estado posterior tiene exito, se limpia el banner rojo y se vuelve a cargar el panel operativo real.
-- `Dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` se amplia de una muestra corta a 30 rutas reales del sidebar (`reporting`, `catalog`, `monitoring`, `operations` y `finance`), incluyendo `Venta en local`, `Envios`, `Facturas PDF`, `Balances`, `Precios`, `Impuestos`, `Margenes`, `Calculos` y `Reglas de precio`.
+- `dashboard/tests/e2e/paramascotas-real-integrations.spec.ts` se amplia de una muestra corta a 30 rutas reales del sidebar (`reporting`, `catalog`, `monitoring`, `operations` y `finance`), incluyendo `Venta en local`, `Envios`, `Facturas PDF`, `Balances`, `Precios`, `Impuestos`, `Margenes`, `Calculos` y `Reglas de precio`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd /home/admincenter/contenedores/Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados o SRI.
+- Se redeplego solo `Dashboard` con `cd /home/admincenter/contenedores/dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados o SRI.
 - Pasaron `npm run type:check`, `npm run lint`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts` (30/30), `npm run docker:health` y `git -C Dashboard diff --check`.
 - Validado por APISIX con resolucion a `192.168.100.229` y sesion admin real:
   - `GET /dashboard/api/auth/session`, `GET /dashboard/api/tenant/context` y `GET /dashboard/api/admin/pos/shift/active` responden `200`.
@@ -8255,13 +8678,13 @@ Decision:
 Objetivo: eliminar el espacio muerto que todavia quedaba en `Paramascotas backend` debajo de `Pedidos recientes`, causado porque el resumen publico y el catalogo seguian renderizando fuera de la columna principal.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.html` encapsula `Estado publico`, drilldown de inventario y `Catalogo publico` en un `ng-template` reutilizable y lo monta dentro de la columna principal cuando existe snapshot admin.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.html` encapsula `Estado publico`, drilldown de inventario y `Catalogo publico` en un `ng-template` reutilizable y lo monta dentro de la columna principal cuando existe snapshot admin.
 - Cuando no hay snapshot admin, el mismo bloque reutilizable sigue pudiendo renderizarse de forma standalone, preservando estados de carga/error y el consumo del backend publico.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` ajusta la densidad del bloque movido: `Estado publico` pasa a 3 columnas dentro de la columna principal y el strip de productos publicos a 3 columnas desktop, 2 en pantallas medianas y 1 en mobile estrecho.
-- `Dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` ahora valida tambien que `paramascotas-public-strip` viva dentro de `.paramascotas-dashboard-column--main` y que el gap real contra `Pedidos recientes` sea compacto.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` ajusta la densidad del bloque movido: `Estado publico` pasa a 3 columnas dentro de la columna principal y el strip de productos publicos a 3 columnas desktop, 2 en pantallas medianas y 1 en mobile estrecho.
+- `dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` ahora valida tambien que `paramascotas-public-strip` viva dentro de `.paramascotas-dashboard-column--main` y que el gap real contra `Pedidos recientes` sea compacto.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health` y `node ./node_modules/playwright/cli.js test tests/e2e/paramascotas-backend-layout.spec.ts tests/e2e/layout-density.spec.ts` (33/33).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/paramascotas-backend` responde `200`, mantiene `overflow: 0`, `titleSize: 14`, `publicGap: 10`, `catalogGap: 10`, `publicInMainColumn: true` y `catalogInMainColumn: true`.
 
@@ -8270,14 +8693,14 @@ Operacion y verificacion:
 Objetivo: corregir el gran espacio vacio que dejaba `Paramascotas backend` entre la grafica de ventas y los bloques inferiores, para que la pantalla use mejor el ancho y la altura disponibles.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.html` reemplaza la grilla unica con auto-placement por dos columnas apiladas explicitas: columna principal con `Ventas del periodo` + `Pedidos recientes`, y columna lateral con `Inventario`/`Pedidos`/`Alertas` + `Ranking de productos`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.html` reemplaza la grilla unica con auto-placement por dos columnas apiladas explicitas: columna principal con `Ventas del periodo` + `Pedidos recientes`, y columna lateral con `Inventario`/`Pedidos`/`Alertas` + `Ranking de productos`.
 - La misma vista agrega clases semanticas (`paramascotas-panel--sales`, `paramascotas-panel--recent-orders`, `paramascotas-panel--product-ranking`) para estabilizar pruebas de layout y futuras iteraciones visuales.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` sustituye `paramascotas-dashboard-grid` por `paramascotas-dashboard-columns`, apila cada columna con `gap` controlado y reduce el `h1` de la vista a `14px` desktop / `12.5px` mobile para mantener coherencia con la escala compacta global.
-- `Dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` valida que no reaparezca el hueco vertical, midiendo las separaciones reales entre `Ventas del periodo` -> `Pedidos recientes` y `side-stack` -> `Ranking de productos`.
-- `Dashboard/tests/e2e/layout-density.spec.ts` incorpora `/paramascotas-backend` a la auditoria global de tipografia compacta y overflow.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` sustituye `paramascotas-dashboard-grid` por `paramascotas-dashboard-columns`, apila cada columna con `gap` controlado y reduce el `h1` de la vista a `14px` desktop / `12.5px` mobile para mantener coherencia con la escala compacta global.
+- `dashboard/tests/e2e/paramascotas-backend-layout.spec.ts` valida que no reaparezca el hueco vertical, midiendo las separaciones reales entre `Ventas del periodo` -> `Pedidos recientes` y `side-stack` -> `Ranking de productos`.
+- `dashboard/tests/e2e/layout-density.spec.ts` incorpora `/paramascotas-backend` a la auditoria global de tipografia compacta y overflow.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health` y `node ./node_modules/playwright/cli.js test tests/e2e/paramascotas-backend-layout.spec.ts tests/e2e/layout-density.spec.ts` (33/33).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/paramascotas-backend` responde `200`, queda con `titleSize: 14`, `overflow: 0`, `mainGap: 10` y `sideGap: 10`.
 
@@ -8286,15 +8709,15 @@ Operacion y verificacion:
 Objetivo: reemplazar las cards incomodas de `Catalogo > Productos` y `Catalogo > Usuarios` en el panel nativo de Paramascotas por listas densas, alineadas con la usabilidad de `Reporte de inventario`.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` elimina el bloque `paramascotas-user-card-grid` y deja `Usuarios` en tabla/lista operativa como vista principal.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.html` elimina el bloque `paramascotas-user-card-grid` y deja `Usuarios` en tabla/lista operativa como vista principal.
 - La misma vista de `Usuarios` mejora la primera columna con avatar por iniciales, identidad compacta y acciones agrupadas en fila.
 - `Catalogo > Productos` deja de renderizar `paramascotas-product-card` y pasa a una tabla con columnas `Producto`, `Publicacion`, `Inventario`, `Trazabilidad`, `Precios` y `Acciones`, reutilizando el patron de lista del inventario.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` agrega estilos de tabla para productos/usuarios y elimina la conversion forzada de la tabla de usuarios a cards en mobile; ambas vistas mantienen scroll horizontal contenido como una lista real.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `productInventoryLabel()` para no duplicar logica de estado de stock en el template.
-- `Dashboard/tests/e2e/paramascotas-list-views.spec.ts` valida que `/paramascotas-panel/catalog/products` y `/paramascotas-panel/catalog/users` publiquen tablas y no cards.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` agrega estilos de tabla para productos/usuarios y elimina la conversion forzada de la tabla de usuarios a cards en mobile; ambas vistas mantienen scroll horizontal contenido como una lista real.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.ts` agrega `productInventoryLabel()` para no duplicar logica de estado de stock en el template.
+- `dashboard/tests/e2e/paramascotas-list-views.spec.ts` valida que `/paramascotas-panel/catalog/products` y `/paramascotas-panel/catalog/users` publiquen tablas y no cards.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `git -C Dashboard diff --check` y `node ./node_modules/playwright/cli.js test tests/e2e/paramascotas-list-views.spec.ts` (2/2).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products` publica `12` filas en `.paramascotas-products-table` y `0` `.paramascotas-product-card`; `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/users` publica `10` filas en `.paramascotas-users-table` y `0` `.paramascotas-user-card`; ambas rutas quedan sin overflow horizontal incoherente (`scrollWidth === clientWidth` a nivel de pagina).
 
@@ -8303,11 +8726,11 @@ Operacion y verificacion:
 Objetivo: cerrar la percepcion de titulos gigantes y mobile inestable en mas rutas del Dashboard, incluyendo pantallas de estado que todavia conservaban estilos locales sobredimensionados.
 
 Cambios:
-- `Dashboard/src/app/features/public/pages/tenant-unavailable/tenant-unavailable.component.css`, `permission-denied.component.css` y `module-unavailable.component.css` se alinean al sistema compacto compartido: menos padding, iconos mas contenidos, `h1` y copy atados a variables de header del Dashboard y acciones full-width en mobile.
-- `Dashboard/tests/e2e/layout-density.spec.ts` amplia la cobertura de regresion a 15 rutas reales del dashboard: `payment-gateway`, `pricing`, `company`, `currencies`, `permission-denied`, `tenant-unavailable`, `module-unavailable` y las rutas ya compactadas de usuarios, facturas, productos, inventario, monitoreo, tenant-admin y `paramascotas-panel/reporting/general`.
+- `dashboard/src/app/features/public/pages/tenant-unavailable/tenant-unavailable.component.css`, `permission-denied.component.css` y `module-unavailable.component.css` se alinean al sistema compacto compartido: menos padding, iconos mas contenidos, `h1` y copy atados a variables de header del Dashboard y acciones full-width en mobile.
+- `dashboard/tests/e2e/layout-density.spec.ts` amplia la cobertura de regresion a 15 rutas reales del dashboard: `payment-gateway`, `pricing`, `company`, `currencies`, `permission-denied`, `tenant-unavailable`, `module-unavailable` y las rutas ya compactadas de usuarios, facturas, productos, inventario, monitoreo, tenant-admin y `paramascotas-panel/reporting/general`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run lint`, `npm run type:check`, `npm run docker:health`, `git -C Dashboard diff --check` y `node ./node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts` (30/30).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general` queda en `14px` desktop y `12.5px` mobile, `scrollWidth === clientWidth`, `userChipWidth=30` y texto de logout oculto; el HTML publicado referencia `styles-WTT3KHMP.css` y `main-4OLCV2VE.js`.
 
@@ -8316,15 +8739,15 @@ Operacion y verificacion:
 Objetivo: reemplazar la tabla basica de `Facturas` por una bandeja de cobranza/facturacion mas util, compacta y accionable, manteniendo el contrato API interno y el CRUD existente.
 
 Cambios:
-- `Dashboard/src/app/features/business/state/invoices.facade.ts` baja el `pageSize` inicial a 6 para que la paginacion real sea visible en QA y agrega `resetFilters()`.
-- `Dashboard/src/app/features/business/data/invoices.fixtures.ts` amplia el dataset fixture por tenant, mezcla estados `paid`, `pending`, `overdue` y `draft`, define fechas de vencimiento coherentes y deja algunos avatars vacios para probar placeholder visual.
-- `Dashboard/src/app/features/business/pages/invoice-list/*` rediseña la pantalla completa: cards de resumen clicables, buscador, filtro por estado, selector de pagina, chips de filtros activos, cards de factura con datos del cliente, estado, importe, items, cobro pendiente y acciones `Ver`, `Editar`, `Marcar pagada/Reabrir` y `Eliminar`.
+- `dashboard/src/app/features/business/state/invoices.facade.ts` baja el `pageSize` inicial a 6 para que la paginacion real sea visible en QA y agrega `resetFilters()`.
+- `dashboard/src/app/features/business/data/invoices.fixtures.ts` amplia el dataset fixture por tenant, mezcla estados `paid`, `pending`, `overdue` y `draft`, define fechas de vencimiento coherentes y deja algunos avatars vacios para probar placeholder visual.
+- `dashboard/src/app/features/business/pages/invoice-list/*` rediseña la pantalla completa: cards de resumen clicables, buscador, filtro por estado, selector de pagina, chips de filtros activos, cards de factura con datos del cliente, estado, importe, items, cobro pendiente y acciones `Ver`, `Editar`, `Marcar pagada/Reabrir` y `Eliminar`.
 - La misma pantalla incorpora una columna lateral de detalle con cliente, contacto, fechas, subtotal, impuesto, total e items de la factura seleccionada.
-- `Dashboard/src/app/features/business/pages/invoice-add/invoice-add.component.html` elimina el texto visible heredado de "Template demo" y lo reemplaza por copy funcional.
-- Se agregan validaciones e2e nuevas en `Dashboard/tests/e2e/invoice-workspace.spec.ts`, se incluye `/invoice-list?tenant=demo` en `layout-density.spec.ts` y se adapta el smoke historico de CRUD de facturas al nuevo DOM de cards.
+- `dashboard/src/app/features/business/pages/invoice-add/invoice-add.component.html` elimina el texto visible heredado de "Template demo" y lo reemplaza por copy funcional.
+- Se agregan validaciones e2e nuevas en `dashboard/tests/e2e/invoice-workspace.spec.ts`, se incluye `/invoice-list?tenant=demo` en `layout-density.spec.ts` y se adapta el smoke historico de CRUD de facturas al nuevo DOM de cards.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health`, `git -C Dashboard diff --check`, `node ./node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts tests/e2e/invoice-workspace.spec.ts` (17/17) y el smoke puntual `node ./node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "fixture creates, edits, previews and deletes an invoice"` (1/1).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/invoice-list?tenant=demo` responde con titulo `14px` desktop y `12.5px` mobile, `scrollWidth === clientWidth`, 6 cards iniciales, selector `6 / pag` visible y filtro `Vencidas` reduciendo la lista a 2 cards con chips activos.
 
@@ -8333,14 +8756,14 @@ Operacion y verificacion:
 Objetivo: reemplazar la pantalla plana de `Monitoreo` por una consola operativa real, coherente con el resto del Dashboard y con filtros, breakdowns y detalle lateral accionables.
 
 Cambios:
-- `Dashboard/src/app/features/monitoring/models/monitoring.model.ts` amplía el contrato del resumen con breakdowns por severidad, estado, modulo y origen; los filtros tambien soportan `module` y `source`.
-- `Dashboard/src/app/features/monitoring/data/monitoring.fixtures.ts` ahora siembra 8 eventos mas realistas por tenant demo de monitoreo y filtra por severidad, estado, modulo, origen, busqueda, pagina y tamano de pagina; el resumen expone breakdowns agregados y `latestCritical`.
-- `Dashboard/src/app/features/monitoring/state/monitoring.facade.ts` adopta `pageSize` inicial de 6, agrega `setModule()`, `setSource()`, `setPage()` y `resetFilters()` para soportar drilldowns y paginacion real.
-- `Dashboard/src/app/features/monitoring/pages/monitoring-list/*` rediseña la vista completa: KPIs clicables, toolbar compacta, chips de filtros activos, cards de incidentes con acciones, paginacion visible, paneles de severidad/estado/modulos/origenes y detalle lateral del evento seleccionado.
-- `Dashboard/tests/e2e/monitoring-workspace.spec.ts` agrega una prueba de interaccion que valida filtrado por modulo y paginacion real; `Dashboard/tests/e2e/layout-density.spec.ts` ahora incluye tambien la ruta `/monitoring`.
+- `dashboard/src/app/features/monitoring/models/monitoring.model.ts` amplía el contrato del resumen con breakdowns por severidad, estado, modulo y origen; los filtros tambien soportan `module` y `source`.
+- `dashboard/src/app/features/monitoring/data/monitoring.fixtures.ts` ahora siembra 8 eventos mas realistas por tenant demo de monitoreo y filtra por severidad, estado, modulo, origen, busqueda, pagina y tamano de pagina; el resumen expone breakdowns agregados y `latestCritical`.
+- `dashboard/src/app/features/monitoring/state/monitoring.facade.ts` adopta `pageSize` inicial de 6, agrega `setModule()`, `setSource()`, `setPage()` y `resetFilters()` para soportar drilldowns y paginacion real.
+- `dashboard/src/app/features/monitoring/pages/monitoring-list/*` rediseña la vista completa: KPIs clicables, toolbar compacta, chips de filtros activos, cards de incidentes con acciones, paginacion visible, paneles de severidad/estado/modulos/origenes y detalle lateral del evento seleccionado.
+- `dashboard/tests/e2e/monitoring-workspace.spec.ts` agrega una prueba de interaccion que valida filtrado por modulo y paginacion real; `dashboard/tests/e2e/layout-density.spec.ts` ahora incluye tambien la ruta `/monitoring`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health`, `git -C Dashboard diff --check` y `node ./node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts tests/e2e/monitoring-workspace.spec.ts` (15/15).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/monitoring?tenant=monitoring-demo` responde con titulo `14px` desktop y `12.5px` mobile, `scrollWidth === clientWidth`, 6 eventos iniciales, selector `4 / pag` visible y filtro por modulo `Inventario` reduciendo la lista a 1 evento y mostrando chips activos.
 
@@ -8349,13 +8772,13 @@ Operacion y verificacion:
 Objetivo: corregir de forma transversal la percepcion de titulos sobredimensionados y el header movil recargado, dejando una validacion automatica para evitar regresiones en otras pantallas.
 
 Cambios:
-- `Dashboard/src/dashboard-overrides.css` reduce un paso adicional la escala global de `app-page-header`, `breadcrumb`, headings y `card-header`, junto con paddinges y gaps del shell para aprovechar mejor el espacio en escritorio y mobile.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` alinea las rutas nativas de Paramascotas con esa densidad compartida: baja `Reporte general` y sus encabezados internos, reduce padding de cards y cierra una colision de selectores que dejaba algunos `card-header` a `12.5px`.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` compacta el header movil: menos gap, controles de 30px, chip de usuario reducido a avatar y boton de logout solo con icono en pantallas pequenas para no competir con el contenido.
-- `Dashboard/tests/e2e/layout-density.spec.ts` agrega una prueba Playwright de regresion que recorre rutas representativas en desktop/mobile y exige titulos compactos, ausencia de overflow horizontal y header movil condensado.
+- `dashboard/src/dashboard-overrides.css` reduce un paso adicional la escala global de `app-page-header`, `breadcrumb`, headings y `card-header`, junto con paddinges y gaps del shell para aprovechar mejor el espacio en escritorio y mobile.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` alinea las rutas nativas de Paramascotas con esa densidad compartida: baja `Reporte general` y sus encabezados internos, reduce padding de cards y cierra una colision de selectores que dejaba algunos `card-header` a `12.5px`.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` compacta el header movil: menos gap, controles de 30px, chip de usuario reducido a avatar y boton de logout solo con icono en pantallas pequenas para no competir con el contenido.
+- `dashboard/tests/e2e/layout-density.spec.ts` agrega una prueba Playwright de regresion que recorre rutas representativas en desktop/mobile y exige titulos compactos, ausencia de overflow horizontal y header movil condensado.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health`, `git -C Dashboard diff --check` y `node ./node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts` (12/12).
 - Validado por APISIX con resolucion a `192.168.100.229`: `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general`, `/dashboard/products?tenant=inventory-demo`, `/dashboard/inventory?tenant=inventory-demo` y `/dashboard/tenant-admin` quedan en `14px` desktop y `12.5px` mobile para el titulo principal, `12px` o menos en headers internos, `scrollWidth === clientWidth` y header movil con `userChipWidth=30` y texto de logout oculto.
 
@@ -8364,14 +8787,14 @@ Operacion y verificacion:
 Objetivo: llevar `Inventario` al mismo nivel operativo/visual que `Productos` y corregir un problema de fondo donde los fixtures del Dashboard no estaban leyendo query strings, dejando paginacion y filtros visuales sin efecto real.
 
 Cambios:
-- `Dashboard/src/app/features/inventory/pages/inventory-list/*` rediseña `Inventario` como panel util: resumen superior clicable por estado, cards responsivas por SKU, buscador, filtro, selector de pagina, detalle lateral, ajuste rapido y paginacion visible.
+- `dashboard/src/app/features/inventory/pages/inventory-list/*` rediseña `Inventario` como panel util: resumen superior clicable por estado, cards responsivas por SKU, buscador, filtro, selector de pagina, detalle lateral, ajuste rapido y paginacion visible.
 - Las cards de inventario ahora muestran SKU, producto, almacen, disponible, reservado, vendible, punto de reorden, faltante, costo y cobertura, con acciones `Ver`, `Restar 1` y `Sumar 1`.
-- `Dashboard/src/app/features/inventory/state/inventory.facade.ts` agrega `setPage()` para paginacion real.
-- `Dashboard/src/app/core/http/interceptors/fixture-backend.interceptor.ts` clona la request usando `request.urlWithParams` antes de llegar a los handlers mock; con eso los fixtures ya reciben query string real (`search`, `status`, `page`, `pageSize`) en inventario, productos y el resto de modulos que usan el backend fixture.
-- `Dashboard/src/app/features/products/pages/products-list/products-list.component.ts` inicia con `pageSize: 4`, de modo que la paginacion del nuevo catalogo visual sea real y no solo decorativa.
+- `dashboard/src/app/features/inventory/state/inventory.facade.ts` agrega `setPage()` para paginacion real.
+- `dashboard/src/app/core/http/interceptors/fixture-backend.interceptor.ts` clona la request usando `request.urlWithParams` antes de llegar a los handlers mock; con eso los fixtures ya reciben query string real (`search`, `status`, `page`, `pageSize`) en inventario, productos y el resto de modulos que usan el backend fixture.
+- `dashboard/src/app/features/products/pages/products-list/products-list.component.ts` inicia con `pageSize: 4`, de modo que la paginacion del nuevo catalogo visual sea real y no solo decorativa.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health` y `git -C Dashboard diff --check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/inventory?tenant=inventory-demo` y `https://paramascotasec.com/dashboard/products?tenant=inventory-demo` en mobile y desktop: titulos a `13px` mobile y `15px` desktop, `scrollWidth === clientWidth`, 4 cards por pagina en ambas rutas y paginacion real (`pageText` `["1","2"]`, `nextDisabled=false`).
 - Tambien se verifico interaccion real en inventario: al pulsar `Stock bajo` queda 1 card y al pulsar `Sin stock` queda 1 card, confirmando que los widgets resumen ya filtran la data en vez de ser solo decorativos.
@@ -8381,14 +8804,14 @@ Operacion y verificacion:
 Objetivo: convertir la vista generica de `Productos` en una pantalla de catalogo mas util y presentable, evitando la tabla plana y el formulario dominante que desperdiciaban espacio y no mostraban bien los productos.
 
 Cambios:
-- `Dashboard/src/app/features/products/pages/products-list/*` rediseña la pantalla como workspace real: tarjetas de producto responsivas, resumen visible filtrable por estado, detalle lateral del producto seleccionado, paginacion, buscador, filtro por estado, selector de pagina y editor lateral para crear/editar sin poner el formulario arriba de todo.
+- `dashboard/src/app/features/products/pages/products-list/*` rediseña la pantalla como workspace real: tarjetas de producto responsivas, resumen visible filtrable por estado, detalle lateral del producto seleccionado, paginacion, buscador, filtro por estado, selector de pagina y editor lateral para crear/editar sin poner el formulario arriba de todo.
 - Las tarjetas ahora muestran SKU, nombre, descripcion truncada con `title`, categoria, precio, costo, margen y acciones claras (`Ver`, `Editar`, `Duplicar`, `Activar/Archivar`, `Eliminar`) usando el store existente.
-- `Dashboard/src/app/features/products/state/products.facade.ts` agrega `setPage()` para paginacion real.
-- `Dashboard/src/app/features/products/data/products.fixtures.ts` deja el fixture menos artificial: mezcla estados `active`, `draft` y `archived`, y fuerza un caso sin imagen para validar placeholder elegante.
+- `dashboard/src/app/features/products/state/products.facade.ts` agrega `setPage()` para paginacion real.
+- `dashboard/src/app/features/products/data/products.fixtures.ts` deja el fixture menos artificial: mezcla estados `active`, `draft` y `archived`, y fuerza un caso sin imagen para validar placeholder elegante.
 - Cuando el dataset trae las imagenes demo `product-img*.png` de baja calidad, la UI las reemplaza por covers visuales internos mas limpios con icono por categoria e inicial del producto, reservando la imagen real para cuando exista una util.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health` y `git -C Dashboard diff --check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/products?tenant=inventory-demo` en mobile y desktop: titulos a `13px` mobile y `15px` desktop, `scrollWidth === clientWidth`, 5 tarjetas visibles, sidebar de detalle operativa y editor lateral visible al pulsar `Editar producto`; las capturas muestran el nuevo layout sin tabla fuera de pantalla ni imagenes demo borrosas.
 
@@ -8397,12 +8820,12 @@ Operacion y verificacion:
 Objetivo: terminar de normalizar la escala de titulos en pantallas fuera de Paramascotas y corregir el patron mobile donde varios buscadores quedaban ocultos por el CSS legacy del template.
 
 Cambios:
-- `Dashboard/src/app/shared/ui/breadcrumb/breadcrumb.component.html` y `.css` reemplazan el breadcrumb plano heredado por un encabezado compacto y consistente con el resto del Dashboard: titulo denso, trail pequeno, wrapping correcto y mobile sin desperdicio de espacio.
-- `Dashboard/src/dashboard-overrides.css` agrega soporte global para `app-breadcrumb` y fuerza que los `navbar-search` dentro de `card-header` sigan visibles en mobile cuando no estan ocultos de forma explicita, manteniendo inputs/selects a ancho completo.
-- `Dashboard/src/app/features/users/pages/users-list/*` compacta la barra de filtros de `Usuarios` para mobile, evitando que `Mostrar`, buscador y estado se monten o desaparezcan por reglas antiguas del template.
+- `dashboard/src/app/shared/ui/breadcrumb/breadcrumb.component.html` y `.css` reemplazan el breadcrumb plano heredado por un encabezado compacto y consistente con el resto del Dashboard: titulo denso, trail pequeno, wrapping correcto y mobile sin desperdicio de espacio.
+- `dashboard/src/dashboard-overrides.css` agrega soporte global para `app-breadcrumb` y fuerza que los `navbar-search` dentro de `card-header` sigan visibles en mobile cuando no estan ocultos de forma explicita, manteniendo inputs/selects a ancho completo.
+- `dashboard/src/app/features/users/pages/users-list/*` compacta la barra de filtros de `Usuarios` para mobile, evitando que `Mostrar`, buscador y estado se monten o desaparezcan por reglas antiguas del template.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run runtime:check`, `npm run docker:health` y `git -C Dashboard diff --check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido en mobile y desktop `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general`, `users-list?tenant=demo`, `users-grid?tenant=demo`, `products?tenant=inventory-demo`, `inventory?tenant=inventory-demo`, `monitoring?tenant=monitoring-demo`, `table-data?tenant=demo` y `marketplace?tenant=demo`: titulos a `13px` mobile y `15px` desktop, `scrollWidth === clientWidth` en todas las rutas probadas y buscadores visibles en `users-list`, `users-grid` y `marketplace`.
 
@@ -8411,12 +8834,12 @@ Operacion y verificacion:
 Objetivo: corregir el siguiente lote de pantallas reales fuera del panel Paramascotas, priorizando facturacion demo con tablas anchas en mobile y el desborde residual del `navbar-header`.
 
 Cambios:
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` resetea margenes/paddings horizontales del `row` y `col-auto` del header/footer shell para eliminar la fuga de ~4px que todavia aparecia en mobile por las clases Bootstrap.
-- `Dashboard/src/app/features/business/pages/invoice-add/*` e `invoice-edit/*` convierten la tabla de items editable en una tabla responsive real: `data-label` por celda, tarjeta apilada en `<=767px`, boton `Agregar item` compacto y totales alineados sin salir del viewport.
-- `Dashboard/src/app/features/business/pages/invoice-preview/*` compacta acciones, limita el header visual de la factura y transforma la tabla de items en layout apilado para mobile, manteniendo los datos de cliente, items y totales dentro de pantalla.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` resetea margenes/paddings horizontales del `row` y `col-auto` del header/footer shell para eliminar la fuga de ~4px que todavia aparecia en mobile por las clases Bootstrap.
+- `dashboard/src/app/features/business/pages/invoice-add/*` e `invoice-edit/*` convierten la tabla de items editable en una tabla responsive real: `data-label` por celda, tarjeta apilada en `<=767px`, boton `Agregar item` compacto y totales alineados sin salir del viewport.
+- `dashboard/src/app/features/business/pages/invoice-preview/*` compacta acciones, limita el header visual de la factura y transforma la tabla de items en layout apilado para mobile, manteniendo los datos de cliente, items y totales dentro de pantalla.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health` y `git -C Dashboard diff --check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/invoice-preview?tenant=acme`, `https://paramascotasec.com/dashboard/invoice-add?tenant=acme`, `https://paramascotasec.com/dashboard/invoice-edit?tenant=acme` y `https://paramascotasec.com/dashboard/users-list?tenant=demo`: `scrollWidth === clientWidth`, sin tablas sobredimensionadas, `Agregar item` baja a `11.5px` y `32px` de alto, y el `navbar-header .row` queda dentro del viewport (`left: 8`, `right: 385` en mobile de 393px).
 
@@ -8425,12 +8848,12 @@ Operacion y verificacion:
 Objetivo: alinear la vista `Paramascotas backend` con la escala compacta del resto del Dashboard y eliminar las tablas anchas que en mobile dependian de scroll horizontal.
 
 Cambios:
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` baja la escala propia de la pantalla (`h1`, `h2`, copys, metricas, botones y paddings), compacta KPIs y hace que mobile use una jerarquia similar al panel nativo.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.css` baja la escala propia de la pantalla (`h1`, `h2`, copys, metricas, botones y paddings), compacta KPIs y hace que mobile use una jerarquia similar al panel nativo.
 - La barra superior de `Paramascotas backend` ahora se comporta mejor en mobile: filtros mas densos, acciones compactas y controles apilados sin desbordes.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.html` agrega `data-label` a las tablas de `Pedidos recientes` y `Ranking de productos`; la CSS las transforma en tarjetas apiladas en `<=767px`, evitando que salgan de pantalla.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-backend/paramascotas-backend.component.html` agrega `data-label` a las tablas de `Pedidos recientes` y `Ranking de productos`; la CSS las transforma en tarjetas apiladas en `<=767px`, evitando que salgan de pantalla.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health` y `git -C Dashboard diff --check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/paramascotas-backend`: en mobile `h1` queda en `13px`, `h2` en `11.5px`, `scrollWidth === clientWidth`, ambas tablas bajan a `347px` de ancho real y se renderizan como tarjetas apiladas; en desktop `scrollWidth === clientWidth` y las tablas siguen funcionales.
 
@@ -8439,12 +8862,12 @@ Operacion y verificacion:
 Objetivo: terminar de corregir el shell mobile y los headers de accion del Dashboard para que el panel no vuelva a sentirse sobredimensionado en pantallas pequenas.
 
 Cambios:
-- `Dashboard/src/app/shared/ui/page-header/page-header.component.css` reduce la densidad visible de las acciones del `PageHeader`: botones de cabecera con tipografia menor y padding compacto, especialmente en mobile.
-- `Dashboard/src/dashboard-overrides.css` endurece el override mobile para botones de accion en `PageHeader` y `card-header`, y reduce gap/margin del header compartido para que las vistas no desperdicien alto al inicio.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` reordena el topbar `<=767px`: `theme toggle`, chip de usuario y `Cerrar sesion` quedan en una sola fila util cuando el ancho lo permite; el drawer mobile baja a `272px` y solo vuelve a ancho completo en `<=360px`.
+- `dashboard/src/app/shared/ui/page-header/page-header.component.css` reduce la densidad visible de las acciones del `PageHeader`: botones de cabecera con tipografia menor y padding compacto, especialmente en mobile.
+- `dashboard/src/dashboard-overrides.css` endurece el override mobile para botones de accion en `PageHeader` y `card-header`, y reduce gap/margin del header compartido para que las vistas no desperdicien alto al inicio.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` reordena el topbar `<=767px`: `theme toggle`, chip de usuario y `Cerrar sesion` quedan en una sola fila util cuando el ancho lo permite; el drawer mobile baja a `272px` y solo vuelve a ancho completo en `<=360px`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health` y `git -C Dashboard diff --check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general`, `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products` y `https://paramascotasec.com/dashboard/tenant-admin` en desktop/mobile: `h1` en `15px` desktop / `13px` mobile, `Actualizar` en mobile baja a `11.5px` y `39.3px` de alto, navbar mobile baja a `74px`, `Cerrar sesion` queda en `116.5px x 32px`, drawer en `272px` y sin overflow horizontal.
 
@@ -8453,13 +8876,13 @@ Operacion y verificacion:
 Objetivo: cerrar el ajuste transversal de titulos/mobile en las pantallas reales del Dashboard y corregir el proxy interno para que los reportes nativos consuman el backend sin exigir login web adicional.
 
 Cambios:
-- `Dashboard/src/dashboard-overrides.css`, `PageHeaderComponent` y `side-nav.component.css` bajan otra vez la escala compartida: H1 reales en `15px` desktop / `13px` mobile, headers internos en `13px` / `11.5px`, drawer mobile estable en `280px` y `Cerrar sesion` reacomodado sin desperdicio de altura.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` alinea la escala propia del panel nativo con el override global para que `Reporte general`, `Ventas por categoria`, `Productos por venta neta` y demas subpantallas no reintroduzcan titulos gigantes por reglas tardias del template.
-- Se limpio el token interno del Dashboard: `Dashboard/.env` deja de almacenar `TECNOLTS_INTERNAL_PROXY_TOKEN`; `docker-compose.yml` ahora inyecta `INTERNAL_PROXY_TOKEN` via `env_file` desde el backend compartido y `Dashboard/nginx.conf` sigue enviando `X-Internal-Proxy-Token` solo en runtime.
+- `dashboard/src/dashboard-overrides.css`, `PageHeaderComponent` y `side-nav.component.css` bajan otra vez la escala compartida: H1 reales en `15px` desktop / `13px` mobile, headers internos en `13px` / `11.5px`, drawer mobile estable en `280px` y `Cerrar sesion` reacomodado sin desperdicio de altura.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` alinea la escala propia del panel nativo con el override global para que `Reporte general`, `Ventas por categoria`, `Productos por venta neta` y demas subpantallas no reintroduzcan titulos gigantes por reglas tardias del template.
+- Se limpio el token interno del Dashboard: `dashboard/.env` deja de almacenar `TECNOLTS_INTERNAL_PROXY_TOKEN`; `docker-compose.yml` ahora inyecta `INTERNAL_PROXY_TOKEN` via `env_file` desde el backend compartido y `dashboard/nginx.conf` sigue enviando `X-Internal-Proxy-Token` solo en runtime.
 - `paramascotasec-backend/docker/nginx.conf` ahora pasa `HTTP_X_INTERNAL_PROXY_TOKEN` a PHP-FPM, corrigiendo el salto `dashboard -> backend-web -> backend-app` que estaba rompiendo la autenticacion inter-contenedores.
 
 Operacion y verificacion:
-- Se redeplego `Dashboard` con `cd Dashboard && npm run docker:up` y luego solo `backend` con `./scripts/deploy-development.sh backend`; no se desplego production ni se tocaron DB, Facturador, certificados o SRI.
+- Se redeplego `Dashboard` con `cd dashboard && npm run docker:up` y luego solo `backend` con `./scripts/deploy-development.sh backend`; no se desplego production ni se tocaron DB, Facturador, certificados o SRI.
 - Pasaron `npm run env:check`, `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health`, `php -l public/index.php src/Core/Auth.php src/Controllers/AuthController.php`, `git -C Dashboard diff --check`, `git -C paramascotasec-backend diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `GET /dashboard/api/admin/report?period=2026-06` responde `200` con datos reales.
 - Playwright con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general` y `https://paramascotasec.com/dashboard/tenant-admin`: H1 en `15px` desktop / `13px` mobile, cards compactas, drawer mobile sin overflow y `Reporte general` cargando metricas reales en vez de `401`.
@@ -8469,12 +8892,12 @@ Operacion y verificacion:
 Objetivo: terminar de compactar la escala visual compartida del Dashboard para que todas las pantallas reales del panel hereden titulos coherentes y el shell mobile deje de desperdiciar espacio con botones y drawer sobredimensionados.
 
 Cambios:
-- `Dashboard/src/dashboard-overrides.css` reduce otra vez la escala global de `h1-h6`, `PageHeader`, `display-*`, `fs-*` y `text-*`, compacta iconos/titulos/descripcion del header y evita que las acciones del `PageHeader` vuelvan a ocupar todo el ancho en mobile.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` estrecha el drawer mobile a `280px`, baja padding/gaps del navbar, deja el chip de usuario a ancho util y cambia `Cerrar sesion` de bloque enorme a boton compacto, manteniendo `overflow-x` en cero.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` baja la escala interna del panel nativo (`--pm-panel-title-*`), reduce paddings de cards y evita que headers/modales/acciones del panel vuelvan a crecer por reglas tardias del template.
+- `dashboard/src/dashboard-overrides.css` reduce otra vez la escala global de `h1-h6`, `PageHeader`, `display-*`, `fs-*` y `text-*`, compacta iconos/titulos/descripcion del header y evita que las acciones del `PageHeader` vuelvan a ocupar todo el ancho en mobile.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` estrecha el drawer mobile a `280px`, baja padding/gaps del navbar, deja el chip de usuario a ancho util y cambia `Cerrar sesion` de bloque enorme a boton compacto, manteniendo `overflow-x` en cero.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` baja la escala interna del panel nativo (`--pm-panel-title-*`), reduce paddings de cards y evita que headers/modales/acciones del panel vuelvan a crecer por reglas tardias del template.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI, certificados o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI, certificados o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run runtime:check`, `npm run docker:health`, `git -C Dashboard diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido desktop/mobile en `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec` y `https://paramascotasec.com/dashboard/tenant-admin?tenant=demo`: titulos en `16px/14px`, headers de card en `12px-12.5px`, boton `Actualizar` ya no full-width, logout mobile en `119px`, drawer mobile en `280px` y sin overflow horizontal (`scrollWidth === innerWidth`).
 
@@ -8488,7 +8911,7 @@ Cambios:
 - `tenant-admin.component.*` se redisenan como consola de planes: tarjetas KPI, alta de tenant con paquetes SaaS, preset inicial de Ecommerce, resumen de tenants, configuracion inline por tenant y combinacion de modulos sin separar verticales de ecommerce por industria.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `git -C Dashboard diff --check`, `npm run runtime:check` y `npm run docker:health`.
 - La ejecucion focalizada de `ng test` no fue posible en el host porque el Angular CLI exige Node `v22.22.3+` y el host tiene `v22.22.2`; se valido el bundle dentro del build Docker con Node 26.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido `https://paramascotasec.com/dashboard/tenant-admin?tenant=demo` en desktop/mobile: 4 KPIs de cabecera, configurador inline con 13 capacidades Ecommerce, header mobile sin overflow horizontal y guardado funcional de configuracion (`Retail tech QA`) reflejado en el resumen del tenant.
@@ -8503,7 +8926,7 @@ Cambios:
 - `side-nav.component.css` reorganiza el header `<=767px` en dos filas limpias: chip de usuario a ancho util, slug oculto en mobile y boton `Cerrar sesion` a ancho completo tambien en tablets pequenas, no solo en `<=575px`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `git -C Dashboard diff --check`, `npm run runtime:check` y `npm run docker:health`.
 - Validado por APISIX con resolucion forzada a `192.168.100.229` y Playwright:
   - `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec`: `PageHeader` 17px desktop / 15px mobile, card title 13px desktop / 12px mobile, header mobile en grid de 74px sin overflow horizontal.
@@ -8521,7 +8944,7 @@ Cambios:
 - La tabla de usuarios mantiene truncado elegante con `title`, sigue adaptandose a mobile cards y suma footer de paginacion responsive.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con resolucion local de `paramascotasec.com`: `Usuarios` toma `search=ana` desde la URL, publica el selector de filas `10/20/50 por pagina` sin overflow en desktop/mobile, y `Pedidos` toma `search=ana@paramascotas.test` desde la query string al abrir la ruta.
 
@@ -8530,14 +8953,14 @@ Operacion y verificacion:
 Objetivo: corregir que siguieran apareciendo titulos desproporcionados fuera de `Paramascotas backend` y cerrar el problema del sidebar mobile que aun podia asomarse en estado colapsado.
 
 Cambios:
-- `Dashboard/src/dashboard-overrides.css` compacta la escala global del shell: `h1/h2/h3`, `PageHeader`, tarjetas, botones, footer y breakpoints mobile usan tamanos mas densos para que reportes, formularios y vistas legacy no vuelvan a heredar tipografia gigante del template.
-- `Dashboard/src/app/shared/ui/page-header/page-header.component.css` reduce icono, eyebrow, titulo y descripcion en desktop/mobile para que todos los encabezados del Dashboard queden alineados al mismo patron compacto.
-- `Dashboard/src/app/layout/shell/side-nav/side-nav.component.css` refuerza el drawer mobile: el sidebar oculto queda realmente fuera del viewport, el boton de cierre no se filtra cuando esta cerrado y la barra superior reorganiza tenant, usuario y logout sin romperse en pantallas angostas.
-- `Dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` endurece la escala compacta de las pantallas nativas Paramascotas para que `Reporte general` y vistas afines no vuelvan a mostrar headers sobredimensionados.
+- `dashboard/src/dashboard-overrides.css` compacta la escala global del shell: `h1/h2/h3`, `PageHeader`, tarjetas, botones, footer y breakpoints mobile usan tamanos mas densos para que reportes, formularios y vistas legacy no vuelvan a heredar tipografia gigante del template.
+- `dashboard/src/app/shared/ui/page-header/page-header.component.css` reduce icono, eyebrow, titulo y descripcion en desktop/mobile para que todos los encabezados del Dashboard queden alineados al mismo patron compacto.
+- `dashboard/src/app/layout/shell/side-nav/side-nav.component.css` refuerza el drawer mobile: el sidebar oculto queda realmente fuera del viewport, el boton de cierre no se filtra cuando esta cerrado y la barra superior reorganiza tenant, usuario y logout sin romperse en pantallas angostas.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-panel/paramascotas-panel.component.css` endurece la escala compacta de las pantallas nativas Paramascotas para que `Reporte general` y vistas afines no vuelvan a mostrar headers sobredimensionados.
 - Las pantallas publicas `tenant-unavailable`, `module-unavailable` y `permission-denied` tambien se compactan para mantener coherencia visual y mejor uso del espacio en mobile.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` y `./scripts/check-container-connectivity.sh development`.
 - `npm run build` local en el host sigue bloqueado por Node `v22.22.2` mientras Angular CLI exige `v22.22.3+`; la compilacion efectiva para QA se valido dentro del build Docker.
 - Validado con Playwright por APISIX usando resolucion local de `paramascotasec.com`: en `/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec` el titulo principal queda en 15px desktop / 14px mobile, el titulo de tarjeta en 14px / 12px y el sidebar permanece oculto en mobile (`visibility:hidden`, `left:-328`) sin overflow horizontal.
@@ -8554,7 +8977,7 @@ Cambios:
 - `Kanban` ajusta badges y botones para que el tag no se salga del card en mobile.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health` y `npm run runtime:check`.
 - Validado con Playwright por APISIX en desktop 1365x900 y mobile 390x900: `users-list`, `roles`, `invoice-list`, `products`, `inventory`, `monitoring`, `email`, `chat-message`, `calendar-main`, `kanban`, `blog` y `table-data` responden 200, quedan con overflow 0, sin elementos fuera del viewport y con sidebar cerrado en mobile.
 
@@ -8569,7 +8992,7 @@ Cambios:
 - El superadmin refuerza contencion responsive en cards, chips y encabezados para evitar textos desbordados al administrar modulos de tenants.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/tenant-admin?tenant=paramascotasec` y `/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec` responden 200.
 - Validado con Playwright por APISIX en desktop 1365x900 y mobile 390x900: `tenant-admin`, `paramascotas-backend`, `Reporte general`, `Reporte de ventas`, `Productos x Compra` y `Productos` quedan con overflow 0, sin elementos fuera del viewport, sidebar cerrado en mobile y encabezados maximos de 16-18px.
@@ -8586,7 +9009,7 @@ Cambios:
 - Se agrego reset responsive para que los campos de imagen no creen columnas implicitas cuando la vista colapsa a una sola columna.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/reporting/sales?tenant=paramascotasec` y `/dashboard/paramascotas-panel/catalog/products?tenant=paramascotasec` responden 200.
 - Validado con Playwright por APISIX en desktop 1365x900 y mobile 390x900: `Reporte de ventas`, `Reporte de trazabilidad`, `Productos x Compra` y `Productos` quedan con overflow 0, sin elementos fuera del viewport y con encabezados maximos de 16-17px.
@@ -8604,7 +9027,7 @@ Cambios:
 - No se cambio el contrato API: sigue usando `GET /api/orders`, `GET /api/orders/:id`, `PATCH /api/orders/:id/status` y URL de comprobante mediante el proxy interno directo del Dashboard.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/admin-orders?tenant=paramascotasec` responde 200.
 - Validado con Playwright por APISIX en desktop 1440x1000 y mobile 390x900 usando datos simulados: busqueda `Procan`, filtro de entrega, apertura de detalle, cards, tabla y modal quedan sin overflow horizontal.
@@ -8620,7 +9043,7 @@ Cambios:
 - Se agregan reglas mobile para filtros, tabs, botones y chips de Paramascotas, evitando overflow horizontal y textos cortados.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-backend`, `/dashboard/paramascotas-panel/operations/admin-orders` y `/dashboard/paramascotas-panel/catalog/products` responden 200.
 - Validado con Playwright por APISIX en desktop 1440x1000 y mobile 390x900: `Reporte general` queda con titulo 16-17px y H2 14px, `Paramascotas backend`, `Pedidos` y `Productos` no tienen overflow horizontal, y el menu mobile abre como drawer con backdrop.
@@ -8638,7 +9061,7 @@ Cambios:
 - No se cambio el contrato API: la vista sigue usando `admin/report`, `admin/dashboard/stats`, `admin/expenses`, `admin/financial-periods`, productos, pedidos, inventario y compras mediante el proxy interno directo del Dashboard.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/balances?tenant=paramascotasec` responde 200.
 - Validado con Playwright en 1365x900 y 390x844 usando datos simulados: 5 acciones, grafica de composicion, grafica de tendencia, tarjetas de tendencia, navegacion a margenes, titulos compactos, sin overflow horizontal y sidebar contenido en mobile.
@@ -8657,7 +9080,7 @@ Cambios:
 - No se cambio el contrato API: sigue usando `GET/PUT /api/admin/settings/product-reference-data` y subidas existentes por el proxy interno directo del Dashboard.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - `npm run build` local no pudo ejecutarse por Node del host `v22.22.2`; el build equivalente paso dentro de Docker con Node 26 durante `npm run docker:up`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/catalogs?tenant=paramascotasec` responde 200.
@@ -8674,7 +9097,7 @@ Cambios:
 - No se cambio el contrato API: sigue usando `GET/POST /api/admin/quotes` y las rutas existentes de conversion mediante el proxy interno directo del Dashboard.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run build`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/quotations?tenant=paramascotasec` responde 200.
 - Validado con Playwright en 1365x900 y 390x844 usando datos simulados: KPIs, 2 graficas, busqueda por direccion/nota, filtro de vencidas, boton limpiar, WhatsApp, impresion, titulos compactos, sin overflow horizontal y sidebar contenido en mobile.
@@ -8691,7 +9114,7 @@ Cambios:
 - El formulario cambia `Tipo documento` a selector controlado (`Sin documento`, `Cedula`, `RUC`, `Pasaporte`, `Otro`) como en `/my-account`; no cambia firmas ni contratos de API.
 
 Operacion y verificacion:
-- Se reconstruyo solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se reconstruyo solo `Dashboard` con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/users?tenant=paramascotasec` responde 200.
 - Validado con Playwright en 1440x900 y 390x844 usando datos simulados: H1 16px, 7 KPIs, 2 graficas, busqueda por direccion y bloqueo, filtros de direccion/telefono/nuevos, selector de documento, texto de seguridad visible, sin overflow horizontal y sidebar oculto en mobile.
@@ -8706,7 +9129,7 @@ Cambios:
 - No se cambio el contrato API: sigue consumiendo `GET /api/admin/billing/rides?limit=150` mediante el proxy interno directo del Dashboard; las acciones de abrir PDF y anular/reemitir quedan sobre las firmas existentes.
 
 Operacion y verificacion:
-- Se mantuvo el despliegue solo del Dashboard QA con `cd Dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
+- Se mantuvo el despliegue solo del Dashboard QA con `cd dashboard && npm run docker:up`; no se tocaron backend, DB, Facturador, SRI, certificados ni produccion.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` en `Dashboard` y `paramascotasec`, y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/billing-rides?tenant=paramascotasec` responde 200.
 - Validado con Playwright en 1440x900 y 390x844 usando datos simulados: titulo 16px, 2 graficas renderizadas, busqueda por periodo/autorizacion/PDF generable, boton limpiar, sin overflow horizontal y sidebar oculto en mobile.
@@ -8724,7 +9147,7 @@ Cambios:
 - No se cambian firmas ni contratos: la pantalla sigue consumiendo internamente `GET /api/admin/expenses`, `GET /api/admin/expenses/recurrences`, `GET /api/admin/financial-periods` y acciones existentes.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/expenses?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/finance/expenses?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 2 graficas ApexCharts, 4 controles de filtro, 4 tarjetas/filas iniciales, busqueda `internet` reduce a 1 coincidencia, limpiar vuelve a 4 y no hay overflow horizontal.
@@ -8741,7 +9164,7 @@ Cambios:
 - Las tarjetas del simulador y la grafica quedan contenidas en desktop y mobile sin scroll horizontal.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/margins?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/finance/margins?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 3 graficas ApexCharts, simulador visible, 5 etapas de precio, 4 productos de pricing, sin overflow horizontal y el input de costo recalcula de USD 10 a USD 20.
@@ -8758,7 +9181,7 @@ Cambios:
 - No se cambian firmas ni contratos: la pantalla sigue usando `GET /api/products?scope=admin`, `GET /api/admin/settings/product-reference-data` y los endpoints existentes de creacion/edicion/imagenes.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/products?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products?tenant=paramascotasec` valido desktop/mobile: H1 16px, sin overflow horizontal, sidebar oculto correctamente en mobile, 4 botones KPI y 4 filtros de insight.
@@ -8776,7 +9199,7 @@ Cambios:
 - El control nuevo es responsive y baja a una columna en mobile sin provocar scroll horizontal.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/prices?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/finance/prices?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 2 graficas ApexCharts, 1 control de busqueda, 4 productos antes de buscar, 1 despues de buscar `cat`, imagen de producto visible y sin overflow horizontal de pagina en 1440px ni 390px.
@@ -8793,7 +9216,7 @@ Cambios:
 - Se agregan reglas responsive para que dashboard POS, flujo y checks bajen a una columna en mobile sin scroll horizontal de pagina.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/local-sales?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/operations/local-sales?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 1 grafica ApexCharts, 5 filas de flujo, 5 checks de preparacion, 3 productos, 1 item agregado al carrito y sin overflow horizontal de pagina en 1440px ni 390px.
@@ -8810,7 +9233,7 @@ Cambios:
 - Se agregan reglas responsive para que graficas, seguimiento, tarjetas y resumen bajen a una columna en mobile sin scroll horizontal de pagina.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - `npm run build` local no arranco porque el host tiene Node `v22.22.2` y Angular CLI exige minimo `v22.22.3`, `v24.15.0` o `v26.0.0`; el build Docker si paso con Node 26 durante `npm run docker:up`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/quotations?tenant=paramascotasec` responde 200.
@@ -8828,7 +9251,7 @@ Cambios:
 - La tabla auditable y el formulario lateral se mantienen con las mismas firmas reales internas `GET/POST/PUT /api/users` y `POST /api/users/:id/unlock`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/users?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/catalog/users?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 2 graficas ApexCharts, 4 KPIs, 4 filtros de seguridad, 6 tarjetas, 1 usuario bloqueado destacado, tabla sin overflow horizontal de pagina, filtro `Bloqueados` reduce a 1/7 y `Editar` llena el formulario.
@@ -8845,7 +9268,7 @@ Cambios:
 - La tabla auditable se mantiene, con contencion responsive existente; en mobile la lectura prioritaria queda en tarjetas y la tabla pasa a formato de filas tipo card.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/admin-orders?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/operations/admin-orders?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 2 graficas ApexCharts, 5 KPIs, 6 tarjetas de pedidos, 13 miniaturas de productos, 4 filas de pagos, tabla sin overflow horizontal de pagina y modal con 3 imagenes de items y 4 acciones.
@@ -8861,7 +9284,7 @@ Cambios:
 - La pantalla conserva lista de productos, imagenes, detalle de lotes FIFO, pedidos asociados y tablas con scroll interno contenido.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/reporting/products-purchases?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/products-purchases?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, 2 graficas ApexCharts, 5 KPIs, productos con imagen, ancho de workspace 1089px desktop/346px mobile y sin overflow horizontal de pagina.
@@ -8877,7 +9300,7 @@ Cambios:
 - No se agrego una segunda capa de CSS global; se reutilizo el responsive existente del panel para mantener consistencia y bajar el riesgo del cambio.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `git -C Dashboard diff --check`, `npm run docker:health` y `npm run runtime:check`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec`, `/dashboard/paramascotas-panel/catalog/products?tenant=paramascotasec` y `/dashboard/paramascotas-panel/operations/admin-orders?tenant=paramascotasec` responden 200.
 - Playwright con sesion backend real del QA valido desktop/mobile: `Reporte general` queda en H1 24px desktop / 16px mobile, `overflowX=false`, drawer mobile de 304px sin desbordar, `Productos` carga 12 cards y abre modal con 2 miniaturas/6 metricas/3 detail cards, `Pedidos` muestra 10 filas con paginacion y el reporte mobile renderiza 8 pedidos recientes como tarjetas legibles.
@@ -8893,7 +9316,7 @@ Cambios:
 - `side-nav.component.css` compacta el navbar mobile: tenant flexible, acciones en grilla estable, `user-chip` expandible y `logout` icon-only en anchos pequenos para no desbordar.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `git -C Dashboard diff --check`, `npm run docker:health`, `npm run runtime:check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `curl -k -I --resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/reporting/general?tenant=paramascotasec` y `/dashboard/tenant-admin?tenant=demo` responden 200.
 - Playwright contra `https://paramascotasec.com` forzado a `192.168.100.229` valido `Reportes > Reporte general` y `Tenant admin` en desktop/mobile: `pageOverflowX=false`, `bodyOverflowX=false`, H1 24px desktop / 16px mobile y drawer mobile de 304px sin invadir horizontalmente la pagina.
@@ -8910,7 +9333,7 @@ Cambios:
 - Se agrega `body.overlay-active { overflow: hidden; }` para bloquear scroll del documento cuando el drawer mobile esta abierto.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `git -C Dashboard diff --check`, `npm run runtime:check` y `npm run docker:health`.
 - Playwright por APISIX sobre `https://paramascotasec.com/dashboard/sign-in?tenant=paramascotasec&returnUrl=/paramascotas-panel/reporting/general`, forzando resolucion a `192.168.100.229`, valido desktop/mobile y drawer abierto: H1 compartido 19px desktop / 15px mobile, sidebar mobile 304px sin colapsar y shell sin overflow horizontal.
 
@@ -8925,7 +9348,7 @@ Cambios:
 - Se rehizo la auditoria de integraciones reales del tenant `paramascotasec` sobre 30 rutas del dashboard para detectar pantallas con errores fatales visibles.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-auth.spec.ts --grep "stale POS state|signs in with MFA"` y `node node_modules/playwright/cli.js test tests/e2e/paramascotas-real-integrations.spec.ts`.
 - La auditoria real por APISIX quedo en `30/30` rutas sin `Tenant no disponible`, sin `Operacion no disponible` y sin errores fatales de carga; `Venta en local POS` tambien valida el estado real de caja contra `GET /dashboard/api/admin/pos/shift/active`.
 
@@ -8943,7 +9366,7 @@ Cambios:
 - La validacion de smoke del tenant-admin ahora exige que el estado `Proximamente` sea visible en el paquete medico mientras el resto de la gestion SaaS sigue funcional.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "tenant admin|coverage matrix|quick presets"` y `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "tenant-admin"`.
 - Resultado validado: el tenant-admin sigue compacto en desktop/mobile y ya no invita a activar verticales sin implementacion real completa.
 
@@ -8962,7 +9385,7 @@ Cambios:
 - `smoke.spec.ts` y `tenant-admin.component.spec.ts` amplian cobertura para presets coherentes y bundles Ecommerce visibles.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health`, `node node_modules/playwright/cli.js test tests/e2e/smoke.spec.ts --grep "tenant admin|coverage matrix|quick presets"` y `node node_modules/playwright/cli.js test tests/e2e/layout-density.spec.ts --grep "tenant-admin"`.
 - Resultado validado: tenant-admin mantiene tipografia compacta desktop/mobile, abre con preset Ecommerce coherente y permite llegar a `Bundles funcionales` y `Ajuste fino` sin overflow ni paneles gigantes.
 
@@ -8983,7 +9406,7 @@ Cambios:
 - Los links publicos internos que antes apuntaban a `/home` ahora apuntan a `/`, dejando que la resolucion tenant-aware decida el destino correcto.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `git -C Dashboard diff --check`, `npm run docker:health` y `npm run runtime:check`.
 - Playwright por APISIX con resolucion forzada a `192.168.100.229` valido:
   - `https://paramascotasec.com/dashboard/sign-in` -> `https://paramascotasec.com/dashboard/paramascotas-backend` con chip `Administrador ParaMascotasEC`.
@@ -9002,7 +9425,7 @@ Cambios:
 - Esto complementa la correccion previa de POS: `Venta en local` ya no deja el mensaje generico de fallo cuando habia desincronizacion de turno; ahora, ademas, la propia vista declara que soporta `Abrir o cerrar caja`, `Movimientos POS` y `Venta local y cotizacion`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run lint`, `npm run docker:health` y Playwright focalizado `tests/e2e/paramascotas-real-integrations.spec.ts` para:
   - `Reporte general` sin errores fatales.
   - `Venta en local` sin `Operacion no disponible`.
@@ -9021,7 +9444,7 @@ Cambios:
 - La configuracion logistica lateral pasa de 4 columnas comprimidas a 2 columnas en escritorio y 1 columna en mobile, evitando inputs cortados y texto montado.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/operations/shipments?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/operations/shipments?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: 2 graficas, 4 KPIs, 3 paneles de insight, H1 16px, H2/H3 14px, `overflow=0`, inputs de configuracion de 141px minimo en escritorio y 346px en mobile.
@@ -9038,7 +9461,7 @@ Cambios:
 - La pantalla mantiene consumo interno directo por proxy del Dashboard hacia las mismas firmas reales: `GET /api/admin/dashboard/stats`, `GET /api/admin/inventory/intelligence` y `GET /api/products?scope=admin`; APISIX sigue siendo solo entrada publica externa.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/monitoring/alerts?tenant=paramascotasec` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/monitoring/alerts?tenant=paramascotasec` valido desktop/mobile con datos simulados de API: H1 16px, H2/H3 14px, 2 graficas, 4 KPIs, 7 alertas clicables, metadatos de accion con ancho estable y `overflow=0`.
@@ -9055,7 +9478,7 @@ Cambios:
 - El registro del modulo declara tambien `Productos admin` como endpoint de soporte para `product-page`.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/product-page` responde 200.
 - Playwright con datos simulados de API valido desktop/mobile: imagen visible, producto real en preview, 4 tarjetas de confianza, actualizacion reactiva de `Personas viendo`, titulos 18px/15px desktop y 16px/14px mobile, layout mobile de una columna y `overflow=0`.
@@ -9072,7 +9495,7 @@ Cambios:
 - `Ventas` ajusta la grafica de canales a barras apiladas para que disponibles/controlados/bloqueados sean visibles aun con valores cero o parciales.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - `npm run build` local no se pudo ejecutar en el host porque Node es `22.22.2` y Angular exige `22.22.3+` o Node 24; el build Docker uso Node 26 y completo correctamente.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/reporting/general` responde 200.
@@ -9090,7 +9513,7 @@ Cambios:
 - Los controles de horas pasan a sliders con barras de riesgo, warnings operativos y layout responsive 3 columnas desktop / 1 columna mobile sin scroll horizontal.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/monitoring/security-settings` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/monitoring/security-settings?tenant=paramascotasec` valido desktop/mobile con 2 graficas, preset `Estricto`, titulo 18px/16px, `overflow=0` y layout 3 columnas desktop / 1 columna mobile.
@@ -9107,7 +9530,7 @@ Cambios:
 - Se reforzaron las grillas/formularios nativos con `align-items: start`, `min-width: 0` y `max-width: 100%` para evitar tarjetas estiradas, campos de fecha invadiendo columnas y scroll horizontal en mobile.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/discount-codes` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/finance/discount-codes?tenant=paramascotasec` valido desktop/mobile con 2 graficas, filtro `Agotados`, edicion de cupon, titulo 18px/16px, `overflow=0`, `formOverflow=0` y layout de 2 columnas desktop / 1 columna mobile.
@@ -9124,7 +9547,7 @@ Cambios:
 - Se corrigio el layout mobile de tarjetas de precios: miniatura compacta de 64px y metricas en dos columnas para evitar imagenes enormes y desperdicio vertical.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/margins`, `/dashboard/paramascotas-panel/finance/calculations` y `/dashboard/paramascotas-panel/finance/pricing-rules` responden 200.
 - Playwright valido las tres rutas en desktop con 2 graficas, tarjetas de producto, imagenes visibles, filtros de riesgo activos y `overflow=0`; mobile en `calculations` valido 2 graficas, filtro `Sin costo`, titulo 16px, `overflow=0` y miniatura de producto de 64px.
@@ -9142,7 +9565,7 @@ Cambios:
 - El layout responsive mantiene miniaturas compactas en mobile, evita tablas/desbordes y conserva titulos compactos.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/taxes` responde 200.
 - Playwright por `https://paramascotasec.com/dashboard/paramascotas-panel/finance/taxes?tenant=paramascotasec` valido desktop/mobile con 2 graficas, 6 tarjetas de producto, imagenes visibles, `overflow=0`, titulo 18px/16px y navegacion desde producto hacia `/dashboard/paramascotas-panel/catalog/products`.
@@ -9158,7 +9581,7 @@ Cambios:
 - El layout evita tarjetas estiradas y mantiene H1 compacto: validado en desktop con titulo 18px y en mobile con titulo 16px, sin overflow horizontal.
 
 Operacion y verificacion:
-- Se redeplego solo `Dashboard` con `cd Dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
+- Se redeplego solo `Dashboard` con `cd dashboard && npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados, SRI o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run docker:health`, `npm run runtime:check`, `git -C Dashboard diff --check`, `git -C paramascotasec diff --check` y `./scripts/check-container-connectivity.sh development`.
 - `npm run build` local quedo bloqueado por Node `22.22.2`; Angular CLI exige `22.22.3+`, `24.15+` o `26+`. El build Docker del Dashboard uso la imagen `node:26-alpine` y levanto correctamente.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/expenses` responde 200.
@@ -9482,7 +9905,7 @@ Cambios:
 - Los widgets iniciales de inventario en `Paramascotas backend` ahora son accionables: sin stock, stock bajo, critico, sobrestock, riesgo y catalogo abren un drilldown con productos filtrados, imagen, precio y estado. El snapshot conserva el catalogo completo para ese drilldown y limita solo la vista previa.
 
 Operacion y verificacion:
-- Se desplego solo el Dashboard QA con `cd Dashboard && npm run docker:up`; no se desplegaron backend, frontend publico, Gateway, DB, Facturador ni production.
+- Se desplego solo el Dashboard QA con `cd dashboard && npm run docker:up`; no se desplegaron backend, frontend publico, Gateway, DB, Facturador ni production.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run build`, `npm run docker:health`, `npm run runtime:check`, `./scripts/check-container-connectivity.sh development` y `git diff --check` en los repos tocados.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-backend` y `/dashboard/tenant-admin` responden 200.
 - No se tocaron datos, certificados, secretos, SRI, Facturador, facturas ni produccion.
@@ -9569,7 +9992,7 @@ Operacion y verificacion:
 - Se redeplego solo `Dashboard` con `npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI, certificados o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run build`, `npm run docker:health`, `npm run runtime:check`, `git diff --check` y `./scripts/check-container-connectivity.sh development`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/catalogs` responde 200; `HEAD /dashboard/api/uploads/images` responde 405 desde el handler Next, esperado para endpoint POST-only; `POST /dashboard/api/uploads/images` sin sesion admin responde 401.
-- Validado dentro del contenedor `dashboard`: nginx efectivo mantiene `proxy_pass http://paramascotasec-frontend:3000/api/uploads/images` para subidas y `proxy_pass http://paramascotasec-backend-web:8080/api/` para API PHP.
+- Validado dentro del contenedor `dashboard`: nginx efectivo mantiene `proxy_pass http://webparamascotas:3000/api/uploads/images` para subidas y `proxy_pass http://paramascotasec-backend-web:8080/api/` para API PHP.
 
 ### 2026-06-15 - Dashboard: Paramascotas Backend Operativo Compacto
 
@@ -9591,8 +10014,8 @@ Operacion y verificacion:
 Objetivo: cerrar una brecha funcional de `Productos` frente a `/my-account`, manteniendo el consumo interno directo y sin encadenar llamadas internas hacia APISIX.
 
 Cambios:
-- `Dashboard/nginx.conf`, `Dockerfile`, `docker-compose.yml`, `.env`, `.env.example` y tools de entorno agregan `TECNOLTS_UPLOAD_PROXY_URL`, separado de `TECNOLTS_API_PROXY_URL`.
-- En QA local `TECNOLTS_API_PROXY_URL` apunta directo a `http://paramascotasec-backend-web:8080/api/` y `TECNOLTS_UPLOAD_PROXY_URL` apunta directo a `http://paramascotasec-frontend:3000/api/uploads/images`; APISIX queda solo como entrada publica externa.
+- `dashboard/nginx.conf`, `Dockerfile`, `docker-compose.yml`, `.env`, `.env.example` y tools de entorno agregan `TECNOLTS_UPLOAD_PROXY_URL`, separado de `TECNOLTS_API_PROXY_URL`.
+- En QA local `TECNOLTS_API_PROXY_URL` apunta directo a `http://paramascotasec-backend-web:8080/api/` y `TECNOLTS_UPLOAD_PROXY_URL` apunta directo a `http://webparamascotas:3000/api/uploads/images`; APISIX queda solo como entrada publica externa.
 - El editor nativo de `Productos` del Dashboard carga referencias reales de marca/categoria/proveedor, agrega `datalist`, preview de imagen, selector de archivo JPG/PNG/WebP, carga multiple para galeria, ordenamiento de imagenes y bloqueo de guardado mientras suben archivos.
 - La preparacion de imagen replica el comportamiento de `/my-account`: valida formato/tamano maximo 8 MB y recorta/redimensiona miniaturas a 640x800 y galeria a 1200x1500 antes de enviar al handler Next.
 
@@ -9600,7 +10023,7 @@ Operacion y verificacion:
 - Se redeplego solo `Dashboard` con `npm run docker:up`; no se desplego production ni se tocaron DB, Facturador, SRI, certificados o datos financieros.
 - Pasaron `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm run build`, `npm run env:check`, `npm run docker:health` y `npm run runtime:check`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/catalog/products` responde 200; `HEAD /dashboard/api/uploads/images` responde 405 desde el handler Next, esperado para endpoint POST-only; `POST /dashboard/api/uploads/images` sin sesion admin responde 401.
-- Validado dentro del contenedor `dashboard`: nginx efectivo usa `proxy_pass http://paramascotasec-backend-web:8080/api/` para API PHP y `proxy_pass http://paramascotasec-frontend:3000/api/uploads/images` para subida de imagenes; ambos upstreams internos responden health 200.
+- Validado dentro del contenedor `dashboard`: nginx efectivo usa `proxy_pass http://paramascotasec-backend-web:8080/api/` para API PHP y `proxy_pass http://webparamascotas:3000/api/uploads/images` para subida de imagenes; ambos upstreams internos responden health 200.
 
 ### 2026-06-15 - Dashboard: Proxy Interno Directo al Backend
 
@@ -9608,7 +10031,7 @@ Objetivo: aclarar que el Dashboard no debe encadenar llamadas internas hacia API
 
 Cambios:
 - Textos visibles de `Paramascotas Panel` y `Paramascotas Backend` reemplazan "por APISIX" por "proxy interno del Dashboard" cuando describen consumo backend.
-- `Dashboard/docs/ARCHITECTURE.md`, `Dashboard/docs/ENVIRONMENTS.md` y `Dashboard/.env.example` documentan que `TECNOLTS_API_BASE_PATH=/dashboard/api` es la ruta publica del navegador, mientras `TECNOLTS_API_PROXY_URL=http://paramascotasec-backend-web:8080/api/` es el upstream interno directo.
+- `dashboard/docs/ARCHITECTURE.md`, `dashboard/docs/ENVIRONMENTS.md` y `dashboard/.env.example` documentan que `TECNOLTS_API_BASE_PATH=/dashboard/api` es la ruta publica del navegador, mientras `TECNOLTS_API_PROXY_URL=http://paramascotasec-backend-web:8080/api/` es el upstream interno directo.
 
 Decision:
 - En QA local, el navegador entra por `https://paramascotasec.com/dashboard/api/*` via APISIX porque es trafico externo; dentro de Docker, nginx del Dashboard reescribe y proxifica a `paramascotasec-backend-web:8080/api/` sin volver a pasar por APISIX.
@@ -9954,7 +10377,7 @@ Cambios:
 Operacion y verificacion:
 - Se redeplego solo Frontend development con `./scripts/deploy-development.sh frontend` y Dashboard con `npm run docker:up`; no se desplego production ni se tocaron backend, DB, Facturador, certificados o datos.
 - Pasaron en `Dashboard`: `npm run type:check`, `npm run type:any-check`, `npm run lint`, `npm test` completo (167 archivos / 359 tests), `npm run env:check`, `npm run runtime:check`, `npm run docker:health`.
-- Pasaron en `paramascotasec/app`: `npm run typecheck` y `npm run lint`.
+- Pasaron en `webparamascotas/app`: `npm run typecheck` y `npm run lint`.
 - Validado por APISIX con `--resolve paramascotasec.com:443:192.168.100.229`: `/dashboard/paramascotas-panel/finance/prices` responde 200, `/dashboard/api/health` responde `ok`, `/dashboard/api/admin/settings/pricing-margins` responde 401 JSON sin redireccion cuando no hay cookie admin, y `/my-account?tab=prices` responde 200.
 - Pasaron `./scripts/check-container-connectivity.sh development`, `./scripts/check-env-secrets.sh development` y `git diff --check` en `Dashboard` y `paramascotasec`. Persisten solo las 6 advertencias preexistentes del preflight sobre certificados/data historica del Facturador.
 
@@ -9967,8 +10390,8 @@ Cambios:
 - `/paramascotas-admin` embebe `/my-account` en un iframe same-origin para que todo el panel real de Paramascotas quede disponible dentro del Dashboard sin duplicar ni recortar funcionalidad; incluye accesos para refrescar, abrir aparte e iniciar sesion Paramascotas.
 - `/paramascotas-backend` consume `/dashboard/api/health`, `/dashboard/api/products`, `/dashboard/api/admin/dashboard/stats?include_report=0` y `/dashboard/api/admin/inventory/intelligence?window_days=30&target_days=30`; muestra estado API/DB, catalogo real y un resumen admin nativo de ventas, utilidad, inventario, pedidos recientes, estados y ranking.
 - Se agregaron contextos HTTP para integraciones reales: saltar fixtures, no enviar el Bearer demo del Dashboard al backend PHP y no redirigir el Dashboard cuando Paramascotas responda 401/403 por falta de cookie admin.
-- `TECNOLTS_API_PROXY_URL` del `.env` local del Dashboard apunta a `http://paramascotasec-backend-web:8080/api/`, usando la red interna `paramascotasec-web-internal`.
-- `Dashboard/.env.example`, `docs/ENVIRONMENTS.md` y `docs/ARCHITECTURE.md` documentan la distincion entre integraciones reales y templates.
+- `TECNOLTS_API_PROXY_URL` del `.env` local del Dashboard apunta a `http://paramascotasec-backend-web:8080/api/`, usando la red interna `webparamascotas-internal`.
+- `dashboard/.env.example`, `docs/ENVIRONMENTS.md` y `docs/ARCHITECTURE.md` documentan la distincion entre integraciones reales y templates.
 
 Operacion y verificacion:
 - Se reconstruyo `Dashboard` con `npm run docker:up`; no se redeplego production.
@@ -9990,7 +10413,7 @@ Cambios:
 - El admin de tenants muestra `Tenants demo`, `Crear tenant demo`, `Templates iniciales` y cuenta `templates`, dejando claro que usa fixtures locales.
 - Las descripciones visibles de catalogo de modulos, monitoreo, productos, facturacion, kanban, chat y blog se ajustaron a lenguaje de templates/demo.
 - Se conservaron los servicios `data/*-api.service.ts` como contratos tecnicos para integraciones futuras; no se conecto ningun backend real nuevo ni APIs externas.
-- `Dashboard/docs/ARCHITECTURE.md` y `features/monitoring/README.md` documentan que en QA local las pantallas consumen fixtures locales hasta conectar integraciones reales.
+- `dashboard/docs/ARCHITECTURE.md` y `features/monitoring/README.md` documentan que en QA local las pantallas consumen fixtures locales hasta conectar integraciones reales.
 
 Operacion y verificacion:
 - Se reconstruyo `Dashboard` con `npm run docker:up`; no se redeplego production.
@@ -10024,8 +10447,8 @@ Objetivo: exponer el proyecto `Dashboard` por el Gateway APISIX del QA local baj
 
 Cambios:
 - `Dashboard` ahora compila con `TECNOLTS_BASE_HREF=/dashboard/` y `TECNOLTS_API_BASE_PATH=/dashboard/api` para cargar assets y API bajo el prefijo publico.
-- `Dashboard/nginx.conf` atiende `/dashboard`, `/dashboard/` y `/dashboard/api/*`; el redirect de `/dashboard` es relativo para conservar HTTPS detras de APISIX.
-- `Dashboard/docker-compose.yml` conecta el contenedor `dashboard` a `paramascotasec-web-internal` para que APISIX lo alcance por DNS Docker.
+- `dashboard/nginx.conf` atiende `/dashboard`, `/dashboard/` y `/dashboard/api/*`; el redirect de `/dashboard` es relativo para conservar HTTPS detras de APISIX.
+- `dashboard/docker-compose.yml` conecta el contenedor `dashboard` a `webparamascotas-internal` para que APISIX lo alcance por DNS Docker.
 - `Gateway/scripts/sync-apisix.sh` agrega upstream/servicio/rutas gestionadas opcionales para Dashboard cuando `DASHBOARD_UPSTREAM` esta definido.
 - `Gateway/entorno/.env` declara `PUBLIC_DASHBOARD_SEGMENT=dashboard` y `DASHBOARD_UPSTREAM=http://dashboard:80`; la plantilla y README del Gateway quedan sincronizados.
 
@@ -10047,15 +10470,15 @@ Cambios:
 
 Operacion y verificacion:
 - No se desplegaron servicios, no se tocaron certificados, secretos, bases de datos, Facturador ni SRI.
-- Se sincronizo la copia versionada `paramascotasec/docs/AI_CONTEXT.md`.
+- Se sincronizo la copia versionada `webparamascotas/docs/AI_CONTEXT.md`.
 
 ### 2026-06-15 - Despliegue Development del Dashboard
 
 Objetivo: desplegar el proyecto separado `Dashboard` en el ambiente local de desarrollo.
 
 Cambios:
-- Se creo `Dashboard/.env` local ignorado por Git con `APP_ENV=development` y `TECNOLTS_HTTP_PORT=8081`; permisos ajustados a `600`.
-- `Dashboard/docker-compose.yml` agrega `extra_hosts: host.docker.internal:host-gateway` para que Nginx pueda resolver el proxy `/api/` en Docker Linux.
+- Se creo `dashboard/.env` local ignorado por Git con `APP_ENV=development` y `TECNOLTS_HTTP_PORT=8081`; permisos ajustados a `600`.
+- `dashboard/docker-compose.yml` agrega `extra_hosts: host.docker.internal:host-gateway` para que Nginx pueda resolver el proxy `/api/` en Docker Linux.
 
 Operacion y verificacion:
 - Se ejecuto `npm run docker:up` desde `Dashboard`; la imagen Angular/Nginx se construyo con Node 26 dentro de Docker.
@@ -10081,8 +10504,8 @@ Verificacion:
 Objetivo: crear una base trazable para que nuevas funcionalidades declaren pantallas, endpoints, permisos, SEO, datos, SRI/correos y pruebas antes de entrar al flujo development.
 
 Cambios:
-- Se agrego `paramascotasec/docs/capabilities/*.json` como registro declarativo por dominio y `paramascotasec/scripts/generate-system-capabilities.mjs` como generador/validador.
-- El generador produce `paramascotasec/docs/system-capabilities.generated.json` y `paramascotasec/app/src/generated/systemCapabilities.ts`; `src/lib/api/endpoints.ts` construye sus rutas desde ese helper.
+- Se agrego `webparamascotas/docs/capabilities/*.json` como registro declarativo por dominio y `webparamascotas/scripts/generate-system-capabilities.mjs` como generador/validador.
+- El generador produce `webparamascotas/docs/system-capabilities.generated.json` y `webparamascotas/app/src/generated/systemCapabilities.ts`; `src/lib/api/endpoints.ts` construye sus rutas desde ese helper.
 - Backend mueve su lista de rutas a `paramascotasec-backend/config/routes.php`, cada entrada con `capability`; `public/index.php` registra desde ese archivo.
 - Facturador agrega `Facturador/config/routes.capabilities.php` para auditar rutas de health, SRI test/production, RIDE/XML/PDF y mail-test.
 - Se agrego `scripts/e2e-development.sh`, que valida capability registry, checks del workspace, preflight de secretos, conectividad, SEO audit, PHPUnit del Facturador y probes Gateway/API/SEO desde el manifiesto.
@@ -10168,7 +10591,7 @@ Operacion y verificacion:
 - Se desplego solo development por scripts: backend, frontend y gateway. No se desplego production.
 - No se ejecutaron migraciones, no se limpiaron datos y no se emitieron comprobantes SRI.
 - Validado: `https://paramascotasec.com/`, `/paramascotasec/api/health`, `/paramascotasec/api/products`, `/paramascotasec/facturacion/health`, alias `www` con 301 y rutas legacy con 404.
-- Pasaron `npm run typecheck`, `npm run lint`, sintaxis PHP/config/scripts, `docker compose --env-file Gateway/entorno/.env config`, `./scripts/check-container-connectivity.sh development`, `./scripts/check-env-secrets.sh development`, `./scripts/check-env-secrets.sh all`, `./scripts/check-paramascotas.sh` y `paramascotasec/scripts/check-api-routes.sh`.
+- Pasaron `npm run typecheck`, `npm run lint`, sintaxis PHP/config/scripts, `docker compose --env-file Gateway/entorno/.env config`, `./scripts/check-container-connectivity.sh development`, `./scripts/check-env-secrets.sh development`, `./scripts/check-env-secrets.sh all`, `./scripts/check-paramascotas.sh` y `webparamascotas/scripts/check-api-routes.sh`.
 - Quedan advertencias operativas preexistentes: sucursales Facturador development con API test sin `.p12` y datos/keys historicos de tenants no principales; no se modificaron por ser limpieza de datos separada.
 
 ### 2026-06-09 - Erradicacion de Identificadores Legacy en Preflight
@@ -10177,7 +10600,7 @@ Objetivo: eliminar nombres legacy del propio sistema de verificacion single-site
 
 Cambios:
 - `scripts/check-env-secrets.sh` reemplaza la lista negra textual de identificadores antiguos por controles positivos: `server_name` del Gateway solo permite `paramascotasec.com` y `www.paramascotasec.com`; upstreams solo permiten los servicios internos esperados; backend config solo declara `paramascotasec`; frontend solo conserva el directorio de tenant `paramascotasec.com`.
-- `AGENTS.md` y `paramascotasec/docs/AI_CONTEXT.md` neutralizan menciones historicas explicitas a nombres legacy, conservando el contexto como "legacy no permitido".
+- `AGENTS.md` y `webparamascotas/docs/AI_CONTEXT.md` neutralizan menciones historicas explicitas a nombres legacy, conservando el contexto como "legacy no permitido".
 
 Operacion y verificacion:
 - No se desplego ningun servicio y no se tocaron `.env`, bases de datos, certificados ni secretos.
@@ -10410,7 +10833,7 @@ Objetivo: ordenar la operacion para que existan dos comandos generales y comando
 Cambios:
 - Se agregaron wrappers raiz `scripts/deploy-development.sh <servicio>` y `scripts/deploy-production.sh <servicio>` para `facturador`, `db`, `backend`, `frontend` y `gateway`.
 - `README.md` quedo como guia corta de despliegues, reglas de ambiente, operaciones puntuales y verificaciones.
-- `AGENTS.md` y `paramascotasec/docs/AI_CONTEXT.md` documentan los wrappers canonicos y reemplazan los comandos antiguos por carpeta para deploys individuales.
+- `AGENTS.md` y `webparamascotas/docs/AI_CONTEXT.md` documentan los wrappers canonicos y reemplazan los comandos antiguos por carpeta para deploys individuales.
 
 Decisiones:
 - Se mantienen `./deploy-development.sh` y `./deploy-production.sh` como unicos comandos generales del workspace.
@@ -10435,7 +10858,7 @@ Operacion:
 - Se aplico solo en development.
 - Se redeplegaron Backend y Facturador con scripts development; Facturador requirio `RUN_DB_MIGRATIONS=1`.
 - El volumen DB del Facturador aceptaba la credencial de `.env`; se alineo el rol `billing_user` con `.env.development` sin imprimir secretos para que el runtime development y migraciones conecten correctamente.
-- Durante el deploy orquestado, `paramascotasec-app-dev` no tenia egreso por estar solo en `paramascotasec-web-internal`; se conecto temporalmente a `bridge` solo para completar `npm ci` y luego se desconecto. El frontend quedo nuevamente solo en `paramascotasec-web-internal`.
+- Durante el deploy orquestado, `webparamascotas` no tenia egreso por estar solo en `webparamascotas-internal`; se conecto temporalmente a `bridge` solo para completar `npm ci` y luego se desconecto. El frontend quedo nuevamente solo en `webparamascotas-internal`.
 
 Verificacion:
 - Prueba enfocada XML: `docker run --rm -v /home/admincenter/contenedores/Facturador:/app -w /app pm-facturador-php85-check ./vendor/bin/phpunit tests/Integration/Infrastructure/XmlInvoiceBuilderTest.php` paso con 3 tests / 17 assertions; valida `precioUnitario=17.304348`, `subtotal=17.30`, `IVA=2.60`, `total=19.90` y mezcla IVA 0/15.
@@ -10590,8 +11013,8 @@ Verificacion:
 - `git diff --check` paso.
 - `http://127.0.0.1:3000/` respondio `200` y `/healthz` respondio `ok`.
 - Capturas Playwright generadas:
-  - `paramascotasec/docs/screenshots/2026-05-25-slide-showcase-proportions/slide3_spacing_viewport_1024x768_v3.png`
-  - `paramascotasec/docs/screenshots/2026-05-25-slide-showcase-proportions/slide3_spacing_viewport_768x768_v3.png`
+  - `webparamascotas/docs/screenshots/2026-05-25-slide-showcase-proportions/slide3_spacing_viewport_1024x768_v3.png`
+  - `webparamascotas/docs/screenshots/2026-05-25-slide-showcase-proportions/slide3_spacing_viewport_768x768_v3.png`
 
 ### 2026-05-25 - Fix Responsive y Fecha en Ventas por Factura (Dev)
 
@@ -10679,8 +11102,8 @@ Cambios frontend:
 
 Verificacion:
 - `git diff --check` paso.
-- `npm run lint` (en `paramascotasec/app`) mantiene bloqueo preexistente de ESLint 10.4.0: `TypeError: scopeManager.addGlobals is not a function`.
-- `npm run typecheck` (en `paramascotasec/app`) mantiene bloqueo preexistente TS6: `TS5101` por `baseUrl` deprecado sin `ignoreDeprecations`.
+- `npm run lint` (en `webparamascotas/app`) mantiene bloqueo preexistente de ESLint 10.4.0: `TypeError: scopeManager.addGlobals is not a function`.
+- `npm run typecheck` (en `webparamascotas/app`) mantiene bloqueo preexistente TS6: `TS5101` por `baseUrl` deprecado sin `ignoreDeprecations`.
 - Verificacion adicional de tipos del cambio con `npx tsc --noEmit --ignoreDeprecations 6.0`: no reporta errores nuevos del reporte; persiste issue preexistente en `tailwind.config.ts` (`mode` no reconocido en `Config`).
 
 Pendientes:
@@ -10697,7 +11120,7 @@ Cambios frontend:
 - Se conservan los tamanos globales del banner y las reglas existentes de tablet/movil; bajo `1280px` los beneficios siguen ocultos para priorizar CTA/copy.
 
 Verificacion:
-- Capturas Playwright actualizadas en `paramascotasec/docs/screenshots/2026-05-25-slide-showcase-proportions/`; se regeneraron las de `1920x961` despues del ajuste FHD.
+- Capturas Playwright actualizadas en `webparamascotas/docs/screenshots/2026-05-25-slide-showcase-proportions/`; se regeneraron las de `1920x961` despues del ajuste FHD.
 - `127.0.0.1:3000` responde `200` y `/healthz` responde `ok`.
 - `git diff --check` paso.
 - `npm run lint` sigue bloqueado por incompatibilidad preexistente de ESLint 10.4.0: `TypeError: scopeManager.addGlobals is not a function`.
@@ -10731,7 +11154,7 @@ Cambios frontend:
 
 Despliegue/verificacion:
 - No se ejecuto deploy de produccion. El cambio quedo servido en `127.0.0.1:3000` por hot reload del contenedor dev activo.
-- Capturas Playwright guardadas en `paramascotasec/docs/screenshots/2026-05-25-slide-showcase-all/` para slides 1, 2 y 3 en:
+- Capturas Playwright guardadas en `webparamascotas/docs/screenshots/2026-05-25-slide-showcase-all/` para slides 1, 2 y 3 en:
   - `2560x1440`
   - `1920x961`
   - `1366x768`
@@ -10779,11 +11202,11 @@ Cambios frontend:
   - CTA y barra de beneficios en desktop grande bajan su altura maxima a `clamp(..., 50px)` para no quedar pegados al borde inferior.
 
 Despliegue/verificacion:
-- No se ejecuto deploy de produccion. El cambio quedo servido en el contenedor dev activo `paramascotasec-app-dev` via hot reload.
+- No se ejecuto deploy de produccion. El cambio quedo servido en el contenedor dev activo `webparamascotas` via hot reload.
 - `curl http://127.0.0.1:3000/healthz` responde `ok` y `/` responde HTTP 200.
 - CSS servido local confirma reglas `pet-hero-showcase*` en `/_next/static/css/app/layout.css` y no contiene los overrides retirados (`aspect-ratio: 1920 / 670`, `min-height: clamp(440px, 35vw, 680px)`, recortes `pet-hero-showcase__animal`).
 - `git diff --check` paso.
-- Capturas Playwright guardadas en `paramascotasec/docs/screenshots/2026-05-25-slide1-showcase/`:
+- Capturas Playwright guardadas en `webparamascotas/docs/screenshots/2026-05-25-slide1-showcase/`:
   - `home_slide1_1920x961_restored_proportions.png`
   - `home_slide1_1366x768_restored_proportions.png`
   - `home_slide1_1024x768_restored_proportions.png`
@@ -10860,7 +11283,7 @@ Cambios frontend:
 
 Despliegue/verificacion:
 - No se ejecuto deploy de produccion; cambio aplicado para este workspace en `development`.
-- Se aplico `paramascotasec/scripts/deploy-development.sh` y `paramascotasec-app-dev` quedo healthy en `127.0.0.1:3000`.
+- Se aplico `webparamascotas/scripts/deploy-development.sh` y `webparamascotas` quedo healthy en `127.0.0.1:3000`.
 - Verificado en `127.0.0.1:3000/_next/static/css/app/layout.css` que compilacion incluye los nuevos `clamp()` desktop/FHD y `--pet-hero-copy-top` de la segunda pasada.
 - Verificado en CSS servido local que la tercera pasada refleja `clamp(40px, 2.95vw, 56px)`, `clamp(17px, 1.28vw, 24px)`, `clamp(54px, 2.9vw, 72px)` y `clamp(21px, 1.22vw, 29px)`.
 - Verificado en CSS servido local que la cuarta pasada refleja `clamp(52px, 3.42vw, 74px)`, `clamp(68px, 3.58vw, 94px)`, `clamp(78px, 2.95vw, 98px)` y `clamp(92px, 2.05vw, 116px)`.
@@ -10905,26 +11328,26 @@ Cambios frontend:
 
 Despliegue/verificacion:
 - Se valido el diff CSS en `globals.scss` con reglas nuevas del rango `1024-1535.98px`.
-- Correccion de entorno: este workspace opera en `development`; se aplico `paramascotasec/scripts/deploy-development.sh` y quedo `paramascotasec-app-dev` healthy en `127.0.0.1:3000`.
+- Correccion de entorno: este workspace opera en `development`; se aplico `webparamascotas/scripts/deploy-development.sh` y quedo `webparamascotas` healthy en `127.0.0.1:3000`.
 - Verificado en `127.0.0.1:3000/_next/static/css/app/layout.css` que la compilacion incluye `min-height: clamp(300px, 25vw, 360px)` y `bottom: clamp(50px, 4.2vw, 76px)` en el media query critico.
 - Verificado adicionalmente en `127.0.0.1:3000/_next/static/css/app/layout.css` la presencia del media query `@media (min-width: 1024px) and (max-height: 920px)` con `min-height: clamp(330px, 47vh, 430px)` y `top` ajustado para `pet-hero-copy*`.
 - Verificado en CSS servido local que el override final `1280-1919.98px` incluye `min-height: clamp(360px, 25.8vw, 440px)` y `--pet-hero-title-size: clamp(31px, 2.35vw, 42px)`.
 - Verificado en CSS servido local que el override `1920-2559.98px` incluye `min-height: 360px` y `--pet-hero-title-size: clamp(36px, 1.95vw, 42px)`.
 - Verificado en `127.0.0.1:3000/_next/static/css/app/layout.css` que el override `1920-2559.98px` refleja `min-height: clamp(390px, 23vw, 460px)` y `bottom: clamp(56px, 3.4vw, 78px)`.
-- Captura Playwright de control en `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_fhd_after.png` confirma el CTA completo visible en ancho ~1923.
+- Captura Playwright de control en `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_fhd_after.png` confirma el CTA completo visible en ancho ~1923.
 - Verificado en `127.0.0.1:3000` (despues del ajuste correctivo) que el hero mantiene CTA visible sin recorte lateral evidente de la imagen en `1923x900` y `1923x700` con capturas `hero_fhd_after_v2.png` y `hero_fhd_after_v2_h700.png`.
-- Entorno restaurado a modo correcto de este workspace (`development`) con `paramascotasec/scripts/deploy-development.sh`; solo queda activo `paramascotasec-app-dev`.
+- Entorno restaurado a modo correcto de este workspace (`development`) con `webparamascotas/scripts/deploy-development.sh`; solo queda activo `webparamascotas`.
 - Verificado en CSS servido local que el override final FHD refleja `--pet-hero-title-size: clamp(37px, 2.02vw, 44px)`, `--pet-hero-cta-size: clamp(13px, 0.82vw, 15px)` y `--pet-hero-copy-top: 15.8%`.
-- Capturas Playwright de la octava pasada en `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_fhd_after_v3.png` y `hero_fhd_after_v3_h700.png` confirman mayor legibilidad sin recortar gato ni CTA.
+- Capturas Playwright de la octava pasada en `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_fhd_after_v3.png` y `hero_fhd_after_v3_h700.png` confirman mayor legibilidad sin recortar gato ni CTA.
 - Capturas Playwright de control de copy para los nuevos slides:
-  - `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide2_copy_v1.png`
-  - `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide3_copy_v1.png`
+  - `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide2_copy_v1.png`
+  - `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide3_copy_v1.png`
 - Verificado en `127.0.0.1:3000` el agrandado de CTA con capturas:
-  - `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_cta_bigger_v1.png`
-  - `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide2_cta_bigger_v1.png`
+  - `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_cta_bigger_v1.png`
+  - `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide2_cta_bigger_v1.png`
 - Verificado adicionalmente en viewport `1752x342` y `1752x480` (escenario similar a DevTools docked) con:
-  - `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide3_cta_bigger_v2_1752x342.png`
-  - `paramascotasec/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide3_cta_bigger_v2_1752x480.png`
+  - `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide3_cta_bigger_v2_1752x342.png`
+  - `webparamascotas/docs/screenshots/2026-05-24-slider-cta-fix/hero_slide3_cta_bigger_v2_1752x480.png`
 - `npm run lint` no pudo completarse por error preexistente de toolchain (`TypeError: scopeManager.addGlobals is not a function` en ESLint 10.4.0).
 - `npm run typecheck` no pudo completarse por configuracion preexistente (`TS5101` por `baseUrl` deprecado sin `ignoreDeprecations` en TS6).
 
@@ -10946,7 +11369,7 @@ Cambios frontend:
 
 Despliegue/verificacion:
 - `npm run lint`, `npm run typecheck` y `bash /home/admincenter/contenedores/scripts/check-paramascotas.sh` pasaron.
-- Se verifico en `127.0.0.1:3000` que el CSS compilado incluye reglas nuevas (`pm-product-editor-modal`, `pm-catalog-search__actions`, `pm-quickview-modal`) y se generaron capturas en `paramascotasec/docs/screenshots/2026-05-24-overlap-audit`.
+- Se verifico en `127.0.0.1:3000` que el CSS compilado incluye reglas nuevas (`pm-product-editor-modal`, `pm-catalog-search__actions`, `pm-quickview-modal`) y se generaron capturas en `webparamascotas/docs/screenshots/2026-05-24-overlap-audit`.
 
 Pendientes:
 - QA autenticada completa del modal admin de producto y tabs de cuenta sigue pendiente por credenciales temporales.
@@ -10964,9 +11387,9 @@ Cambios frontend:
 
 Despliegue/verificacion:
 - `npm run lint`, `npm run typecheck` y `bash /home/admincenter/contenedores/scripts/check-paramascotas.sh` pasaron.
-- `paramascotasec/scripts/deploy-development.sh` recreo `paramascotasec-app-dev` y quedo healthy.
+- `webparamascotas/scripts/deploy-development.sh` recreo `webparamascotas` y quedo healthy.
 - Verificado que `127.0.0.1:3000` sirve el CSS actualizado (regla `pm-catalog-pagination__nav` nueva).
-- Capturas Playwright de validacion en `paramascotasec/docs/screenshots/2026-05-24-visual-hotfix`, incluyendo home con paginacion cargada (`home_pagination_after_redeploy.png`) y rutas base de tienda/cuenta.
+- Capturas Playwright de validacion en `webparamascotas/docs/screenshots/2026-05-24-visual-hotfix`, incluyendo home con paginacion cargada (`home_pagination_after_redeploy.png`) y rutas base de tienda/cuenta.
 
 Pendientes:
 - QA autenticada completa de tabs admin/cliente sigue pendiente por credenciales temporales.
@@ -10983,10 +11406,10 @@ Cambios frontend:
 - `WhatsAppFloatingButton.tsx` ya no se oculta en checkout; permanece visible en todas las rutas y se compensa con safe bottom spacing en vistas criticas (publico, auth y cuenta).
 
 Despliegue/verificacion:
-- `paramascotasec/scripts/deploy-development.sh` recreo `paramascotasec-app-dev` (healthy) en `127.0.0.1:3000`.
+- `webparamascotas/scripts/deploy-development.sh` recreo `webparamascotas` (healthy) en `127.0.0.1:3000`.
 - `npm run lint`, `npm run typecheck` y `bash /home/admincenter/contenedores/scripts/check-paramascotas.sh` pasaron.
 - Capturas Playwright desktop + movil regeneradas para: `/`, `/tienda`, `/pages/contact`, `/pages/preguntas-frecuentes`, `/cart`, `/checkout`, `/login`, `/register`, `/forgot-password`, `/reset-password`, `/order-tracking`, `/my-account`.
-- Evidencia en `paramascotasec/docs/screenshots/2026-05-24-visual-reacomodo`.
+- Evidencia en `webparamascotas/docs/screenshots/2026-05-24-visual-reacomodo`.
 
 Pendientes:
 - Validacion autenticada completa de tabs admin/cliente pendiente por credenciales temporales (y recovery/MFA si aplica).
@@ -11011,13 +11434,13 @@ Cambios frontend:
 - `WhatsAppFloatingButton` se oculta en `/checkout` para no tapar campos del formulario en movil.
 
 Despliegue/verificacion:
-- `paramascotasec/scripts/deploy-development.sh` recreo el frontend dev y quedo healthy.
-- `paramascotasec/scripts/deploy-production.sh` recreo el frontend production de este workspace (`paramascotasec-app`) y quedo healthy.
+- `webparamascotas/scripts/deploy-development.sh` recreo el frontend dev y quedo healthy.
+- `webparamascotas/scripts/deploy-production.sh` recreo el frontend production de este workspace (`webparamascotas`) y quedo healthy.
 - Screenshots Playwright revisados en home movil/desktop, tienda desktop, contacto movil, about desktop y FAQ movil; tambien se verifico que el CSS servido por `127.0.0.1:3000` contiene las reglas `pm-*` nuevas.
 - Segunda pasada verificada con capturas Playwright de catalogo desktop/movil, buscador rapido del header y tienda; `bash scripts/check-paramascotas.sh` paso.
 - `npm run lint`, `npm run typecheck`, build Docker de produccion con Node 24 y `bash scripts/check-paramascotas.sh` pasaron. El build mantiene advertencias preexistentes de Sass `@import`, trazas dinamicas de uploads y peer deps de ESLint/TypeScript.
-- Tercera pasada verificada con capturas Playwright de home, catalogo, paginacion/beneficios, buscador rapido, tienda desktop/movil y ficha de producto desktop/movil; `paramascotasec/scripts/deploy-production.sh` dejo `paramascotasec-app` healthy y `bash scripts/check-paramascotas.sh` paso.
-- Cuarta pasada verificada con capturas Playwright de checkout desktop/movil, carrito desktop con producto y catalogo desktop; `paramascotasec/scripts/deploy-production.sh` dejo `paramascotasec-app` healthy y `bash scripts/check-paramascotas.sh` paso.
+- Tercera pasada verificada con capturas Playwright de home, catalogo, paginacion/beneficios, buscador rapido, tienda desktop/movil y ficha de producto desktop/movil; `webparamascotas/scripts/deploy-production.sh` dejo `webparamascotas` healthy y `bash scripts/check-paramascotas.sh` paso.
+- Cuarta pasada verificada con capturas Playwright de checkout desktop/movil, carrito desktop con producto y catalogo desktop; `webparamascotas/scripts/deploy-production.sh` dejo `webparamascotas` healthy y `bash scripts/check-paramascotas.sh` paso.
 - Diagnostico de publicacion: `paramascotasec.com` resuelve a `80.241.213.31`, mientras este workspace sale a Internet como `157.100.87.179`; por DNS, la URL publica real sigue sirviendo otro host/build aunque este workspace este actualizado.
 
 Pendientes:
@@ -11038,8 +11461,8 @@ Cambios frontend:
 - Cuarta pasada: el filtro secundario del home/catalogo (`Marcas`) usa `pm-catalog-filter__tabs--secondary` como fila horizontal desplazable, reduciendo altura y evitando que el card crezca con varias filas de pills.
 
 Despliegue/verificacion:
-- `NODE_ENV=production npm run build` ejecutado dentro de `paramascotasec-app-dev` paso.
-- `paramascotasec/scripts/deploy-development.sh` recreo el frontend dev y quedo healthy.
+- `NODE_ENV=production npm run build` ejecutado dentro de `webparamascotas` paso.
+- `webparamascotas/scripts/deploy-development.sh` recreo el frontend dev y quedo healthy.
 - `scripts/check-paramascotas.sh` paso tras las pasadas visuales.
 
 Pendientes:
@@ -11077,7 +11500,7 @@ Cambios frontend:
 - `audit-seo-merchant.mjs` valida `/sitemap-images.xml`: conteo de `<url>`, imagenes, `<loc>`, imagen por URL y falla con exit code si hay errores estructurales.
 
 Despliegue/verificacion:
-- Publicado en este ambiente dev/QA con perfil frontend `production` usando `paramascotasec/scripts/deploy-production.sh`; pendiente promover el mismo cambio a produccion real.
+- Publicado en este ambiente dev/QA con perfil frontend `production` usando `webparamascotas/scripts/deploy-production.sh`; pendiente promover el mismo cambio a produccion real.
 - Verificado `https://paramascotasec.com/sitemap-images.xml`: HTTP 200, 107 URLs, 281 imagenes, `urlsetIsEmpty=false`, `errors=[]`.
 - `robots.txt` incluye `sitemap.xml` y `sitemap-images.xml`.
 

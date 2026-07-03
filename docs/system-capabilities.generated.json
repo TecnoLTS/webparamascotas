@@ -1135,6 +1135,46 @@
       },
       "backendRoutes": [
         {
+          "id": "backend:GET:/api/admin/products",
+          "method": "GET",
+          "path": "/api/admin/products",
+          "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@adminIndex",
+          "capabilityId": "catalog.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/products",
+          "method": "POST",
+          "path": "/api/admin/products",
+          "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@store",
+          "capabilityId": "catalog.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/products/{id}",
+          "method": "GET",
+          "path": "/api/admin/products/{id}",
+          "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@adminShow",
+          "capabilityId": "catalog.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/products/{id}",
+          "method": "PUT",
+          "path": "/api/admin/products/{id}",
+          "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@update",
+          "capabilityId": "catalog.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:DELETE:/api/admin/products/{id}",
+          "method": "DELETE",
+          "path": "/api/admin/products/{id}",
+          "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@destroy",
+          "capabilityId": "catalog.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:POST:/api/products",
           "method": "POST",
           "path": "/api/products",
@@ -2266,6 +2306,14 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:POST:/api/auth/access-requests",
+          "method": "POST",
+          "path": "/api/auth/access-requests",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@requestAccess",
+          "capabilityId": "users.auth",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:POST:/api/auth/password-reset/request",
           "method": "POST",
           "path": "/api/auth/password-reset/request",
@@ -2570,6 +2618,14 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:POST:/api/auth/access-requests",
+        "method": "POST",
+        "path": "/api/auth/access-requests",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\AuthController@requestAccess",
+        "capabilityId": "users.auth",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:POST:/api/auth/password-reset/request",
         "method": "POST",
         "path": "/api/auth/password-reset/request",
@@ -2711,6 +2767,46 @@
         "path": "/api/products/{id}",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@show",
         "capabilityId": "catalog.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/products",
+        "method": "GET",
+        "path": "/api/admin/products",
+        "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@adminIndex",
+        "capabilityId": "catalog.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/products",
+        "method": "POST",
+        "path": "/api/admin/products",
+        "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@store",
+        "capabilityId": "catalog.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/products/{id}",
+        "method": "GET",
+        "path": "/api/admin/products/{id}",
+        "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@adminShow",
+        "capabilityId": "catalog.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/products/{id}",
+        "method": "PUT",
+        "path": "/api/admin/products/{id}",
+        "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@update",
+        "capabilityId": "catalog.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:DELETE:/api/admin/products/{id}",
+        "method": "DELETE",
+        "path": "/api/admin/products/{id}",
+        "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@destroy",
+        "capabilityId": "catalog.admin",
         "source": "backend/config/routes.php"
       },
       {
@@ -3886,115 +3982,6 @@
         "source": "webparamascotas/app/src/app/uploads/[...path]/route.ts"
       }
     ],
-    "frontendApiUses": [
-      {
-        "path": "/api/admin/billing/rides/{param}/cancel-and-reissue",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1386"
-      },
-      {
-        "path": "/api/admin/billing/rides/{param}/pdf",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1348"
-      },
-      {
-        "path": "/api/admin/expenses/{param}/status",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1571"
-      },
-      {
-        "path": "/api/admin/expenses/recurrences/{param}",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1533"
-      },
-      {
-        "path": "/api/admin/expenses/recurrences/{param}",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1553"
-      },
-      {
-        "path": "/api/admin/expenses/recurrences/{param}",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1591"
-      },
-      {
-        "path": "/api/admin/expenses/recurrences",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1513"
-      },
-      {
-        "path": "/api/admin/expenses",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1493"
-      },
-      {
-        "path": "/api/admin/financial-adjustments",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1635"
-      },
-      {
-        "path": "/api/admin/financial-periods/{param}/close",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1610"
-      },
-      {
-        "path": "/api/admin/historical-sales",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1655"
-      },
-      {
-        "path": "/api/auth/logout",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:3011"
-      },
-      {
-        "path": "/api/auth/logout",
-        "source": "webparamascotas/app/src/components/Header/Menu/MenuPet.tsx:510"
-      },
-      {
-        "path": "/api/auth/session",
-        "source": "webparamascotas/app/src/lib/apiClient.ts:174"
-      },
-      {
-        "path": "/api/orders/{param}/invoice",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1680"
-      },
-      {
-        "path": "/api/orders/{param}/status",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1287"
-      },
-      {
-        "path": "/api/products/{param}",
-        "source": "webparamascotas/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2987"
-      },
-      {
-        "path": "/api/products/{param}",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1232"
-      },
-      {
-        "path": "/api/products/{param}",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1257"
-      },
-      {
-        "path": "/api/products/{param}",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:2080"
-      },
-      {
-        "path": "/api/products",
-        "source": "webparamascotas/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:2994"
-      },
-      {
-        "path": "/api/uploads/images",
-        "source": "webparamascotas/app/src/app/my-account/components/BrandReferenceSectionCard.tsx:42"
-      },
-      {
-        "path": "/api/uploads/images",
-        "source": "webparamascotas/app/src/app/my-account/components/product-editor/ProductEditorController.tsx:429"
-      },
-      {
-        "path": "/api/uploads/images",
-        "source": "webparamascotas/app/src/app/my-account/components/ProductReferenceSectionCard.tsx:349"
-      },
-      {
-        "path": "/api/user/addresses",
-        "source": "webparamascotas/app/src/app/checkout/CheckoutClient.tsx:498"
-      },
-      {
-        "path": "/api/user/addresses",
-        "source": "webparamascotas/app/src/app/checkout/CheckoutClient.tsx:865"
-      },
-      {
-        "path": "/api/user/password",
-        "source": "webparamascotas/app/src/app/my-account/MyAccountController.tsx:1890"
-      }
-    ]
+    "frontendApiUses": []
   }
 }

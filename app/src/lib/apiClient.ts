@@ -2,6 +2,13 @@ import { getConfiguredTenantProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 import { clearStoredSession } from '@/lib/authSession'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
+import {
+  apiEndpoints,
+  authFreeApiPaths,
+  isPublicApiPath,
+  shouldDisableApiPathCache,
+} from '@/lib/api/endpoints'
+import { toInternalBackendUrl } from '@/lib/api/backendBase'
 
 const getCsrfCookieName = () => {
   const fromEnv = process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME
@@ -69,53 +76,11 @@ const resolveUrl = (path: string) => {
   if (path.startsWith('http')) return path
   const normalizedPath = path.startsWith('/') ? path : `/${path}`
 
-  // Si estamos en el servidor (SSR), usamos la URL interna de Docker
   if (typeof window === 'undefined') {
-    const internalUrl = process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api'
-    return `${internalUrl.replace(/\/$/, '')}${normalizedPath.replace('/api', '')}`
+    return toInternalBackendUrl(normalizedPath)
   }
 
   return toPublicApiUrl(normalizedPath)
-}
-
-const authFreePaths = new Set([
-  '/api/auth/login',
-  '/api/auth/register',
-  '/api/auth/request-otp',
-  '/api/auth/verify-otp',
-  '/api/auth/password-reset/request',
-  '/api/auth/password-reset/confirm',
-  '/api/auth/verify',
-  '/api/auth/session',
-  '/api/contact',
-])
-
-const isPublicApiPath = (pathname: string, method?: string) => {
-  const normalizedMethod = (method || 'GET').toUpperCase()
-
-  if (normalizedMethod === 'GET' || normalizedMethod === 'HEAD') {
-    if (pathname === '/api/products' || pathname.startsWith('/api/products/')) return true
-    if (pathname === '/api/settings/shipping') return true
-    if (pathname === '/api/settings/store-status') return true
-    if (pathname === '/api/settings/brand-logos') return true
-    if (pathname === '/api/settings/product-categories') return true
-    if (pathname === '/api/settings/product-category-references') return true
-    if (pathname === '/api/health') return true
-  }
-
-  if (normalizedMethod === 'POST' && (pathname === '/api/orders/quote' || pathname === '/api/contact')) return true
-
-  return false
-}
-
-const shouldDisableServerCache = (pathname: string) => {
-  if (pathname === '/api/products' || pathname.startsWith('/api/products/')) {
-    return true
-  }
-  if (pathname === '/api/settings/product-categories' || pathname === '/api/settings/product-category-references') {
-    return true
-  }
-  return false
 }
 
 const getServerCachePolicy = (
@@ -124,10 +89,10 @@ const getServerCachePolicy = (
 ): { cache: RequestCache; next?: { revalidate?: number | false } } | null => {
   if (typeof window !== 'undefined') return null
   if (method !== 'GET') return null
-  if (!isPublicApiPath(pathname, method) || shouldDisableServerCache(pathname)) return null
+  if (!isPublicApiPath(pathname, method) || shouldDisableApiPathCache(pathname)) return null
 
   if (process.env.NODE_ENV === 'development') {
-    if (pathname === '/api/products' || pathname.startsWith('/api/products/')) {
+    if (pathname === apiEndpoints.products || pathname.startsWith(`${apiEndpoints.products}/`)) {
       return { cache: 'force-cache', next: { revalidate: 5 } }
     }
     return { cache: 'force-cache', next: { revalidate: 15 } }
@@ -171,7 +136,7 @@ const refreshBrowserCsrfToken = async () => {
     return browserCsrfRefreshPromise
   }
 
-  browserCsrfRefreshPromise = fetch(resolveUrl('/api/auth/session'), {
+  browserCsrfRefreshPromise = fetch(resolveUrl(apiEndpoints.auth.session), {
     method: 'GET',
     headers: {
       'x-auth-surface': 'ecommerce',
@@ -202,7 +167,7 @@ const withAuth = async (path: string, init?: RequestInit): Promise<RequestInit> 
     const cookieHeader = serverContext?.cookieHeader ?? null
     const csrfToken = methodRequiresCsrf(init?.method) ? (serverContext?.csrfToken ?? null) : null
     attachInternalProxyToken(headers)
-    if (authFreePaths.has(pathname)) {
+    if (authFreeApiPaths.has(pathname)) {
       const tenantHost = resolveForwardedHost(forwardedHost)
       const tenantProto = forwardedProto || getConfiguredTenantProto()
       if (tenantHost) {
@@ -241,7 +206,7 @@ const withAuth = async (path: string, init?: RequestInit): Promise<RequestInit> 
     return { ...init, headers }
   }
 
-  if (authFreePaths.has(pathname)) {
+  if (authFreeApiPaths.has(pathname)) {
     return { ...init, headers }
   }
   if (isPublicApiPath(pathname, init?.method)) {
@@ -318,7 +283,7 @@ const getApiErrorCode = (body: unknown) => {
 const shouldRetryWithFreshCsrf = (path: string, init: RequestInit | undefined, status: number, body: unknown) => {
   if (typeof window === 'undefined') return false
   if (!methodRequiresCsrf(init?.method)) return false
-  if (authFreePaths.has(getPathname(path))) return false
+  if (authFreeApiPaths.has(getPathname(path))) return false
   return status === 403 && getApiErrorCode(body) === 'CSRF_TOKEN_INVALID'
 }
 

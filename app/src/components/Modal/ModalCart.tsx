@@ -12,6 +12,7 @@ import { useCart } from '@/context/CartContext'
 import { useSite } from '@/context/SiteContext'
 import { countdownTime } from '@/store/countdownTime'
 import CountdownTimeType from '@/type/CountdownType';
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { getPublicStoreStatus } from '@/lib/api/settings'
 import { getProductVariantLabel } from '@/lib/catalog'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
@@ -22,7 +23,10 @@ const Icon = {
 } as const
 
 const SUGGESTIONS_TIMEOUT_MS = 15000
-const SUGGESTIONS_ENDPOINTS = ['/suggestions-data?limit=4', '/api/suggestions?limit=4'] as const
+const SUGGESTIONS_ENDPOINTS = [
+    { url: `${apiEndpoints.internal.suggestionsData}?limit=4`, needsGatewayUrl: false },
+    { url: `${apiEndpoints.internal.suggestionsApi}?limit=4`, needsGatewayUrl: true },
+] as const
 
 const ModalCart = ({
     serverTimeLeft,
@@ -54,7 +58,8 @@ const ModalCart = ({
     const fetchSuggestedProducts = async (signal: AbortSignal): Promise<ProductType[]> => {
         for (const url of SUGGESTIONS_ENDPOINTS) {
             try {
-                const res = await fetch(url.startsWith('/api/') ? toPublicApiUrl(url) : url, {
+                const requestUrl = url.needsGatewayUrl ? toPublicApiUrl(url.url) : url.url
+                const res = await fetch(requestUrl, {
                     cache: 'no-store',
                     signal,
                 })

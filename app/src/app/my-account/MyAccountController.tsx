@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import MenuOne from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import {
     Archive,
     ArrowDownLeft,
@@ -1229,7 +1230,7 @@ const MyAccount = () => {
         if (!confirm('¿Retirar este producto del catálogo activo? Se ocultará de la tienda y conservará su historial.')) return;
 
         try {
-            await requestApi(`/api/products/${id}`, {
+            await requestApi(apiEndpoints.product(id), {
                 method: 'DELETE',
             });
             showNotification('Producto retirado correctamente');
@@ -1254,7 +1255,7 @@ const MyAccount = () => {
         }
 
         try {
-            await requestApi(`/api/products/${productId}`, {
+            await requestApi(apiEndpoints.product(productId), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1273,7 +1274,7 @@ const MyAccount = () => {
 
     const handleViewOrder = async (orderId: string) => {
         try {
-            const res = await requestApi<any>(`/api/orders/${orderId}`);
+            const res = await requestApi<any>(apiEndpoints.order(orderId));
             setSelectedOrder(res.body);
             setIsOrderModalOpen(true);
         } catch (error) {
@@ -1284,7 +1285,7 @@ const MyAccount = () => {
 
     const handleUpdateOrderStatus = async (orderId: string, newStatus: string) => {
         try {
-            await requestApi(`/api/orders/${orderId}/status`, {
+            await requestApi(apiEndpoints.orderStatus(orderId), {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1300,11 +1301,11 @@ const MyAccount = () => {
             );
             setIsOrderModalOpen(false);
             if (user?.role === 'admin') {
-                const res = await requestApi<Order[]>('/api/orders');
+                const res = await requestApi<Order[]>(apiEndpoints.orders);
                 setAdminOrdersList(res.body);
                 invalidateAdminPanelData();
             } else {
-                const res = await requestApi<Order[]>('/api/orders/my-orders');
+                const res = await requestApi<Order[]>(apiEndpoints.myOrders);
                 setUserOrders(res.body);
             }
         } catch (error: any) {
@@ -1329,7 +1330,7 @@ const MyAccount = () => {
     const loadBillingRidePdfs = React.useCallback(async () => {
         setBillingRideLoading(true)
         try {
-            const res = await withTransientRetry(() => requestApi<BillingRidePdf[]>('/api/admin/billing/rides?limit=150'))
+            const res = await withTransientRetry(() => requestApi<BillingRidePdf[]>(apiEndpoints.adminBillingRides({ limit: 150 })))
             setBillingRidePdfs(Array.isArray(res.body) ? res.body : [])
         } catch (error) {
             console.error(error)
@@ -1345,7 +1346,7 @@ const MyAccount = () => {
             showNotification('La factura no tiene clave de acceso válida.', 'error')
             return
         }
-        const openedWindow = window.open(toPublicApiUrl(`/api/admin/billing/rides/${encodeURIComponent(normalized)}/pdf`), '_blank')
+        const openedWindow = window.open(toPublicApiUrl(apiEndpoints.adminBillingRidePdf(normalized)), '_blank')
         if (!openedWindow) {
             showNotification('Tu navegador bloqueó la apertura del PDF.', 'error')
         }
@@ -1383,7 +1384,7 @@ const MyAccount = () => {
 
         setBillingRideReissueAccessKey(normalized)
         try {
-            await requestApi(`/api/admin/billing/rides/${encodeURIComponent(normalized)}/cancel-and-reissue`, {
+            await requestApi(apiEndpoints.adminBillingRideCancelAndReissue(normalized), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -1414,12 +1415,11 @@ const MyAccount = () => {
             if (businessExpenseFilters.period && /^\d{4}-(0[1-9]|1[0-2])$/.test(businessExpenseFilters.period)) params.set('period', businessExpenseFilters.period)
             if (businessExpenseFilters.from) params.set('from', businessExpenseFilters.from)
             if (businessExpenseFilters.to) params.set('to', businessExpenseFilters.to)
-            const query = params.toString()
             const res = await withTransientRetry(() => requestApi<{
                 expenses?: BusinessExpense[]
                 summary?: BusinessExpenseSummary
                 categories?: string[]
-            }>(`/api/admin/expenses${query ? `?${query}` : ''}`))
+            }>(apiEndpoints.adminExpenses(Object.fromEntries(params))))
             setBusinessExpenses(Array.isArray(res.body.expenses) ? res.body.expenses : [])
             setBusinessExpenseSummary(res.body.summary ?? null)
             setBusinessExpenseCategories(Array.isArray(res.body.categories) ? res.body.categories : [])
@@ -1442,7 +1442,7 @@ const MyAccount = () => {
                 recurrences?: BusinessExpenseRecurrence[]
                 summary?: BusinessExpenseSummary
                 categories?: string[]
-            }>('/api/admin/expenses/recurrences'))
+            }>(apiEndpoints.adminExpenseRecurrences))
             setBusinessExpenseRecurrences(Array.isArray(res.body.recurrences) ? res.body.recurrences : [])
             if (res.body.summary) setBusinessExpenseSummary(res.body.summary)
             if (Array.isArray(res.body.categories)) setBusinessExpenseCategories(res.body.categories)
@@ -1465,7 +1465,7 @@ const MyAccount = () => {
                 current_period?: FinancialPeriod
                 periods?: FinancialPeriod[]
                 adjustments?: FinancialAdjustment[]
-            }>('/api/admin/financial-periods'))
+            }>(apiEndpoints.adminFinancialPeriods))
             setCurrentFinancialPeriod(res.body.current_period ?? null)
             setFinancialPeriods(Array.isArray(res.body.periods) ? res.body.periods : [])
             setFinancialAdjustments(Array.isArray(res.body.adjustments) ? res.body.adjustments : [])
@@ -1490,7 +1490,7 @@ const MyAccount = () => {
     const createBusinessExpense = React.useCallback(async (payload: Record<string, unknown>) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi('/api/admin/expenses', {
+            await requestApi(apiEndpoints.adminExpenseCreate, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -1510,7 +1510,7 @@ const MyAccount = () => {
     const createBusinessExpenseRecurrence = React.useCallback(async (payload: Record<string, unknown>) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi('/api/admin/expenses/recurrences', {
+            await requestApi(apiEndpoints.adminExpenseRecurrenceCreate, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -1530,7 +1530,7 @@ const MyAccount = () => {
     const updateBusinessExpenseRecurrence = React.useCallback(async (recurrenceId: string, payload: Record<string, unknown>) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi(`/api/admin/expenses/recurrences/${encodeURIComponent(recurrenceId)}`, {
+            await requestApi(apiEndpoints.adminExpenseRecurrence(recurrenceId), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -1550,7 +1550,7 @@ const MyAccount = () => {
     const deleteBusinessExpenseRecurrence = React.useCallback(async (recurrenceId: string) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi(`/api/admin/expenses/recurrences/${encodeURIComponent(recurrenceId)}`, {
+            await requestApi(apiEndpoints.adminExpenseRecurrence(recurrenceId), {
                 method: 'DELETE',
             })
             showNotification('Recurrencia eliminada. Los gastos ya registrados se conservaron.')
@@ -1568,7 +1568,7 @@ const MyAccount = () => {
     const updateBusinessExpenseStatus = React.useCallback(async (expenseId: string, status: BusinessExpenseStatus) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi(`/api/admin/expenses/${encodeURIComponent(expenseId)}/status`, {
+            await requestApi(apiEndpoints.adminExpenseStatus(expenseId), {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
@@ -1588,7 +1588,7 @@ const MyAccount = () => {
     const toggleBusinessExpenseRecurrence = React.useCallback(async (recurrenceId: string, active: boolean) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi(`/api/admin/expenses/recurrences/${encodeURIComponent(recurrenceId)}`, {
+            await requestApi(apiEndpoints.adminExpenseRecurrence(recurrenceId), {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ active }),
@@ -1607,7 +1607,7 @@ const MyAccount = () => {
     const closeFinancialPeriod = React.useCallback(async (periodKey: string, notes: string) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi(`/api/admin/financial-periods/${encodeURIComponent(periodKey)}/close`, {
+            await requestApi(apiEndpoints.adminFinancialPeriodClose(periodKey), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ notes }),
@@ -1625,14 +1625,14 @@ const MyAccount = () => {
     }, [invalidateAdminPanelData, reloadBusinessExpensesPanel, showNotification])
 
     const previewFinancialPeriod = React.useCallback(async (periodKey: string) => {
-        const res = await requestApi<FinancialPeriodPreview>(`/api/admin/financial-periods/${encodeURIComponent(periodKey)}/preview`)
+        const res = await requestApi<FinancialPeriodPreview>(apiEndpoints.adminFinancialPeriodPreview(periodKey))
         return res.body
     }, [])
 
     const createFinancialAdjustment = React.useCallback(async (payload: Record<string, unknown>) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi('/api/admin/financial-adjustments', {
+            await requestApi(apiEndpoints.adminFinancialAdjustments, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -1652,7 +1652,7 @@ const MyAccount = () => {
     const createHistoricalSale = React.useCallback(async (payload: Record<string, unknown>) => {
         setBusinessExpenseSaving(true)
         try {
-            await requestApi('/api/admin/historical-sales', {
+            await requestApi(apiEndpoints.adminHistoricalSales, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -1660,8 +1660,12 @@ const MyAccount = () => {
             showNotification('Venta histórica registrada correctamente.')
             await Promise.allSettled([
                 reloadBusinessExpensesPanel(true),
-                requestApi<Order[]>('/api/orders').then((res) => setAdminOrdersList(res.body)),
-                requestApi<DashboardStats>(`/api/admin/dashboard/stats${/^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth) ? `?period=${encodeURIComponent(salesRankingMonth)}&include_report=0` : '?include_report=0'}`).then((res) => setDashboardStats(res.body)),
+                requestApi<Order[]>(apiEndpoints.orders).then((res) => setAdminOrdersList(res.body)),
+                requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(
+                    /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
+                        ? { period: salesRankingMonth, include_report: 0 }
+                        : { include_report: 0 }
+                )).then((res) => setDashboardStats(res.body)),
             ])
             invalidateAdminPanelData()
         } catch (error) {
@@ -1677,7 +1681,7 @@ const MyAccount = () => {
         let printWindow: Window | null = null
 
         try {
-            const res = await fetch(toPublicApiUrl(`/api/orders/${orderId}/invoice`), {
+            const res = await fetch(toPublicApiUrl(apiEndpoints.orderInvoice(orderId)), {
                 credentials: 'include'
             })
             if (!res.ok) {
@@ -1808,7 +1812,7 @@ const MyAccount = () => {
                 setAddressSaving(false)
                 return
             }
-            const res = await requestApi<{ addresses: SavedAddressEntry[] }>('/api/user/addresses', {
+            const res = await requestApi<{ addresses: SavedAddressEntry[] }>(apiEndpoints.userAddresses, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1858,7 +1862,7 @@ const MyAccount = () => {
         try {
             setProfileSaving(true)
             const name = `${profile.firstName} ${profile.lastName}`.trim()
-            const res = await requestApi<{ name?: string; profile?: typeof profile }>('/api/user/profile', {
+            const res = await requestApi<{ name?: string; profile?: typeof profile }>(apiEndpoints.userProfile, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1887,7 +1891,7 @@ const MyAccount = () => {
             }
 
             if (wantsPasswordChange) {
-                await requestApi('/api/user/password', {
+                await requestApi(apiEndpoints.userPassword, {
                     method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json'
@@ -1923,7 +1927,7 @@ const MyAccount = () => {
     const reloadAdminUsers = React.useCallback(async () => {
         if (user?.role !== 'admin') return
 
-        const res = await requestApi<AdminUserSummary[]>('/api/users')
+        const res = await requestApi<AdminUserSummary[]>(apiEndpoints.users)
 
         setAdminUsersList(Array.isArray(res.body) ? res.body : [])
     }, [user])
@@ -2043,7 +2047,7 @@ const MyAccount = () => {
         const productId = getAdminProductEntityId(product)
         if (productId) {
             try {
-                const res = await withTransientRetry(() => requestApi<any>(`/api/products/${encodeURIComponent(productId)}?scope=admin&procurement_detail=1`))
+                const res = await withTransientRetry(() => requestApi<any>(apiEndpoints.adminProduct(productId, { scope: 'admin', procurementDetail: true })))
                 const normalizedDetail = normalizeAdminProducts([res.body])[0]
                 if (normalizedDetail) {
                     const procurementDetail = res.body?.inventory?.procurementDetail
@@ -2077,7 +2081,7 @@ const MyAccount = () => {
 
         setProductPublicationPendingIds((prev) => ({ ...prev, [productId]: true }))
         try {
-            await requestApi(`/api/products/${productId}`, {
+            await requestApi(apiEndpoints.product(productId), {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -2114,7 +2118,7 @@ const MyAccount = () => {
         if (!user || user.role !== 'admin') return
         setVatLoading(true)
         try {
-            const res = await withTransientRetry(() => requestApi<{ rate: number; credit_current_rate?: number; credit_carryforward_rate?: number }>('/api/admin/settings/tax'))
+            const res = await withTransientRetry(() => requestApi<{ rate: number; credit_current_rate?: number; credit_carryforward_rate?: number }>(apiEndpoints.settings.tax))
             setVatRate(Number(res.body.rate ?? 0))
             setVatCreditCurrentRate(Number(res.body.credit_current_rate ?? 60))
             setVatCreditCarryforwardRate(Number(res.body.credit_carryforward_rate ?? 40))
@@ -2150,7 +2154,7 @@ const MyAccount = () => {
                 map_min_search_chars?: number
                 map_lookup_cooldown_seconds?: number
                 map_session_lookup_limit?: number
-            }>('/api/admin/settings/shipping'))
+            }>(apiEndpoints.settings.adminShipping))
             setShippingRates({
                 delivery: Number(res.body.delivery ?? 0),
                 pickup: Number(res.body.pickup ?? 0),
@@ -2194,7 +2198,7 @@ const MyAccount = () => {
                 map_min_search_chars?: number
                 map_lookup_cooldown_seconds?: number
                 map_session_lookup_limit?: number
-            }>('/api/settings/shipping')
+            }>(apiEndpoints.settings.publicShipping)
             setShippingRates((prev) => ({
                 ...prev,
                 delivery: Number(data.delivery ?? prev.delivery),
@@ -2319,7 +2323,7 @@ const MyAccount = () => {
         if (!user || user.role !== 'admin') return
         setPurchaseInvoicesLoading(true)
         try {
-            const res = await withTransientRetry(() => requestApi<any[]>('/api/admin/purchase-invoices?limit=200'))
+            const res = await withTransientRetry(() => requestApi<any[]>(apiEndpoints.adminPurchaseInvoices({ limit: 200 })))
             const rows = Array.isArray(res.body) ? res.body.map(normalizePurchaseInvoiceSummary) : []
             setRecentPurchaseInvoices(dedupePurchaseInvoiceSummaries(rows))
         } catch (error) {
@@ -2345,7 +2349,7 @@ const MyAccount = () => {
         setIsPurchaseInvoiceModalOpen(true)
         setPurchaseInvoiceDetailLoading(true)
         try {
-            const res = await withTransientRetry(() => requestApi<any>(`/api/admin/purchase-invoices/${encodeURIComponent(normalizedId)}`))
+            const res = await withTransientRetry(() => requestApi<any>(apiEndpoints.adminPurchaseInvoice(normalizedId)))
             setSelectedPurchaseInvoice(normalizePurchaseInvoiceDetail(res.body))
         } catch (error) {
             console.error(error)
@@ -2370,7 +2374,7 @@ const MyAccount = () => {
     const fetchProductProcurementDetail = React.useCallback(async (productId: string) => {
         const normalizedProductId = String(productId || '').trim()
         if (!normalizedProductId) return null
-        const res = await withTransientRetry(() => requestApi<any>(`/api/products/${encodeURIComponent(normalizedProductId)}?scope=admin&procurement_detail=1`))
+        const res = await withTransientRetry(() => requestApi<any>(apiEndpoints.adminProduct(normalizedProductId, { scope: 'admin', procurementDetail: true })))
         return normalizeProductProcurementDetail(res.body)
     }, [])
 
@@ -2615,7 +2619,7 @@ const MyAccount = () => {
     const handleSaveVat = async () => {
         setVatSaving(true)
         try {
-            const res = await requestApi<{ rate: number; credit_current_rate?: number; credit_carryforward_rate?: number }>('/api/admin/settings/tax', {
+            const res = await requestApi<{ rate: number; credit_current_rate?: number; credit_carryforward_rate?: number }>(apiEndpoints.settings.tax, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -2654,7 +2658,7 @@ const MyAccount = () => {
                 map_min_search_chars?: number
                 map_lookup_cooldown_seconds?: number
                 map_session_lookup_limit?: number
-            }>('/api/admin/settings/shipping', {
+            }>(apiEndpoints.settings.adminShipping, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -3008,7 +3012,7 @@ const MyAccount = () => {
         clearStoredSession()
 
         try {
-            await requestApi('/api/auth/logout', { method: 'POST' })
+            await requestApi(apiEndpoints.auth.logout, { method: 'POST' })
         } catch {
             // Even if the backend is unreachable, we still treat the user as logged out locally.
         }
@@ -3251,7 +3255,7 @@ const MyAccount = () => {
             setLocalSaleQuoteHistoryLoading(true)
         }
         try {
-            const result = await requestApi<AdminLocalQuotation[]>('/api/admin/quotes?limit=12')
+            const result = await requestApi<AdminLocalQuotation[]>(apiEndpoints.adminQuotes({ limit: 12 }))
             const rows = Array.isArray(result.body) ? result.body : []
             setLocalSaleQuoteHistory(rows)
         } catch (error) {
@@ -4846,7 +4850,7 @@ const MyAccount = () => {
         }
         try {
             setLocalSaleCustomerLookupLoading(true)
-            const res = await requestApi<{ found?: boolean; customer?: any }>(`/api/admin/pos/customer-by-document?document=${encodeURIComponent(rawDoc)}`)
+            const res = await requestApi<{ found?: boolean; customer?: any }>(apiEndpoints.adminPos.customerByDocument({ document: rawDoc }))
             const found = Boolean(res.body?.found && res.body?.customer)
             if (!found) {
                 setLocalSaleCustomerLookupMessage('Cliente no encontrado. Completa los datos manualmente.')
@@ -4924,7 +4928,7 @@ const MyAccount = () => {
         }
         try {
             setLocalSaleSaving(true)
-            const quotationResponse = await requestApi<AdminLocalQuotation>('/api/admin/quotes', {
+            const quotationResponse = await requestApi<AdminLocalQuotation>(apiEndpoints.adminQuoteCreate, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -5063,7 +5067,7 @@ const MyAccount = () => {
         try {
             setLocalSaleSaving(true)
             setLocalSaleError(null)
-            const converted = await requestApi<{ quotation: AdminLocalQuotation; order: any }>(`/api/admin/quotes/${encodeURIComponent(selectedLocalSaleQuotation.id)}/convert`, {
+            const converted = await requestApi<{ quotation: AdminLocalQuotation; order: any }>(apiEndpoints.adminQuoteConvert(selectedLocalSaleQuotation.id), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -5101,13 +5105,14 @@ const MyAccount = () => {
             }
             setLocalSaleQuoteHistory((prev) => prev.map((item) => item.id === updatedQuotation.id ? updatedQuotation : item))
             showNotification(createdOrderId ? `Venta creada desde cotización: ${createdOrderId}` : 'Cotización convertida a venta.')
-            const monthQuery = /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
-                ? `?period=${encodeURIComponent(salesRankingMonth)}&include_report=0`
-                : '?include_report=0'
             const [productsResult, ordersResult, statsResult] = await Promise.allSettled([
                 requestApi<any[]>(ADMIN_PRODUCTS_ENDPOINT),
-                requestApi<Order[]>('/api/orders'),
-                requestApi<DashboardStats>(`/api/admin/dashboard/stats${monthQuery}`),
+                requestApi<Order[]>(apiEndpoints.orders),
+                requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(
+                    /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
+                        ? { period: salesRankingMonth, include_report: 0 }
+                        : { include_report: 0 }
+                )),
             ])
             if (productsResult.status === 'fulfilled') {
                 setAdminProductsList(normalizeAdminProducts(productsResult.value.body))
@@ -5224,7 +5229,7 @@ const MyAccount = () => {
                     quantity: item.quantity
                 }))
             }
-            const created = await requestApi<any>('/api/orders', {
+            const created = await requestApi<any>(apiEndpoints.orderCreate, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
@@ -5262,13 +5267,14 @@ const MyAccount = () => {
 
             // El XML del SRI se genera automáticamente en el backend
             // No es necesario hacer una llamada adicional
-            const monthQuery = /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
-                ? `?period=${encodeURIComponent(salesRankingMonth)}&include_report=0`
-                : '?include_report=0'
             const [productsResult, ordersResult, statsResult] = await Promise.allSettled([
                 requestApi<any[]>(ADMIN_PRODUCTS_ENDPOINT),
-                requestApi<Order[]>('/api/orders'),
-                requestApi<DashboardStats>(`/api/admin/dashboard/stats${monthQuery}`)
+                requestApi<Order[]>(apiEndpoints.orders),
+                requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(
+                    /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
+                        ? { period: salesRankingMonth, include_report: 0 }
+                        : { include_report: 0 }
+                ))
             ])
             if (productsResult.status === 'fulfilled') {
                 setAdminProductsList(normalizeAdminProducts(productsResult.value.body))

@@ -5,6 +5,7 @@ import Image from '@/components/Common/AppImage'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { buildProductSeoProfile } from '@/lib/productSeoProfile'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
 import { updateProductReferenceData, type PricingCalc, type PricingMargins } from '@/lib/api/settings'
@@ -426,7 +427,7 @@ const uploadImage = async (file: File, kind: 'thumb' | 'gallery', metadata: Uplo
         }
     })
 
-    const res = await requestApi<{ url: string; width?: number; height?: number; kind: string; altText?: string }>(toPublicApiUrl('/api/uploads/images'), {
+    const res = await requestApi<{ url: string; width?: number; height?: number; kind: string; altText?: string }>(toPublicApiUrl(apiEndpoints.uploads.images), {
         method: 'POST',
         body: formData,
         timeoutMs: 60000,
@@ -2984,14 +2985,14 @@ export default function ProductEditorModal({
             }
 
             if (editingProduct) {
-                await withTransientRetry(() => requestApi(`/api/products/${form.id}`, {
+                await withTransientRetry(() => requestApi(apiEndpoints.product(form.id), {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 }))
                 showNotification(isRestockMode ? 'Compra registrada correctamente' : 'Producto actualizado correctamente')
             } else {
-                await withTransientRetry(() => requestApi('/api/products', {
+                await withTransientRetry(() => requestApi(apiEndpoints.products, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)

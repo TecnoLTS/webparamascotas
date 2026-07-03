@@ -30,6 +30,6 @@ export const updateAdminUser = (id: string, payload: AdminManagedUserPayload) =>
   })
 
 export const unlockAdminUser = (id: string) =>
-  requestApi<any>(`${apiEndpoints.user(id)}/unlock`, {
+  requestApi<any>(apiEndpoints.userUnlock(id), {
     method: 'POST',
   })

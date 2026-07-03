@@ -2,6 +2,7 @@
 
 import React from 'react'
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import type { DashboardStats, SalesReportView } from '../types'
 import { getEcuadorLastSevenDaysRange } from '../utils'
 
@@ -147,7 +148,15 @@ export function useReportData({
       }
     }
 
-    requestApi<NonNullable<ReportDataResult>>(`/api/admin/report${query}`, { signal: controller.signal })
+    requestApi<NonNullable<ReportDataResult>>(apiEndpoints.reports.admin(
+      salesRankingView === 'historical'
+        ? { scope: 'historical' }
+        : salesRankingView === 'week'
+          ? { scope: 'week', date: lastSevenDays.end }
+          : salesRankingView === 'daily' && salesRankingDate
+            ? { date: salesRankingDate }
+            : { period: salesRankingMonth }
+    ), { signal: controller.signal })
       .then((res) => {
         const data = res.body as NonNullable<ReportDataResult>
         if (cancelled || !data) return

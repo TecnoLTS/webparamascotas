@@ -3,6 +3,7 @@
 import React from 'react'
 
 import { requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import type { Order } from '../types'
 import { normalizeSavedAddresses, type SavedAddressEntry } from '../customerDataUtils'
 
@@ -93,7 +94,7 @@ export const useCustomerAccountData = ({
     const controller = new AbortController()
 
     current.setUserOrdersLoading(true)
-    requestApi<Order[]>('/api/orders/my-orders', { signal: controller.signal })
+    requestApi<Order[]>(apiEndpoints.myOrders, { signal: controller.signal })
       .then((res) => {
         if (cancelled || controller.signal.aborted) return
         current.setUserOrders(res.body)
@@ -128,7 +129,7 @@ export const useCustomerAccountData = ({
     const controller = new AbortController()
 
     current.setProfileLoading(true)
-    requestApi<{ name?: string; profile?: ProfileState }>('/api/user/profile', { signal: controller.signal })
+    requestApi<{ name?: string; profile?: ProfileState }>(apiEndpoints.userProfile, { signal: controller.signal })
       .then((res) => {
         if (cancelled || controller.signal.aborted) return
         const apiProfile: Partial<ProfileState> = res.body.profile || {}
@@ -170,7 +171,7 @@ export const useCustomerAccountData = ({
     const controller = new AbortController()
 
     current.setAddressLoading(true)
-    requestApi<{ addresses: SavedAddressEntry[] }>('/api/user/addresses', { signal: controller.signal })
+    requestApi<{ addresses: SavedAddressEntry[] }>(apiEndpoints.userAddresses, { signal: controller.signal })
       .then((res) => {
         if (cancelled || controller.signal.aborted) return
         const normalizedAddresses = normalizeSavedAddresses(res.body.addresses)

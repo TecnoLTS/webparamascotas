@@ -1,4 +1,6 @@
-export const ADMIN_PRODUCTS_ENDPOINT = '/api/products?scope=admin'
+import { apiEndpoints, withQuery } from '@/lib/api/endpoints'
+
+export const ADMIN_PRODUCTS_ENDPOINT = withQuery(apiEndpoints.products, { scope: 'admin' })
 export const DEFAULT_STORE_PAUSE_MESSAGE = 'Tienda temporalmente en mantenimiento. Intenta más tarde.'
 export const RETRYABLE_PANEL_ERROR_PATTERN = /(502|503|504|bad gateway|gateway timeout|service unavailable|failed to fetch|networkerror|tiempo de espera agotado)/i
 export const ECUADOR_TIME_ZONE = 'America/Guayaquil'

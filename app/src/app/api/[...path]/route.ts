@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server'
+import { getInternalBackendBaseUrl } from '@/lib/api/backendBase'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 import { getConfiguredCookieDomains } from '@/lib/cookieDomains'
@@ -21,7 +22,7 @@ const publicLegacyApiHosts = new Set(
 )
 
 const getBackendBase = () => {
-  return (process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api').replace(/\/$/, '')
+  return getInternalBackendBaseUrl()
 }
 
 const buildExpiredCookie = (name: string, options?: { domain?: string; httpOnly?: boolean }) => {

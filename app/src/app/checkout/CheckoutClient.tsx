@@ -11,6 +11,7 @@ import * as Icon from "@phosphor-icons/react/dist/ssr";
 import { createOrder, getQuote } from '@/lib/api'
 import { login, register, requestOtp, verifyOtp } from '@/lib/api/auth'
 import { fetchJson, requestApi } from '@/lib/apiClient'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { getStoredSessionUser, hasCookieSessionMarker, setCookieSessionMarker, setStoredSessionUser } from '@/lib/authSession'
 import { clearCheckoutDraft, isCountryEcuador, loadCheckoutDraft, normalizeCountryToEcuador, saveCheckoutDraft } from '@/lib/checkoutDraft'
 import { buildLiveAvailabilityMap, fetchLiveCatalogSnapshot } from '@/lib/liveCatalog'
@@ -363,7 +364,7 @@ const Checkout = () => {
             map_min_search_chars?: number
             map_lookup_cooldown_seconds?: number
             map_session_lookup_limit?: number
-        }>('/api/settings/shipping')
+        }>(apiEndpoints.settings.publicShipping)
             .then((data) => {
                 if (data && typeof data.delivery === 'number' && typeof data.pickup === 'number') {
                     setShippingRates({
@@ -398,7 +399,7 @@ const Checkout = () => {
         const fallbackName = storedUser?.name || ''
 
         try {
-            const res = await requestApi<CheckoutProfileResponse>('/api/user/profile', {})
+            const res = await requestApi<CheckoutProfileResponse>(apiEndpoints.userProfile, {})
             const profile = res.body.profile || {}
             const fullName = (res.body.name || fallbackName || '').trim()
             const [firstName, ...rest] = fullName.split(' ').filter(Boolean)
@@ -465,7 +466,7 @@ const Checkout = () => {
         if (!hasCookieSessionMarker()) return
 
         try {
-            const res = await requestApi<{ addresses: unknown[] }>('/api/user/addresses', {})
+            const res = await requestApi<{ addresses: unknown[] }>(apiEndpoints.userAddresses, {})
             const addresses = normalizeSavedAddressesForCheckout(res.body.addresses)
 
             if (addresses.length > 0) {
@@ -495,7 +496,7 @@ const Checkout = () => {
 
             applySavedAddressesToCheckout(fallbackAddresses)
 
-            await requestApi('/api/user/addresses', {
+            await requestApi(apiEndpoints.userAddresses, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json'
@@ -862,7 +863,7 @@ const Checkout = () => {
                 try {
                     const parsed = JSON.parse(pending)
                     if (Array.isArray(parsed) && parsed.length > 0) {
-                        await requestApi('/api/user/addresses', {
+                        await requestApi(apiEndpoints.userAddresses, {
                             method: 'PUT',
                             headers: {
                                 'Content-Type': 'application/json'
@@ -915,7 +916,7 @@ const Checkout = () => {
             if (isLoggedIn) {
                 try {
                     if (hasCookieSessionMarker()) {
-                        const res = await requestApi<{ profile?: { documentType?: string; documentNumber?: string; businessName?: string } }>('/api/user/profile', {
+                        const res = await requestApi<{ profile?: { documentType?: string; documentNumber?: string; businessName?: string } }>(apiEndpoints.userProfile, {
                         })
                         const profile = res.body.profile || {}
                         if (profile.documentType && profile.documentNumber) {

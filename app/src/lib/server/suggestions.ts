@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { apiEndpoints } from '@/lib/api/endpoints'
+import { toInternalBackendUrl } from '@/lib/api/backendBase'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 import { mapProductsToDto } from '@/lib/productMapper'
@@ -10,10 +12,7 @@ import {
 } from '@/lib/productSearch'
 import { ProductType } from '@/type/ProductType'
 
-const resolveBackendUrl = () => {
-  const base = process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api'
-  return `${base.replace(/\/$/, '')}/products`
-}
+const resolveBackendUrl = () => toInternalBackendUrl(apiEndpoints.products)
 
 const isDevelopment = process.env.NODE_ENV === 'development'
 const SUGGESTIONS_TIMEOUT_MS = 8000

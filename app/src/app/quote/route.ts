@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
+import { apiEndpoints } from '@/lib/api/endpoints'
+import { toInternalBackendUrl } from '@/lib/api/backendBase'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 
-const resolveBackendUrl = () => {
-  const base = process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api'
-  return `${base.replace(/\/$/, '')}/orders/quote`
-}
+const resolveBackendUrl = () => toInternalBackendUrl(apiEndpoints.orderQuote)
 
 export async function POST(req: Request) {
   const payload = await req.json().catch(() => null)

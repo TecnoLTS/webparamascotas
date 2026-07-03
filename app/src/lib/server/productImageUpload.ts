@@ -3,6 +3,7 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
+import { getInternalBackendBaseUrl } from '@/lib/api/backendBase'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
 
@@ -37,7 +38,7 @@ const categoryImageSpecs: Partial<Record<UploadImageKind, { width: number; heigh
   categoryFeaturedDesktopSecondary: { width: 1260, height: 590, label: 'banner2-desktop-630x295' },
 }
 const maxUploadBytes = 8 * 1024 * 1024
-const backendBase = (process.env.BACKEND_URL_INTERNAL || 'http://backend-http:8080/api').replace(/\/$/, '')
+const backendBase = getInternalBackendBaseUrl()
 const seoFilenameMaxLength = 140
 
 type UploadImageMetadata = {
