@@ -41,16 +41,18 @@ cd /home/admincenter/contenedores
 ./scripts/deploy.sh db
 ./scripts/deploy.sh backend
 ./scripts/deploy.sh frontend
+./scripts/deploy.sh dashboard
 ./scripts/deploy.sh gateway
 
 # Operaciones puntuales:
 RUN_DB_SETUP=1 ./scripts/deploy.sh backend
 ```
 
-Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `gateway`. Billing SRI vive dentro de `backend`; `billing` y `facturador` no son servicios desplegables del workspace.
-Orden del despliegue completo: DB -> Backend -> Frontend -> gatewayapisix.
-Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`). QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
-Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
+Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `dashboard`, `gateway`. Billing SRI vive dentro de `backend`; `billing` y `facturador` no son servicios desplegables del workspace.
+Orden del despliegue completo: DB -> Backend -> Frontend -> Dashboard -> gatewayapisix.
+Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`); `dashboard` usa `dashboard/.env` con `APP_ENV=qa|production`. QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
+Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh [--all|--database nombre|--databases lista]`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
+El backup sin selector permite elegir interactivamente todas las bases o bases especificas; en uso no interactivo conserva `--all`. `--list-databases` muestra las bases disponibles. Los backups parciales generan `.manifest`, no actualizan `latest.sql.enc` y el restore parcial reemplaza solo las bases incluidas.
 En restore, el ambiente activo define solo el destino (`POSTGRES_DATA_DIR`); el archivo origen puede ser cualquier `.sql.enc` valido y la clave debe corresponder al backup origen.
 El flujo interactivo de DB siempre pide clave: backup solicita clave y confirmacion antes de cifrar; restore solicita la clave y solo continua si descifra el archivo. `--yes` solo salta la confirmacion destructiva, no salta la clave.
 Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultimo backup local disponible. Restore con archivo exige ruta exacta existente; `backup-YYYYMMDDTHHMMSSZ.sql.enc` es solo patron documental. `./scripts/restore-from-backup.sh --list` lista nombres reales.
@@ -247,6 +249,7 @@ rm -rf basesdedatos/postgres18_data basesdedatos/postgres18_qa_data
 ./scripts/deploy.sh db
 RUN_DB_SETUP=1 SEED_QA_CATALOG=1 ./scripts/deploy.sh backend
 ./scripts/deploy.sh frontend
+./scripts/deploy.sh dashboard
 ./scripts/deploy.sh gateway
 ```
 
@@ -262,6 +265,43 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-04 - Backups DB: selector por base logica
+
+Objetivo: permitir que `basesdedatos/scripts/backup-and-stop.sh` respalde todo el cluster o bases especificas, sin perder el comportamiento historico completo en automatizaciones.
+
+Cambios:
+- `backup-and-stop.sh` acepta `--all`, `--database nombre`, `--databases lista` y `--list-databases`; sin selector, en TTY pregunta el alcance y en uso no interactivo conserva backup completo.
+- Los backups completos siguen usando `pg_dumpall` y actualizan `backups/latest.sql.enc`; los parciales usan `pg_dump --create --clean` por base, generan `.manifest` y no actualizan `latest.sql.enc`.
+- `restore-from-backup.sh` lee el `.manifest`: un backup completo reemplaza el cluster, y un backup parcial restaura solo las bases incluidas sobre el cluster activo.
+- `export-for-git.sh` y `transfer-db.sh export` propagan el mismo selector para transferencias parciales.
+- Documentacion actualizada en `AGENTS.md`, `webparamascotas/docs/AI_CONTEXT.md`, `README.md`, `COMANDOS-RAPIDOS.md` y `basesdedatos/README.md`.
+
+Verificacion:
+- Paso `bash -n` en `backup-and-stop.sh`, `restore-from-backup.sh`, `export-for-git.sh` y `transfer-db.sh`.
+- Pasaron ayudas `--help`.
+- Paso `./scripts/backup-and-stop.sh --list-databases`; listo `dashboard`, `ecommerce`, `facturacion`, `paramascotasec` y `postgres`.
+- Paso backup parcial de prueba `--database dashboard` con clave temporal no interactiva; genero `.sql.enc`, `.sha256` y `.manifest` con `backup_scope=selected`, descifro correctamente y no actualizo `latest.sql.enc`. El artefacto de prueba fue eliminado.
+- Paso validacion de base inexistente: falla antes de crear archivo.
+- Paso `./scripts/transfer-db.sh export --list-databases` sin pedir clave.
+- Paso `transfer-db.sh export --label test-dashboard --database dashboard`; el manifest combinado quedo coherente y el artefacto de prueba fue eliminado.
+- Paso dry-run de `restore-from-backup.sh` sobre backup parcial sin `--yes`: valida la clave y se detiene antes de tocar datos indicando que reemplazaria solo `dashboard`.
+
+### 2026-07-04 - Deploy workspace: dashboard integrado al orquestador
+
+Objetivo: incluir el proyecto `dashboard` en el despliegue completo `./deploy.sh` y como servicio individual canonico.
+
+Cambios:
+- `deploy.sh` y `scripts/deploy.sh` aceptan `dashboard` como servicio valido.
+- Nuevo helper `scripts/deploy-dashboard.sh` ejecuta el flujo propio `cd dashboard && npm run docker:up` y espera `npm run docker:health`.
+- `scripts/deploy-workspace.sh` despliega en orden DB -> Backend -> Frontend -> Dashboard -> gatewayapisix, valida consistencia `APP_ENV` del dashboard contra el modo del workspace y verifica el contenedor `dashboard` por red interna desde APISIX.
+- Documentacion operativa actualizada en `AGENTS.md`, `webparamascotas/docs/AI_CONTEXT.md`, `README.md` y `COMANDOS-RAPIDOS.md`.
+
+Verificacion:
+- Paso `bash -n deploy.sh scripts/deploy.sh scripts/deploy-workspace.sh scripts/deploy-dashboard.sh`.
+- Paso `./scripts/deploy.sh dashboard`; `dashboard` quedo healthy.
+- Paso `./deploy.sh`; el workspace QA quedo listo con `dashboard`, `webparamascotas`, `backend`, `basesdedatos` y `apisix-gateway` healthy.
+- Paso `curl -k -I --resolve paramascotasec.com:443:192.168.100.229 https://paramascotasec.com/dashboard/`; respondio `HTTP/2 200`.
 
 ### 2026-07-04 - Dashboard QA: proyecciones ReportingFinance por pantalla
 
