@@ -263,6 +263,104 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-04 - Dashboard QA: proyecciones ReportingFinance por pantalla
+
+Objetivo: continuar la optimizacion del menu Paramascotas eliminando la dependencia de pantallas operativas en `GET /api/admin/dashboard/stats`, sin cachear payloads pesados ni conservar rutas legacy como fuente de datos.
+
+Cambios:
+- `BusinessIntelligenceService` expone proyecciones ligeras para ranking de productos, alertas operativas y resumen financiero, reutilizando reglas existentes sin construir el dashboard completo.
+- `backend/src/Modules/ReportingFinance/Controllers/DashboardProjectionController.php` publica `GET /api/admin/reports/product-ranking`, `GET /api/admin/reports/operational-alerts` y `GET /api/admin/reports/financial-overview`.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` registra los nuevos contratos bajo el catalogo central `ecommerce.reports.*`.
+- `ParamascotasAdminApiService` agrega metodos tipados `getProductRankingReport()`, `getOperationalAlertsReport()` y `getFinancialOverviewReport()`.
+- `Ranking de productos`, `Alertas operativas`, `Estado comercial de la tienda`, `Reporte de ventas` y `Balance general` dejan de llamar `getAdminDashboardStats()`; cada pantalla usa la proyeccion especifica que necesita.
+- `dashboard/tools/check-paramascotas-performance.mjs` ahora bloquea `getAdminDashboardStats()` y literales `admin/dashboard/stats` dentro de paginas/componentes Paramascotas, ademas de los limites/proyecciones ya existentes.
+- `webparamascotas/app/src/lib/api/endpoints.ts` reemplaza el ultimo contrato vivo `backend:GET:/api/admin/report` por `backend:GET:/api/admin/reports/general`.
+- Se regeneraron `webparamascotas/docs/system-capabilities.generated.json` y `webparamascotas/app/src/generated/systemCapabilities.ts` para incluir 148 rutas tenantizadas.
+
+Verificacion:
+- Paso `cd dashboard && npm run performance:check`.
+- Paso `php -l backend/src/Services/BusinessIntelligenceService.php`, `php -l backend/src/Modules/ReportingFinance/Controllers/DashboardProjectionController.php` y `php -l backend/src/Modules/ReportingFinance/routes.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs` (`113` endpoints).
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run build`; bundle inicial estimado `234.20 kB` transferidos.
+- Paso `php backend/scripts/check_modular_routes.php` (`161` rutas).
+- Paso `cd webparamascotas/app && npm run typecheck` y `npm run api:contracts:check`.
+- Paso `./scripts/check-paramascotas.sh`.
+- Paso `./scripts/check-container-connectivity.sh qa`.
+- Desplegado con `./scripts/deploy.sh backend`, `cd dashboard && npm run docker:up` y `./scripts/deploy.sh gateway`; `backend-http`, `dashboard` y `apisix-gateway` quedaron healthy.
+- Rutas nuevas por APISIX sin sesion devuelven `401` esperado: `/dashboard/api/admin/reports/product-ranking`, `/operational-alerts` y `/financial-overview`.
+- Medicion Playwright por APISIX con sesion QA:
+  - `reporting/general`: HTTP `200`, `3918ms`, usa solo `/admin/reports/general?projection=screen`, `badStats=0`.
+  - `reporting/sales-ranking`: HTTP `200`, `4714ms`, usa `/admin/reports/product-ranking`, reporte export e inventario, `badStats=0`.
+  - `monitoring/alerts`: HTTP `200`, `4468ms`, usa `/admin/reports/operational-alerts`, inventario y productos `projection=inventory`, `badStats=0`.
+  - `operations/store-status`: HTTP `200`, `3117ms`, usa `/orders?limit=20` y `/admin/reports/operational-alerts`, `badStats=0`.
+  - `reporting/sales`: HTTP `200`, `2950ms`, usa `/admin/reports/financial-overview`, `badStats=0`.
+  - `reporting/balance`: HTTP `200`, `5761ms`, usa `/admin/reports/financial-overview` mas contratos especificos de inventario/compras/gastos, `badStats=0`.
+
+Pendientes:
+- Reducir bootstrap compartido `auth/session` + `tenant/context` y empaquetar iconos usados localmente para quitar dependencia runtime de Iconify.
+- Revisar si `financial-overview` debe aceptar periodo real para tendencias por dia/semana/anio cuando se retiren las ultimas pantallas de transicion.
+
+### 2026-07-04 - Dashboard QA: guardrails de performance para paginas del menu
+
+Objetivo: extender el mismo criterio aplicado a `Reporte general` al resto del menu Paramascotas: listados acotados, proyecciones explicitas, rutas lazy y checks para que paginas futuras no vuelvan a cargar datasets completos por defecto.
+
+Cambios:
+- `backend/src/Repositories/OrderRepository.php` y `backend/src/Controllers/OrderController.php` normalizan `GET /api/orders?limit=N` para admin, con limite default `100` y maximo `300`; el listado admin ya no es implicitamente "todos los pedidos".
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` cambio los contratos internos a `listOrders({ limit })`, `listPurchaseInvoices({ limit })` y `listProducts({ projection })`; `CatalogProductsFacade` propaga la misma obligacion.
+- Las paginas Paramascotas del menu declaran su presupuesto de datos: pedidos recientes `20` en Estado de ventas, `100` en pedidos/POS/envios, `200` solo en analiticas cruzadas; productos usan `catalog`, `inventory` o `financial` segun pantalla; compras usan `100` o `200` segun necesidad.
+- `dashboard/tools/check-paramascotas-performance.mjs` agrega guardrail para impedir `listOrders()`, `listProducts()`, `listPurchaseInvoices(200|sin args)`, `getAdminReport()` sin `projection`, literales `admin/report` y rutas Paramascotas no-lazy.
+- `dashboard/package.json` agrega `npm run performance:check` y lo integra en `npm run verify`.
+
+Verificacion:
+- Paso `php -l backend/src/Repositories/OrderRepository.php`, `php -l backend/src/Controllers/OrderController.php` y `php -l backend/src/Modules/ReportingFinance/Controllers/GeneralReportController.php`.
+- Paso `cd dashboard && npm run performance:check`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run build`; bundle inicial estimado `234.00 kB` transferidos.
+- Paso `git -C backend diff --check`, `git -C dashboard diff --check` y `git -C webparamascotas diff --check`.
+- Desplegado con `./scripts/deploy.sh backend` y `cd dashboard && npm run docker:up`; dashboard queda healthy y `docker exec dashboard nginx -t` pasa.
+- Medicion Playwright por APISIX con sesion QA en rutas representativas del menu (`reporting/general`, `operations/admin-orders`, `operations/local-sales`, `catalog/products`, `catalog/inventory`, `operations/store-status`, `operations/shipments`, `finance/prices`, `reporting/sales-ranking`): todas HTTP `200`, sin llamadas a `/admin/report`, sin `/orders` sin `limit`.
+- Ejemplos reales medidos: Pedidos usa `/dashboard/api/orders?limit=100`; POS usa `/orders?limit=100`, `/admin/quotes?limit=12` y productos catalogo; Inventario usa `/admin/products?projection=inventory` y `/admin/purchase-invoices?limit=100`; Precios usa `/admin/products?projection=financial`; Estado de ventas usa `/orders?limit=20`.
+
+Pendientes:
+- Dividir `admin/dashboard/stats` en proyecciones especificas por pantalla para ranking, alertas y estado de ventas; ya no incluye `report`, pero sigue siendo el siguiente contrato a adelgazar.
+- Reducir bootstrap compartido `auth/session` + `tenant/context` y empaquetar iconos usados localmente para quitar dependencia runtime de Iconify.
+
+### 2026-07-04 - Dashboard QA: performance del reporte general
+
+Objetivo: corregir la lentitud percibida en `https://paramascotasec.com/dashboard/paramascotas-panel/reporting/general` con un contrato normalizado, centralizado y escalable, sin resolver el problema por cache ni sostener rutas legacy.
+
+Cambios:
+- `backend/src/Modules/ReportingFinance/Controllers/GeneralReportController.php` publica el controlador nativo de modulo para `GET /api/admin/reports/general`; la ruta anterior `/api/admin/report` salio del registro y queda `404`.
+- `backend/src/Repositories/OrderRepository.php` separa proyecciones `screen` y `export` para `getReportPeriodSummary()`: la pantalla trae pedidos recientes, tops limitados y tendencias acotadas; la exportacion pide dataset completo bajo el mismo contrato canonico.
+- `OrderRepository::getFinancialTrendsForPeriod()` calcula tendencias por periodo real (`daily` o `monthly`) sin depender de `/api/admin/dashboard/stats` ni del BI global.
+- `dashboard/src/app/core/modules/dashboard-api.config.ts` centraliza el catalogo del reporte en `admin/reports/general`.
+- `dashboard/src/app/features/dashboard/data/paramascotas-admin-api.service.ts` tipa `ParamascotasReportProjection = screen|export`; las pantallas declaran explicitamente su proyeccion: `Reporte general` usa `screen`, exportacion/ranking/compras/transicion financiera usan `export`.
+- `dashboard/src/app/features/dashboard/pages/paramascotas-general-report/*` dejo de llamar `getAdminDashboardStats()`; la pantalla carga una sola vez `admin/reports/general?projection=screen` y deriva graficos desde `report.financial_trends`.
+- `dashboard/angular.json` cambio la configuracion `qa` a build optimizado, minificado y sin sourcemaps para el QA estable detras de APISIX.
+- `dashboard/nginx.conf` habilito gzip para texto/JS/CSS/JSON/fuentes/SVG y cache immutable de 1 anio para assets hashados bajo `/dashboard/*`, manteniendo `index.html` con `no-store`. Esto queda como higiene de entrega de assets, no como solucion principal de datos.
+
+Verificacion:
+- Paso `php -l backend/src/Repositories/OrderRepository.php`, `php -l backend/src/Modules/ReportingFinance/Controllers/GeneralReportController.php` y `php -l backend/src/Modules/ReportingFinance/routes.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs` (`110` endpoints).
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run build`; bundle inicial estimado queda en `234.10 kB` transferidos.
+- Paso `git -C backend diff --check`, `git -C dashboard diff --check` y `git -C webparamascotas diff --check`.
+- Desplegado con `./scripts/deploy.sh backend` y `cd dashboard && npm run docker:up`.
+- Medicion headless por APISIX con sesion QA: `pageStatus=200`, `DOMContentLoaded=1116ms`, resumen visible `5139ms`.
+- La pagina llama `/dashboard/api/admin/reports/general?period=2026-07&projection=screen`; `transferSize=1249`, `decodedBodySize=20970`, `duration=976ms`, `meta.projection=screen`, limites `orders=5`, `products=8`, `categories=8`, `dailyTrends=31`.
+- La ruta legacy `/dashboard/api/admin/report?period=2026-07` responde `404` por APISIX.
+- `auth/session` y `tenant/context` quedan comprimidos y medidos como bootstrap separado (`561ms` y `371ms` en la corrida QA).
+
+Pendientes:
+- Reducir el tiempo restante del primer render atacando el bootstrap del shell: combinar o precargar de forma controlada `auth/session` + `tenant/context`, y diferir componentes/charts que no bloquean el primer resumen.
+- Eliminar dependencia runtime de `api.iconify.design` para iconos del dashboard, empaquetando los iconos usados o sirviendolos localmente.
+- Evaluar reemplazar o diferir mas agresivamente ApexCharts en el primer viewport; sigue generando chunks grandes aunque comprimidos.
+
 ### 2026-07-02 - Auditoria de endpoints QA: HEAD APISIX y catalogo auth legacy del dashboard
 
 Objetivo: verificar contratos reales por APISIX/QA, eliminar ruido de rutas no respaldadas y dejar checks para evitar que reaparezcan endpoints fantasma o metodos no soportados.

@@ -529,10 +529,34 @@
           "source": "backend/config/routes.php"
         },
         {
-          "id": "backend:GET:/api/admin/report",
+          "id": "backend:GET:/api/admin/reports/general",
           "method": "GET",
-          "path": "/api/admin/report",
-          "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardController@report",
+          "path": "/api/admin/reports/general",
+          "handler": "App\\Modules\\ReportingFinance\\Controllers\\GeneralReportController@show",
+          "capabilityId": "admin.reporting",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/reports/product-ranking",
+          "method": "GET",
+          "path": "/api/admin/reports/product-ranking",
+          "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardProjectionController@productRanking",
+          "capabilityId": "admin.reporting",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/reports/operational-alerts",
+          "method": "GET",
+          "path": "/api/admin/reports/operational-alerts",
+          "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardProjectionController@operationalAlerts",
+          "capabilityId": "admin.reporting",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/reports/financial-overview",
+          "method": "GET",
+          "path": "/api/admin/reports/financial-overview",
+          "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardProjectionController@financialOverview",
           "capabilityId": "admin.reporting",
           "source": "backend/config/routes.php"
         },
@@ -3594,10 +3618,34 @@
         "source": "backend/config/routes.php"
       },
       {
-        "id": "backend:GET:/api/admin/report",
+        "id": "backend:GET:/api/admin/reports/general",
         "method": "GET",
-        "path": "/api/admin/report",
-        "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardController@report",
+        "path": "/api/admin/reports/general",
+        "handler": "App\\Modules\\ReportingFinance\\Controllers\\GeneralReportController@show",
+        "capabilityId": "admin.reporting",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/reports/product-ranking",
+        "method": "GET",
+        "path": "/api/admin/reports/product-ranking",
+        "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardProjectionController@productRanking",
+        "capabilityId": "admin.reporting",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/reports/operational-alerts",
+        "method": "GET",
+        "path": "/api/admin/reports/operational-alerts",
+        "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardProjectionController@operationalAlerts",
+        "capabilityId": "admin.reporting",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/reports/financial-overview",
+        "method": "GET",
+        "path": "/api/admin/reports/financial-overview",
+        "handler": "App\\Modules\\ReportingFinance\\Controllers\\DashboardProjectionController@financialOverview",
         "capabilityId": "admin.reporting",
         "source": "backend/config/routes.php"
       },

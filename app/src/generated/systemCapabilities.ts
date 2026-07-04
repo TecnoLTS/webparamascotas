@@ -782,9 +782,27 @@ export const backendApiRoutes = [
     "capabilityId": "admin.reporting"
   },
   {
-    "id": "backend:GET:/api/admin/report",
+    "id": "backend:GET:/api/admin/reports/general",
     "method": "GET",
-    "path": "/api/admin/report",
+    "path": "/api/admin/reports/general",
+    "capabilityId": "admin.reporting"
+  },
+  {
+    "id": "backend:GET:/api/admin/reports/product-ranking",
+    "method": "GET",
+    "path": "/api/admin/reports/product-ranking",
+    "capabilityId": "admin.reporting"
+  },
+  {
+    "id": "backend:GET:/api/admin/reports/operational-alerts",
+    "method": "GET",
+    "path": "/api/admin/reports/operational-alerts",
+    "capabilityId": "admin.reporting"
+  },
+  {
+    "id": "backend:GET:/api/admin/reports/financial-overview",
+    "method": "GET",
+    "path": "/api/admin/reports/financial-overview",
     "capabilityId": "admin.reporting"
   },
   {

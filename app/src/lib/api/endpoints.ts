@@ -87,7 +87,7 @@ export const apiEndpoints = {
   },
   reports: {
     recentOrders: buildApiRoute('backend:GET:/api/reports/recent-orders'),
-    admin: (query: QueryInput = {}) => withQuery(buildApiRoute('backend:GET:/api/admin/report'), query),
+    admin: (query: QueryInput = {}) => withQuery(buildApiRoute('backend:GET:/api/admin/reports/general'), query),
   },
   adminDashboardStats: (query: QueryInput = {}) =>
     withQuery(buildApiRoute('backend:GET:/api/admin/dashboard/stats'), query),
