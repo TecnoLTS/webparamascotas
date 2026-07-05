@@ -270,6 +270,57 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-05 - Fidepuntos: reportes completamente en espanol
+
+Objetivo: corregir la salida visible de Reportes Fidepuntos para que no exponga columnas de base de datos, valores internos en ingles ni JSON tecnico en pantalla o CSV.
+
+Cambios:
+- `LoyaltyRepository::report()` localiza metricas, columnas y valores antes de responder a la API de reportes.
+- Actividad de puntos ahora muestra `Fecha`, `Cuenta`, `Socio`, `Movimiento`, `Puntos`, `Saldo posterior`, `Referencia`, `Canal` y `Detalle`.
+- Movimientos internos como `purchase` y `redemption` se muestran como `Compra` y `Canje`; canales como `pos` se muestran como `Caja`.
+- Los metadatos JSON se resumen como texto operativo: `Premio`, `Factura`, `Monto factura`, `Sucursal`, `Motivo`, etc.
+- Las referencias internas de canjes se presentan como `Canje <codigo>` en vez de prefijos tecnicos.
+- Los reportes ocultan IDs internos (`tenant_id`, `member_id`, `program_id`, etc.) y la exportacion CSV usa la misma salida localizada.
+- `loyalty-points-reports.component` agrega fallback visual para etiquetar columnas y formatear objetos sin imprimir JSON crudo.
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `php backend/scripts/check_modular_routes.php` (`200` rutas).
+- Paso `cd dashboard && npm run type:check` y `npm run lint`.
+- Desplegado backend con `./scripts/deploy.sh backend` y dashboard con `cd dashboard && npm run docker:up`; `backend-http`, `dashboard` y `apisix-gateway` quedan healthy.
+- Barrido en `backend-api` sobre los 9 reportes y sus CSV confirma que no quedan llaves tecnicas comunes (`created_at`, `entry_type`, `metadata`, `purchase`, `redemption_`, `rewardName`, `invoiceAmount`, etc.).
+- Ruta QA por APISIX `https://paramascotasec.com/dashboard/loyalty-points/reports/point-activity` responde `200` usando `--resolve paramascotasec.com:443:192.168.100.229`.
+- Acceso directo a `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/reports/point-activity` fallo en handshake TLS antes de llegar al dashboard; no corresponde al cambio funcional de reportes.
+
+### 2026-07-05 - Fidepuntos: navegacion operativa, clientes y pantallas de caja/tarjeta
+
+Objetivo: ordenar el menu de Fidepuntos por tareas reales, separar registrar compra de tarjeta digital, completar administracion de clientes y reducir pantallas vacias con informacion operativa util.
+
+Cambios:
+- Navegacion Fidepuntos agrupada en `Resumen del programa`, `Caja y canjes`, `Clientes y tarjetas`, `Premios`, `Reglas y configuración` y `Reportes`.
+- `Registrar compra` queda en `/dashboard/loyalty-points/register-purchase`; `Emitir tarjeta digital` queda en `/dashboard/loyalty-points/customer-card`; la ruta legacy `/register-card` redirige a compra.
+- Clientes ahora expone acciones operativas para ver, editar, activar, desactivar y bloquear socios, con razon obligatoria al bloquear.
+- Administracion de clientes tambien permite ajustar puntos con motivo auditado y cambiar la tarjeta digital Android/iPhone/sin tarjeta desde la fila del socio.
+- Pantallas de compra/tarjeta agregan indicadores operativos, seleccion rapida desde tablas y cola de tarjetas priorizando socios sin tarjeta.
+- Se limpiaron enlaces y textos heredados como `Registro y tarjeta` y `Catalogo de premios`; premios queda como `Gestionar premios`.
+- `run_loyalty_policy_exercises.php` valida la formula de puntos contra la configuracion activa del tenant, incluyendo redondeo, multiplicador por nivel y maximo por compra.
+- Se retiro la huella visible de datos `QA`/`FAC-DEMO`/`example.com` del modulo Fidepuntos; las pruebas de politicas usan registros temporales internos y los limpian al terminar.
+- Nuevo `backend/scripts/seed_loyalty_realistic_demo.php` resembra el tenant `fidepuntos` con datos realistas: 12 socios, 28 compras, 8 canjes, 8 tarjetas digitales, mezcla Android/iPhone/sin tarjeta, estados activo/inactivo/bloqueado y niveles Bronce/Plata/Oro.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `git -C dashboard diff --check`.
+- Desplegado con `cd dashboard && npm run docker:up`; contenedor `dashboard` quedo healthy.
+- Desplegado backend con `./scripts/deploy.sh backend`; `backend-http` quedo healthy.
+- Por APISIX, `/dashboard/loyalty-points/register-purchase`, `/dashboard/loyalty-points/customer-card` y `/dashboard/loyalty-points/customers` responden `200` en `fidepuntos.tecnolts.com`.
+- El bundle desplegado contiene `Caja y canjes`, `Emitir tarjeta digital` y `Gestionar premios`.
+- Paso `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`; `ok=true` con formula esperada segun reglas activas.
+- Paso `php backend/scripts/check_modular_routes.php` (`200` rutas) y `node dashboard/tools/check-dashboard-api-contracts.mjs` (`113` endpoints).
+- Paso `docker exec backend-api php scripts/seed_loyalty_realistic_demo.php`; resumen `members=12`, `purchases=28`, `redemptions=8`, `walletPasses=8`.
+- Verificado en DB que no quedan coincidencias visibles para `QA`, `qa.loyalty`, `Premio QA`, `FAC-DEMO`, `example.com`, `Control Politicas`, `Control antifraude` ni `Control Bloqueado`.
+- Datos visibles actuales: niveles `Bronce=6`, `Plata=4`, `Oro=2`; wallets `Android=4`, `iPhone=4`, `Sin tarjeta=4`.
+
 ### 2026-07-04 - Fidepuntos: sistema integral de puntos, reglas, reportes y API externa
 
 Objetivo: convertir LoyaltyRewards de modulo demo avanzado a sistema completo de gestion de fidelizacion con socios, tarjetas digitales, reglas configurables, niveles, premios, compras, canjes, reversas, auditoria, antifraude, reportes y consumo API externo autorizado.
