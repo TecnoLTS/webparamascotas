@@ -270,6 +270,28 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-05 - Fidepuntos: gestion operativa de riesgo y antifraude
+
+Objetivo: convertir el reporte `Riesgo y antifraude` de tabla informativa pasiva a consola operativa capaz de revisar y resolver eventos con trazabilidad.
+
+Cambios:
+- Backend agrega `PATCH /api/admin/loyalty/risk-events/{eventId}/resolve` para cerrar eventos de riesgo con nota obligatoria, `resolved_at`, `resolved_by_user_id` y auditoria `risk_event.resolved`.
+- `loyalty_risk_events` recibe columnas compatibles `resolved_by_user_id` y `resolution_note`.
+- `riskEvents()` soporta filtros por `status` (`open`, `resolved`) y `severity` (`critical`, `high`, `medium`, `low`, `info`) manteniendo paginacion.
+- Dashboard registra el nuevo contrato `loyalty-points.risk-events.resolve` y `LoyaltyPointsApiService` expone `getRiskEvents(filters)` y `resolveRiskEvent()`.
+- La pantalla `/dashboard/loyalty-points/reports/risk-events` muestra una consola de gestion con filtros, indicadores, tabla accionable, detalle en modal y accion `Resolver`.
+- El reporte exportable se mantiene separado de la gestion: Excel/CSV siguen usando salida localizada, mientras la consola usa eventos con ID para operar.
+
+Verificacion:
+- Paso `php -l` para `LoyaltyRepository.php`, `LoyaltyController.php` y `LoyaltySchema.php`.
+- Paso `php backend/scripts/check_modular_routes.php` (`201` rutas).
+- Paso `cd dashboard && npm run type:check`, `npm run lint` y `npm run build`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs` (`113` endpoints).
+- Prueba transaccional dentro de `backend-api`: se inserta evento temporal, `resolveRiskEvent()` lo deja `resolved` con `resolved_at` y nota, y luego se hace rollback.
+- Desplegado con `./scripts/deploy.sh backend`, `cd dashboard && npm run docker:up` y `./scripts/deploy.sh gateway`; `backend-http`, `dashboard` y `apisix-gateway` quedan healthy.
+- Ruta QA por APISIX `/dashboard/loyalty-points/reports/risk-events` responde `200`.
+- Endpoint nuevo por APISIX sin sesion responde `401 No autorizado`, confirmando ruta publicada y protegida.
+
 ### 2026-07-05 - Fidepuntos: reportes completamente en espanol
 
 Objetivo: corregir la salida visible de Reportes Fidepuntos para que no exponga columnas de base de datos, valores internos en ingles ni JSON tecnico en pantalla o CSV.
@@ -279,8 +301,10 @@ Cambios:
 - Actividad de puntos ahora muestra `Fecha`, `Cuenta`, `Socio`, `Movimiento`, `Puntos`, `Saldo posterior`, `Referencia`, `Canal` y `Detalle`.
 - Movimientos internos como `purchase` y `redemption` se muestran como `Compra` y `Canje`; canales como `pos` se muestran como `Caja`.
 - Los metadatos JSON se resumen como texto operativo: `Premio`, `Factura`, `Monto factura`, `Sucursal`, `Motivo`, etc.
+- Riesgo y antifraude traduce eventos y detalles internos: `duplicate_reference` queda como `Referencia duplicada`, `entryType` queda como `Movimiento` y `resolved_at` queda como `Resuelto`.
 - Las referencias internas de canjes se presentan como `Canje <codigo>` en vez de prefijos tecnicos.
 - Los reportes ocultan IDs internos (`tenant_id`, `member_id`, `program_id`, etc.) y la exportacion CSV usa la misma salida localizada.
+- La exportacion principal de reportes Fidepuntos es Excel real `.xlsx` OpenXML; CSV queda disponible como alternativa con `format=csv`.
 - `loyalty-points-reports.component` agrega fallback visual para etiquetar columnas y formatear objetos sin imprimir JSON crudo.
 
 Verificacion:
@@ -288,7 +312,8 @@ Verificacion:
 - Paso `php backend/scripts/check_modular_routes.php` (`200` rutas).
 - Paso `cd dashboard && npm run type:check` y `npm run lint`.
 - Desplegado backend con `./scripts/deploy.sh backend` y dashboard con `cd dashboard && npm run docker:up`; `backend-http`, `dashboard` y `apisix-gateway` quedan healthy.
-- Barrido en `backend-api` sobre los 9 reportes y sus CSV confirma que no quedan llaves tecnicas comunes (`created_at`, `entry_type`, `metadata`, `purchase`, `redemption_`, `rewardName`, `invoiceAmount`, etc.).
+- Barrido en `backend-api` sobre los 9 reportes y sus CSV confirma que no quedan llaves tecnicas comunes (`created_at`, `entry_type`, `metadata`, `purchase`, `redemption_`, `rewardName`, `invoiceAmount`, `Entry Type`, `Duplicate Reference`, `Resolved At`, etc.).
+- Generacion Excel validada dentro de `backend-api`: `reportExcel("point-activity")` produce archivo `.xlsx` OpenXML real (ZIP con workbook, worksheet y estilos) y sin llaves tecnicas visibles; `reportCsv()` se mantiene operativo.
 - Ruta QA por APISIX `https://paramascotasec.com/dashboard/loyalty-points/reports/point-activity` responde `200` usando `--resolve paramascotasec.com:443:192.168.100.229`.
 - Acceso directo a `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/reports/point-activity` fallo en handshake TLS antes de llegar al dashboard; no corresponde al cambio funcional de reportes.
 
