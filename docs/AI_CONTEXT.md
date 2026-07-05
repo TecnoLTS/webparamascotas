@@ -5,7 +5,7 @@ Fuente canonica de contexto IA para `/home/admincenter/contenedores`.
 
 ## Proposito del proyecto
 
-ParamascotasEC es un workspace integrado para e-commerce de mascotas en Ecuador. Incluye frontend Next.js, backend PHP modular, PostgreSQL compartido con tres bases logicas de negocio (`dashboard`, `ecommerce`, `facturacion`), Billing SRI dentro del backend y gateway APISIX/etcd con Certbot oficial.
+ParamascotasEC es un workspace integrado para e-commerce de mascotas en Ecuador. Incluye frontend Next.js, backend PHP modular, PostgreSQL compartido con bases logicas de negocio (`dashboard`, `ecommerce`, `facturacion`, `loyalty`), Billing SRI dentro del backend y gateway APISIX/etcd con Certbot oficial.
 
 El objetivo operativo es mantener un entorno desplegable por scripts, con reglas de negocio server-side, seguridad admin estricta y contexto suficiente para que una IA o un desarrollador pueda continuar trabajo sin redescubrir decisiones recientes.
 
@@ -23,6 +23,7 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 - Ambiente local vigente: QA local con `ENTORNO_MODE=qa`; no asumir `production` salvo pedido explicito del usuario.
 - IP LAN del host virtualizado en este ambiente: `192.168.100.229`.
 - Dominio funcional del QA local: `paramascotasec.com`, resolviendo hacia `192.168.100.229`.
+- Dominio demo dashboard vigente: `fidepuntos.tecnolts.com`, resolviendo hacia `192.168.100.229` por APISIX como host de dashboard tenantizado, no como alias del sitio principal.
 - Todas las verificaciones funcionales del sitio/API en este entorno deben entrar por APISIX usando el contrato publico y el dominio `paramascotasec.com`; usar puertos internos o sidecars solo para diagnostico explicito.
 - `gatewayapisix` QA puede exponerse por esa IP segun configuracion de `GATEWAY_BIND_IP`; usar los mismos scripts canonicos y cambiar solo `.env`.
 - Estructura canonica del workspace: `webparamascotas` (pagina web), `gatewayapisix` (APISIX), `backend` (API/core y Billing SRI nativo) y `basesdedatos` (PostgreSQL compartido). `dashboard` queda como tooling interno QA/admin; `scripts` y `reports` son soporte operativo.
@@ -59,8 +60,9 @@ Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultim
 Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
-- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con tres bases logicas de negocio: `dashboard`, `ecommerce` y `facturacion`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
+- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas de negocio: `dashboard`, `ecommerce`, `facturacion` y `loyalty`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
 - Base logica Billing SRI actual: `facturacion`, atendida por `platform-core/Billing`.
+- Base logica LoyaltyRewards actual: `loyalty`, atendida por `platform-core/LoyaltyRewards` para `loyalty-points`.
 - Store de infraestructura gatewayapisix: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
 
 ## Red
@@ -92,7 +94,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 ## Modularidad orquestada
 
 - El dashboard es el orquestador visual y operativo; no es duenio de catalogo, pedidos, clientes ni facturas.
-- Regla de menu: solo `ecommerce` y `billing-sri` son modulos producto contratables. `dashboard` y `users` son base interna obligatoria del tenant; `tenant-admin` es consola exclusiva de plataforma. Ecommerce no debe mezclar opciones fiscales; Facturacion no debe aparecer si `billing-sri` no esta activo.
+- Regla de menu: `ecommerce`, `billing-sri` y `loyalty-points` son modulos producto reales contratables. `loyalty-points` se proyecta en dashboard, pero su source of truth y escrituras viven en `platform-core/LoyaltyRewards` sobre la base `loyalty`. `dashboard` y `users` son base interna obligatoria del tenant; `tenant-admin` es consola exclusiva de plataforma. Ecommerce no debe mezclar opciones fiscales; Facturacion no debe aparecer si `billing-sri` no esta activo.
 - `products`, `inventory`, `monitoring`, `invoicing`, `ui-kit`, `workspace`, `email-service` y `medical-office` no son modulos tenant activos ni opciones contratables. Si existen pantallas legacy o codigo de compatibilidad, no se publican en topologia, menus ni entitlements; todo acceso queda negado salvo rutas explicitamente permitidas por `ecommerce`, `billing-sri`, `users` o plataforma.
 - Cada modulo real debe soportar dos modos: `individual` y `orquestado`.
 - El registro canonico del orquestador vive en `dashboard/public/module-registry.json`.
@@ -107,7 +109,9 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Regla vigente de identidad: `dashboard` es owner de plataforma, tenants, admins/operadores (`platform`, `tenant_staff`, `service`), sesiones admin, roles, permisos y entitlements. Los usuarios finales viven en la base del modulo que los atiende.
 - Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
 - Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
+- LoyaltyRewards guarda programas, socios, cuentas, ledger, recompensas, canjes y pases wallet en `loyalty.loyalty_*`; no debe crear foreign keys hacia ecommerce/dashboard. Las relaciones con clientes/facturas usan IDs estables, snapshots o contratos API.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
+- Excepcion demo TECNOLTS: un correo `@tecnolts.com` puede operar como admin de un tenant si su perfil declara explicitamente `identityType=tenant_staff`; ejemplo vigente `dev@tecnolts.com` en `tenant_id=fidepuntos` con rol `fidepuntos_admin` y alias de login `demo@tecnolts.com`. Esa identidad no debe recibir `platform-admin`.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
 - Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
 - Tipos de identidad vigentes: `platform` para superadmins/recovery TECNOLTS, `tenant_staff` para admins/equipo operativo del tenant, `customer` para compradores ecommerce y `service` para integraciones internas.
@@ -177,7 +181,7 @@ npm run test         # lint + typecheck + api:contracts:check
 - Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend generico registrado `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; ecommerce webparamascotas `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
 - En QA local actual, probar ese contrato por `https://paramascotasec.com/` y, si el DNS/hosts del cliente no resuelve al host virtualizado, usar `--resolve paramascotasec.com:443:192.168.100.229` en `curl`.
 - Certificados QA locales: `gatewayapisix/scripts/setup-ssl-local.sh` genera una CA local `gatewayapisix/entorno/certs/local-ca.crt` y un certificado de servidor para `paramascotasec.com`; instalar solo `local-ca.crt` en PCs cliente. Nunca copiar `local-ca.key`; copiar certificados de production a QA requiere decision explicita porque implica mover `privkey.pem` de production.
-- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_ECOMMERCE_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
+- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `DASHBOARD_TENANT_HOSTS`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_ECOMMERCE_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
 - Rutas legacy publicas `/api/*`, `/facturador/*` y `/uploads-api/*` quedan bloqueadas por APISIX.
 - `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed. Para APIs backend lee `config/routes.php` y `src/Modules/*/routes.php`; excluye `/api/{apiMode}/v1/*` porque Billing publico tiene rutas APISIX explicitas hacia `platform-core`.
 - UI local de APISIX: `http://${APISIX_ADMIN_BIND_IP}:${APISIX_ADMIN_PORT}/ui/` (QA actual: `127.0.0.1:9180`).
@@ -265,6 +269,117 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-05 - Fidepuntos: buscadores operativos sin select
+
+Objetivo: corregir la UX de busqueda de socio en Canje en mostrador y Registro/Tarjeta para que el resultado no se esconda dentro de un `select`, sino que al buscar se carguen campos/ficha del cliente y un boton `Ver mas` abra el detalle operativo.
+
+Cambios:
+- `dashboard/src/app/features/loyalty-points/pages/loyalty-points-rewards/` elimina el selector de socio del flujo de canje; la busqueda resuelve una ficha con cuenta, saldo y tarjeta, y `Ver mas` abre el modal de detalle del socio.
+- `dashboard/src/app/features/loyalty-points/pages/loyalty-points-register-card/` elimina el selector de socio del registro de compra; la busqueda llena los campos de cliente/correo y deja `Ver mas` para revisar actividad y tarjeta digital.
+- Iteracion de sugerencias: Canje en mostrador y Registro/Tarjeta muestran resultados bajo el input como lista tipo combobox, con nombre, cuenta, correo, saldo y tarjeta; se filtran localmente por coincidencia para evitar sugerir socios irrelevantes cuando la API devuelve un lote amplio.
+- Iteracion post-canje: el refresco de socios en Canje en mostrador queda silencioso despues de confirmar un canje, para no reabrir la lista de sugerencias; los modales `loyalty-swal` ocultan todos los iconos nativos de SweetAlert y renderizan iconos CSS propios para success/error/info/question, con acciones centradas y padding fijo del popup.
+- Iteracion seguridad de canje: `Canje en mostrador` ya no carga ni selecciona socios al abrir la pantalla, ni selecciona automaticamente el primer resultado al buscar. El operador debe elegir explicitamente una sugerencia; al editar el texto se limpia la seleccion para evitar canjes accidentales a un socio anterior.
+- `dashboard/src/app/features/loyalty-points/loyalty-points.shared.css` agrega cabecera responsive para la ficha de socio; `dashboard/src/styles.css` fuerza fondo blanco solido en modales `loyalty-swal`.
+
+Verificacion:
+- Paso `cd dashboard && npm run lint`, `npm run type:check` y `npm run build`.
+- Desplegado con `cd dashboard && npm run docker:up`; `dashboard`, `backend-http` y `apisix-gateway` quedaron healthy.
+- Por APISIX con `--resolve fidepuntos.tecnolts.com:443:192.168.100.229`, `/dashboard/loyalty-points/rewards` y `/dashboard/loyalty-points/register-card` responden `200`.
+- Auditoria Playwright autenticada con `dev@tecnolts.com` en tenant `fidepuntos`: ambas rutas reportan `memberSelects=0`, `verMasButtons=1`, `memberSummaries=1`, modal abierto correctamente, fondo modal `rgb(255, 255, 255)`, inputs activos blancos y `technicalEnglish=false`.
+- Iteracion de sugerencias paso `cd dashboard && npm run type:check`, `npm run lint`, `npm run build` y despliegue `cd dashboard && npm run docker:up`; Playwright autenticado con busqueda `MARIA` confirma en ambas rutas `memberSelects=0`, `suggestionsVisible=true`, `optionCount=1`, primera sugerencia `Maria Hidalgo`, `suggestionBelowInput=true`, inputs y sugerencias con fondo blanco.
+- Iteracion post-canje paso `cd dashboard && npm run lint`, `npm run type:check`, `npm run build`, despliegue `cd dashboard && npm run docker:up` y canje real QA en `/dashboard/loyalty-points/rewards`; Playwright confirma `suggestionsVisible=false` durante y despues del OK, `memberSelects=0`, `successChildrenVisible=0` y check estatico visible en modal de `Canje aprobado`.
+- Iteracion iconos modales paso `cd dashboard && npm run lint`, `npm run type:check`, `npm run build` y despliegue `cd dashboard && npm run docker:up`; auditoria Playwright de markup SweetAlert servido confirma para success/error `nativeIconDisplay=none`, iconos CSS de `72px`, acciones centradas y `buttonBottomGap=24`.
+- Iteracion seguridad de canje paso `cd dashboard && npm run lint`, `npm run type:check`, `npm run build` y despliegue `cd dashboard && npm run docker:up`; Playwright autenticado confirma estado inicial con `inputValue=""`, `memberSummary=0`, `suggestionsVisible=false`, `memberSelects=0` y `enabledRedeemButtons=0`; despues de buscar sigue sin habilitar canje hasta seleccionar una sugerencia.
+
+### 2026-07-04 - Fidepuntos: redisenio premium operativo
+
+Objetivo: redisenar las cuatro vistas `loyalty-points` para que el modulo Fidepuntos se vea como producto operativo serio, eliminando bordes laterales azules, sombras/card IA, textos tecnicos en ingles y tablas incomodas en desktop/mobile.
+
+Cambios:
+- `dashboard/src/app/features/loyalty-points/loyalty-points.shared.css` define el sistema visual propio `loyalty-workspace`, `loyalty-panel`, `loyalty-metric`, `loyalty-table`, `loyalty-list-row` y `loyalty-status`, con acento teal sobrio, superficies planas y sin sombras de plantilla.
+- Las cuatro vistas `dashboard/loyalty-points*` usan `loyalty-panel`, banda de metricas, listas operativas compactas y header neutralizado mediante `loyalty-native-header` para quitar borde lateral/sombra global del `PageHeaderComponent`.
+- Clientes conserva busqueda server-side y paginacion, pero la tabla ahora mantiene ancho operativo en movil con scroll horizontal en vez de comprimir columnas o partir palabras.
+- Dashboard limita la lista de actividad para evitar columnas desbalanceadas y traduce acciones/prioridades a lenguaje operativo en espanol.
+- Backend LoyaltyRewards cambia textos visibles de `wallet` a `tarjeta digital` en errores y acciones recomendadas; los terminos tecnicos quedan solo en contratos internos/API.
+- Iteracion de impacto visual: el dashboard `/dashboard/loyalty-points` agrega una central de mando con grafica Apex de 14 dias para puntos emitidos vs canjeados, KPIs de adopcion digital/saldo vivo/canje efectivo, grafica donut de tarjetas, ranking horizontal de clientes, grafica de niveles y embudo operativo.
+- `LoyaltyRepository::dashboard()` ahora entrega `analytics` con `activityTrend`, `tierSummary`, `operationalFunnel` y `valueAtRisk`; la UI conserva fallback local para no romper si el payload viene de una version anterior.
+- Criterio visual vigente para Fidepuntos: evitar degradados decorativos porque se perciben genericos/IA; la central de mando usa fondo salvia claro, paneles blancos, bordes discretos, tipografia y datos para jerarquia. Las lineas de charts y barras del embudo son planas.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`, `npm run lint` y `npm run build`.
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `git -C dashboard diff --check` y `git -C backend diff --check`.
+- Desplegado con `./scripts/deploy.sh backend` y `cd dashboard && npm run docker:up`; `backend-http`, `dashboard` y `apisix-gateway` quedaron healthy.
+- Por APISIX con `--resolve fidepuntos.tecnolts.com:443:192.168.100.229`, `/dashboard/loyalty-points`, `/customers`, `/rewards` y `/register-card` responden `200`.
+- Auditoria Playwright autenticada en QA: las cuatro rutas reportan `0` bordes laterales azules, `0` sombras visibles de plantilla y `0` textos tecnicos prohibidos; captura movil confirma tabla de clientes con `overflow-x: auto`.
+- Iteracion de graficas paso `cd dashboard && npm run type:check`, `npm run lint`, `npm run build` y `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`; desplegado backend/dashboard. Playwright autenticado confirma `4` graficas Apex renderizadas, central de mando visible y `0` bordes laterales azules en `/dashboard/loyalty-points`.
+- Iteracion anti-degradados/color paso `cd dashboard && npm run type:check`, `npm run lint`, `npm run build`; desplegado con `cd dashboard && npm run docker:up`. Auditoria Playwright confirma `4` graficas renderizadas, `gradientNodes=0`, `commandCenterBg=rgb(241, 247, 244)`, paneles internos blancos y ruta `/dashboard/loyalty-points` por APISIX en `200`.
+- Iteracion de cohesion visual paso `cd dashboard && npm run type:check`, `npm run lint`, `npm run build`; desplegado con `cd dashboard && npm run docker:up`. Se agrego navegacion interna segmentada en las cuatro rutas, paneles salvia/blancos consistentes, tablas densas con bordes discretos, fichas de socio para Clientes/Recompensas/Registro, modales SweetAlert con clase global `loyalty-swal` y tarjeta previa en teal oscuro fijo. Auditoria Playwright confirma las cuatro rutas `200`, `gradientNodes=0`, sin overflow horizontal, modal de cliente con `5` bloques y `1` tabla, y tarjeta previa `rgb(23, 61, 57)`.
+
+### 2026-07-04 - LoyaltyRewards: modulo real de puntos y recompensas
+
+Objetivo: convertir `loyalty-points` de demo visual a modulo producto con backend, base logica propia `loyalty`, API admin y cuatro vistas dashboard para programa de puntos/recompensas conectado a wallets.
+
+Cambios:
+- `backend/src/Modules/LoyaltyRewards/` agrega dominio `loyalty-rewards`, repositorio y controlador `LoyaltyController` para `/api/admin/loyalty/*`.
+- `backend/config/module-databases.php`, `bootstrap_module_databases.php` y `check_module_databases.php` registran la base logica `loyalty` y tablas owner `loyalty_programs`, `loyalty_members`, `loyalty_point_accounts`, `loyalty_point_ledger`, `loyalty_rewards`, `loyalty_redemptions` y `loyalty_wallet_passes`.
+- `TenantAccessService` protege capability `loyalty.admin` con permisos `loyalty-points.read|create|update|delete`.
+- `dashboard` registra endpoints `loyalty-points.*`, reemplaza la pantalla estatica por 4 vistas lazy: Dashboard, Clientes, Catalogo de canje y Registro/Tarjeta.
+- El modulo queda funcional para demo operativa: registrar compras suma puntos, canjear premios valida saldo/stock y descuenta puntos, actualizar wallet marca Android/iPhone/sin tarjeta, y el dashboard muestra resumen de wallets, canjes recientes y acciones recomendadas.
+- La gestion de socios ahora usa busqueda server-side paginada para volumen alto: `paged=1`, `limit`, `offset`, filtro por tarjeta wallet, nivel, estado y orden; la lista legacy se conserva para usos acotados.
+- `GET /api/admin/loyalty/customers/{memberId}` expone detalle operativo bajo demanda con socio, ledger, canjes y pases wallet; la UI lo abre en modal.
+- Las pantallas de Clientes, Catalogo de canje y Registro/Tarjeta agregan feedback modal de proceso, OK y error para consultas/acciones criticas, ademas de estados inline.
+- Los modales visibles para operadores no deben exponer codigos internos en ingles como `redemption`, `purchase`, `ready-for-issuer`, IDs tecnicos ni objetos externos; se muestran como Compra, Canje, estado de tarjeta y detalle humano. El backend deduplica pases wallet por plataforma en el detalle.
+- Iteracion UI/UX: las cuatro vistas `loyalty-points` usan paneles operativos mas sobrios, tablas sin borde pesado, etiquetas en espanol, modales con botones de marca sobrios y listas compactas para premios/acciones. Evitar bordes genericos o textos tecnicos visibles que parezcan maqueta IA.
+- Canjes y caja dejaron de depender de cargar todos los socios en un selector; ahora usan busqueda acotada de socios activos.
+- El seed demo idempotente en `loyalty` agrega socios, premios, ledger, canjes iniciales y pases wallet `ready-for-issuer` sin duplicar datos existentes.
+- Topologia publicada (`module.json`, `tenant-module-topology.json`, `system-runtime-topology.json`, `ecosystem-atlas.json`) declara `loyalty-points` como service projection de `platform-core/LoyaltyRewards`, no dashboard-only.
+- `backend/tools/loyalty-google-wallet-demo/` agrega script Node de un solo uso para generar enlace `Agregar a Google Wallet` con `googleapis` y `jsonwebtoken`, leyendo `service-account.json` local no versionado.
+
+Verificacion:
+- Paso `php -l` en el dominio/controlador/repositorio LoyaltyRewards y scripts de bootstrap/check modular.
+- Paso `php backend/scripts/check_modular_routes.php` (`168` rutas).
+- Paso `docker exec backend-api php scripts/check_module_databases.php` (`11` conexiones, `7` owner_modules).
+- Paso `cd dashboard && npm run module:check`, `npm run type:check`, `npm run lint` y `npm run build`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs`.
+- Iteracion UX/escalabilidad: paso `php backend/scripts/check_modular_routes.php` (`171` rutas), `docker exec backend-api php scripts/check_module_databases.php`, `cd dashboard && npm run type:check`, `npm run lint`, `npm run build`, `node dashboard/tools/check-dashboard-api-contracts.mjs` y `npm run module:check`.
+- Prueba directa en contenedor backend: `customersPage` para `fidepuntos` devuelve pagina acotada con `items`, `total`, `limit`, `offset` y `hasMore`.
+- Desplegado nuevamente con `./scripts/deploy.sh backend`, `cd dashboard && npm run docker:up` y `./scripts/deploy.sh gateway`; `backend-http`, `dashboard` y `apisix-gateway` quedaron healthy.
+- Por APISIX con `--resolve fidepuntos.tecnolts.com:443:192.168.100.229`, `/dashboard/loyalty-points/customers`, `/dashboard/loyalty-points/rewards` y `/dashboard/loyalty-points/register-card` responden `200`; `/dashboard/api/admin/loyalty/customers?paged=1&limit=10&q=a` sin sesion responde `401` esperado.
+- Iteracion UI/UX paso `cd dashboard && npm run type:check`, `npm run lint` y `npm run build`; desplegado con `cd dashboard && npm run docker:up`. Por APISIX, `/dashboard/loyalty-points`, `/customers`, `/rewards` y `/register-card` responden `200`.
+- Desplegado con `RUN_DB_SETUP=1 ./scripts/deploy.sh backend`, `./scripts/deploy.sh backend` y `cd dashboard && npm run docker:up`; `backend-http`, `dashboard` y `apisix-gateway` quedaron healthy.
+- Validado en QA: `loyalty` resuelve como base actual para `loyalty-points`; Fidepuntos demo sembrado con `8` socios, `53150` puntos emitidos, `7` premios, wallets `google=3`, `apple=2`, `none=3` y canjes reales.
+- Prueba directa de canje paso: `Carlos Mejia` canjeo `Cafe gratis`, se descontaron `300` puntos, saldo final `7520` y stock final `48`.
+- Por APISIX con `--resolve fidepuntos.tecnolts.com:443:192.168.100.229`, `/loyalty-points`, `/loyalty-points/customers`, `/loyalty-points/rewards` y `/loyalty-points/register-card` responden `200`; `/dashboard/api/admin/loyalty/dashboard` sin sesion responde `401` esperado.
+
+Pendientes:
+- Promover la firma Google Wallet del script demo a servicio backend cuando exista Issuer ID aprobado y politica de secretos.
+- Implementar Apple Wallet con Pass Type ID, Team ID y certificados Apple cuando se definan credenciales.
+- Integrar clientes/facturas reales de ecommerce/facturacion por contrato API o snapshots, sin FKs cross-db.
+
+### 2026-07-04 - Fidepuntos Demo: tenant dashboard de fidelizacion
+
+Objetivo: crear un tenant demo TECNOLTS para mostrar administracion de recompensas y puntos desde `https://fidepuntos.tecnolts.com/`, con usuarios TECNOLTS operando como admins del tenant y no como superadmins de plataforma.
+
+Cambios:
+- `backend/config/tenants.php` registra el tenant `fidepuntos` con dominio `fidepuntos.tecnolts.com`, contacto `fidepuntos@tecnolts.com`, branding demo y modulos `dashboard`, `users`, `loyalty-points`.
+- `TenantAccessService` reconoce permisos `loyalty-points.*` y respeta `identityType=tenant_staff|customer` explicito antes de promover correos `@tecnolts.com` a `platform`.
+- `backend/scripts/seed_fidepuntos_demo.php` crea/actualiza de forma idempotente el tenant, entitlements, rol `fidepuntos_admin` y usuario `dev@tecnolts.com` como `tenant_staff`; la clave se pasa por `FIDEPUNTOS_DEMO_ADMIN_PASSWORD` y no queda guardada en el repo.
+- `dashboard` agrega el modulo `loyalty-points` al catalogo tenant, topologia, permisos, navegacion y una pantalla lazy `Recompensas y puntos` en `/loyalty-points`.
+- `gatewayapisix/scripts/sync-apisix.sh` soporta `DASHBOARD_TENANT_HOSTS` para hosts dashboard tenantizados que no deben redirigir al dominio principal; `setup-ssl-local.sh` incluye esos hosts en el certificado local.
+
+Verificacion:
+- Paso `php -l` en `backend/config/tenants.php`, `TenantAccessService.php` y `seed_fidepuntos_demo.php`.
+- Paso `bash -n` en scripts gateway modificados.
+- Paso parse JSON de `dashboard/public/module.json` y `tenant-module-topology.json`.
+- Paso `cd dashboard && npm run module:check`, `npm run type:check` y `npm run lint`.
+- Desplegado con `./scripts/deploy.sh backend`, `cd dashboard && npm run docker:up`, `gatewayapisix/scripts/setup-ssl-local.sh` y `./scripts/deploy.sh gateway`.
+- Seed ejecutado en QA: `fidepuntos` tiene entitlements activos `dashboard`, `users`, `loyalty-points`; `dev@tecnolts.com` queda `identityType=tenant_staff`, `isPlatformAdmin=false`, rol `fidepuntos_admin`.
+- Por APISIX con `--resolve fidepuntos.tecnolts.com:443:192.168.100.229`: `/`, `/loyalty-points` y `/dashboard/api/health` responden `200`; login de `dev@tecnolts.com` responde `202` esperado por MFA email.
+
+Pendientes:
+- Configurar DNS publico/certificado production para `fidepuntos.tecnolts.com` si se va a presentar fuera de la LAN QA.
 
 ### 2026-07-04 - Backups DB: selector por base logica
 
