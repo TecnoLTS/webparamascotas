@@ -270,6 +270,17 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-05 - DB restore QA: diagnostico de arranque PostgreSQL
+
+Objetivo: evitar que `transfer-db.sh restore` falle en equipos QA con el mensaje generico `PostgreSQL no quedo listo a tiempo` sin explicar la causa real.
+
+Cambios:
+- `basesdedatos/scripts/common.sh` aumenta el timeout default de `wait_for_db` a 120 segundos y permite ajustarlo con `DB_READY_TIMEOUT_SECONDS`.
+- Si PostgreSQL no queda listo, el script imprime `docker compose ps`, estado Docker/health del contenedor `basesdedatos` y los ultimos logs antes de abortar.
+
+Verificacion:
+- Paso `bash -n` para `basesdedatos/scripts/common.sh`, `restore-from-backup.sh`, `transfer-db.sh` e `import-from-git-transfer.sh`.
+
 ### 2026-07-05 - Fidepuntos: gestion operativa de riesgo y antifraude
 
 Objetivo: convertir el reporte `Riesgo y antifraude` de tabla informativa pasiva a consola operativa capaz de revisar y resolver eventos con trazabilidad.
