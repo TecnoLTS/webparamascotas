@@ -270,6 +270,36 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-04 - Fidepuntos: sistema integral de puntos, reglas, reportes y API externa
+
+Objetivo: convertir LoyaltyRewards de modulo demo avanzado a sistema completo de gestion de fidelizacion con socios, tarjetas digitales, reglas configurables, niveles, premios, compras, canjes, reversas, auditoria, antifraude, reportes y consumo API externo autorizado.
+
+Cambios:
+- Backend LoyaltyRewards agrega esquema incremental canonico `LoyaltySchema` con tablas `loyalty_program_settings`, `loyalty_tier_rules`, `loyalty_api_clients`, `loyalty_idempotency_keys`, `loyalty_audit_events`, `loyalty_risk_events`, `loyalty_point_expirations` y `loyalty_reversals`.
+- `LoyaltyRepository` deja de crear socios implicitamente al registrar compras; las compras requieren socio existente activo, factura unica, formula configurable y limites diarios. Los canjes requieren socio activo, tarjeta digital Android/iPhone activa, saldo, stock y limites por dia/premio.
+- Se agregan ajustes auditados, reversas de compras sin borrar historial, reglas de niveles Bronce/Plata/Oro editables, configuracion de moneda/zona horaria/formula/limites, eventos de riesgo y auditoria.
+- API admin expone `/api/admin/loyalty/settings`, `/rules`, `/reports`, `/audit-events`, `/risk-events`, `/api-clients`, `/adjustments`, creacion/edicion de socios y reversas.
+- API externa expone `/api/loyalty/v1/*` para health, programa, socios, compras, reversas, canjes, premios y reportes; las mutaciones requieren `Idempotency-Key` y cliente API con clave hasheada/scopes.
+- APISIX publica el contrato externo como `/${PUBLIC_TENANT_SLUG}/fidelizacion/health` y `/${PUBLIC_TENANT_SLUG}/fidelizacion/v1/*`, con rutas protegidas por `X-API-Key` o `Authorization: Bearer`.
+- Dashboard agrega rutas `/dashboard/loyalty-points/settings`, `/rules` y `/reports`; Clientes permite crear socio; Caja no selecciona socio por defecto; Canjes bloquea visualmente socios sin tarjeta; el menu interno y lateral incluyen reglas, configuracion y reportes.
+- `scripts/run_loyalty_policy_exercises.php` prueba creacion de socio, factura duplicada, formula, canje sin tarjeta, canje exitoso, stock agotado, socio bloqueado y reversa; `scripts/check-paramascotas.sh` lo ejecuta dentro de `backend-api`.
+- Registro maestro de capacidades agrega `loyalty.admin` y `loyalty.public`; se regeneraron `webparamascotas/docs/system-capabilities.generated.json` y `webparamascotas/app/src/generated/systemCapabilities.ts`.
+
+Verificacion:
+- Paso `php -l` en `backend/public/index.php`, LoyaltyRewards, bootstrap/check DB y script de politicas.
+- Paso `php backend/scripts/check_modular_routes.php` (`194` rutas) y `docker exec backend-api php scripts/check_module_databases.php`.
+- Paso `cd dashboard && npm run type:check`, `npm run lint`, `npm run build` y `node dashboard/tools/check-dashboard-api-contracts.mjs`.
+- Paso `cd webparamascotas/app && npm run capabilities:check`.
+- Paso `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`; resultado `ok=true` con todas las reglas criticas aprobadas.
+- Paso `./scripts/check-paramascotas.sh` completo, incluyendo el nuevo ejercicio Fidepuntos.
+- Desplegado con `RUN_DB_SETUP=1 ./scripts/deploy.sh backend`, `./scripts/deploy.sh backend`, `cd dashboard && npm run docker:up` y `./scripts/deploy.sh gateway`; `backend-http`, `dashboard` y `apisix-gateway` quedan healthy.
+- Por APISIX, las rutas `/dashboard/loyalty-points`, `/customers`, `/rewards`, `/register-card`, `/rules`, `/settings` y `/reports` responden `200` en `fidepuntos.tecnolts.com`.
+- Por APISIX canonico, `https://paramascotasec.com/paramascotasec/fidelizacion/health` responde `200`; `/paramascotasec/fidelizacion/v1/program` sin credencial responde `401` esperado.
+
+Pendientes:
+- `cd dashboard && npm test -- --watch=false` sigue fallando por specs historicos no relacionados (`api-resource`, `billing-services`, `home`, `tenant-context`); se ajustaron los specs tocados por Loyalty para alias y tenant-admin, pero la suite global requiere saneamiento separado.
+- Emitir Google/Apple Wallet real queda pendiente hasta tener Issuer ID/certificados y politica de secretos; por ahora el estado es `ready-for-issuer`.
+
 ### 2026-07-05 - Fidepuntos: buscadores operativos sin select
 
 Objetivo: corregir la UX de busqueda de socio en Canje en mostrador y Registro/Tarjeta para que el resultado no se esconda dentro de un `select`, sino que al buscar se carguen campos/ficha del cliente y un boton `Ver mas` abra el detalle operativo.
@@ -417,6 +447,33 @@ Verificacion:
 - Paso `./scripts/deploy.sh dashboard`; `dashboard` quedo healthy.
 - Paso `./deploy.sh`; el workspace QA quedo listo con `dashboard`, `webparamascotas`, `backend`, `basesdedatos` y `apisix-gateway` healthy.
 - Paso `curl -k -I --resolve paramascotasec.com:443:192.168.100.229 https://paramascotasec.com/dashboard/`; respondio `HTTP/2 200`.
+
+### 2026-07-05 - Fidepuntos: reportes exportables, reglas aplicables y claves externas administrables
+
+Objetivo: cerrar brechas operativas del modulo Fidepuntos reportadas por el usuario: reportes no exportables, reportes escondidos en select, reglas/configuracion poco aplicables y claves POS/API sin administracion posterior.
+
+Cambios:
+- Backend `LoyaltyRewards` agrega exportacion CSV para `GET /api/admin/loyalty/reports/{reportKey}/export`, usando el mismo motor de reportes y cabeceras de descarga.
+- Backend agrega administracion de clientes API: `PATCH /api/admin/loyalty/api-clients/{clientId}` para activar/suspender/editar y `POST /api/admin/loyalty/api-clients/{clientId}/revoke` para revocacion auditada.
+- Dashboard registra los nuevos endpoints en `dashboard-api.config.ts` y `LoyaltyPointsApiService` expone descarga CSV, actualizacion y revocacion de clientes API.
+- Pantalla `loyalty-points/reports` deja el select y muestra un menu operativo de reportes con proposito, filtros de periodo, ejecucion y boton `Exportar CSV`.
+- Pantalla `loyalty-points/settings` mejora configuracion aplicada: vista previa de formula de puntos, moneda/zona horaria, limites y administracion de claves externas con estados Activa/Suspendida/Revocada.
+- Pantalla `loyalty-points/rules` permite editar formula, limites de canje, antifraude, retencion, umbrales y beneficios por nivel; ya no muestra reglas criticas solo como texto.
+- `webparamascotas` regenero capacidades publicadas para incluir 184 rutas backend tenantizadas.
+
+Verificacion:
+- Paso `php -l` en repositorio/controlador/rutas de LoyaltyRewards.
+- Paso `php backend/scripts/check_modular_routes.php` (`197` rutas).
+- Paso `cd dashboard && npm run type:check`, `npm run lint`, `npm run build`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs`.
+- Paso `cd webparamascotas/app && npm run capabilities:generate` y `npm run capabilities:check`.
+- Paso `docker exec backend-api php scripts/run_loyalty_policy_exercises.php` antes y despues del deploy; valida socio, factura duplicada, formula, canje sin tarjeta, canje exitoso, stock, socio bloqueado y reversa.
+- Paso `./scripts/check-paramascotas.sh`.
+- Desplegado con `./scripts/deploy.sh backend`, `cd dashboard && npm run docker:up` y `./scripts/deploy.sh gateway`.
+- Probes APISIX: `/dashboard/loyalty-points/reports`, `/settings` y `/rules` respondieron `200`; endpoints admin nuevos respondieron `401` sin sesion, confirmando ruta protegida y no inexistente.
+
+Pendientes:
+- `cd dashboard && npm test -- --watch=false` sigue fallando en specs ajenas a Fidepuntos (`api-resource`, `dashboard-modules`, `tenant-context`, `billing-services`, `paramascotas-expenses`, `home-3`). No habia specs propias bajo `features/loyalty-points` al filtrar.
 
 ### 2026-07-04 - Dashboard QA: proyecciones ReportingFinance por pantalla
 
