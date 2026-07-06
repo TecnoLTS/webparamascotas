@@ -52,8 +52,8 @@ RUN_DB_SETUP=1 ./scripts/deploy.sh backend
 Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `dashboard`, `gateway`. Billing SRI vive dentro de `backend`; `billing` y `facturador` no son servicios desplegables del workspace.
 Orden del despliegue completo: DB -> Backend -> Frontend -> Dashboard -> gatewayapisix.
 Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`); `dashboard` usa `dashboard/.env` con `APP_ENV=qa|production`. QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
-Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh [--all|--database nombre|--databases lista]`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
-El backup sin selector permite elegir interactivamente todas las bases o bases especificas; en uso no interactivo conserva `--all`. `--list-databases` muestra las bases disponibles. Los backups parciales generan `.manifest`, no actualizan `latest.sql.enc` y el restore parcial reemplaza solo las bases incluidas.
+Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh [--all|--cluster|--database nombre|--databases lista]`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
+`--all` y el uso no interactivo sin selector respaldan las bases logicas gestionadas por `config/module-databases.json` (actualmente `dashboard`, `ecommerce`, `facturacion` y `loyalty`), sincronizando bases faltantes antes de listar o respaldar. `--list-databases` muestra esas bases gestionadas. `--cluster` queda reservado para respaldar todo el cluster PostgreSQL, incluidas bases legacy/admin como `postgres`. Los backups parciales por `--database/--databases` generan `.manifest`, no actualizan `latest.sql.enc` y el restore parcial reemplaza solo las bases incluidas.
 En restore, el ambiente activo define solo el destino (`POSTGRES_DATA_DIR`); el archivo origen puede ser cualquier `.sql.enc` valido y la clave debe corresponder al backup origen.
 El flujo interactivo de DB siempre pide clave: backup solicita clave y confirmacion antes de cifrar; restore solicita la clave y solo continua si descifra el archivo. `--yes` solo salta la confirmacion destructiva, no salta la clave.
 Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultimo backup local disponible. Restore con archivo exige ruta exacta existente; `backup-YYYYMMDDTHHMMSSZ.sql.enc` es solo patron documental. `./scripts/restore-from-backup.sh --list` lista nombres reales.
@@ -269,6 +269,22 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-06 - Backups DB: `--all` respalda bases gestionadas
+
+Objetivo: asegurar que `./scripts/backup-and-stop.sh --all` incluya las cuatro bases logicas vigentes (`dashboard`, `ecommerce`, `facturacion`, `loyalty`) aunque otro ambiente no las haya sincronizado aun, y evitar que bases legacy/admin entren como alcance normal.
+
+Cambios:
+- `basesdedatos/scripts/common.sh` agrega `module_database_names()` para resolver bases unicas desde `config/module-databases.json` y los overrides de `backend/entorno/.env`.
+- `backup-and-stop.sh` sincroniza `sync_module_databases` antes de listar o respaldar; si falta una base registrada, falla con diagnostico en vez de generar un backup incompleto.
+- `--all` y el modo no interactivo sin selector ahora respaldan las bases gestionadas; `--cluster` queda como opcion explicita para `pg_dumpall` de todo el cluster.
+- `--list-databases` lista solo las bases gestionadas que entran por `--all`.
+- El manifest registra `managed_databases` y `managed_all`; los backups gestionados actualizan `latest.sql.enc`.
+- `export-for-git.sh` y `transfer-db.sh export` aceptan y documentan `--cluster`.
+
+Verificacion:
+- Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `export-for-git.sh`, `transfer-db.sh` y `restore-from-backup.sh`.
+- Paso `./scripts/backup-and-stop.sh --list-databases`; sincronizo modulos y listo exactamente `ecommerce`, `dashboard`, `facturacion` y `loyalty`.
 
 ### 2026-07-05 - DB restore QA: diagnostico de arranque PostgreSQL
 
