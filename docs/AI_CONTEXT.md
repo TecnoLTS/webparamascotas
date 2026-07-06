@@ -53,7 +53,7 @@ Servicios validos del workspace orquestado: `db`, `backend`, `frontend`, `dashbo
 Orden del despliegue completo: DB -> Backend -> Frontend -> Dashboard -> gatewayapisix.
 Los scripts leen el modo activo desde `entorno/.env` por componente (`ENTORNO_MODE=qa|production`); `dashboard` usa `dashboard/.env` con `APP_ENV=qa|production`. QA y produccion usan el mismo codigo de scripts; solo cambian `.env`. No existen wrappers de deploy por ambiente.
 Los backups/restores de `basesdedatos` tambien leen el ambiente activo desde `basesdedatos/entorno/.env`; el contrato canonico es `./scripts/backup-and-stop.sh [--all|--cluster|--database nombre|--databases lista]`, `./scripts/restore-from-backup.sh [archivo.sql.enc] --yes` y `./scripts/transfer-db.sh export|restore`, sin argumentos `qa|production` ni `--mode`.
-`--all` y el uso no interactivo sin selector respaldan las bases logicas gestionadas por `config/module-databases.json` (actualmente `dashboard`, `ecommerce`, `facturacion` y `loyalty`), sincronizando bases faltantes antes de listar o respaldar. `--list-databases` muestra esas bases gestionadas. `--cluster` queda reservado para respaldar todo el cluster PostgreSQL, incluidas bases legacy/admin como `postgres`. Los backups parciales por `--database/--databases` generan `.manifest`, no actualizan `latest.sql.enc` y el restore parcial reemplaza solo las bases incluidas.
+`--all` y el uso no interactivo sin selector respaldan las bases logicas gestionadas por `config/module-databases.json` (actualmente `dashboard`, `ecommerce`, `facturacion` y `loyalty`), sincronizando bases faltantes antes de listar o respaldar. `--list-databases` muestra esas bases gestionadas. `--cluster` queda reservado para respaldar todo el cluster PostgreSQL, incluidas bases legacy/admin como `postgres`. `./scripts/transfer-db.sh restore --yes` sin archivo restaura el paquete real mas reciente (`.sql.enc` con `.manifest`) encontrado en `git-transfer/` o `backups/`, ya sea generado por `--all`, `--database` o `--databases`; el manifest del backup decide si el restore reemplaza bases gestionadas, bases seleccionadas o todo el cluster. Los backups parciales por `--database/--databases` generan `.manifest`, no actualizan `latest.sql.enc` y el restore parcial reemplaza solo las bases incluidas.
 En restore, el ambiente activo define solo el destino (`POSTGRES_DATA_DIR`); el archivo origen puede ser cualquier `.sql.enc` valido y la clave debe corresponder al backup origen.
 El flujo interactivo de DB siempre pide clave: backup solicita clave y confirmacion antes de cifrar; restore solicita la clave y solo continua si descifra el archivo. `--yes` solo salta la confirmacion destructiva, no salta la clave.
 Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultimo backup local disponible. Restore con archivo exige ruta exacta existente; `backup-YYYYMMDDTHHMMSSZ.sql.enc` es solo patron documental. `./scripts/restore-from-backup.sh --list` lista nombres reales.
@@ -281,10 +281,14 @@ Cambios:
 - `--list-databases` lista solo las bases gestionadas que entran por `--all`.
 - El manifest registra `managed_databases` y `managed_all`; los backups gestionados actualizan `latest.sql.enc`.
 - `export-for-git.sh` y `transfer-db.sh export` aceptan y documentan `--cluster`.
+- `transfer-db.sh restore --yes` sin archivo busca el ultimo paquete real transferido/local (`.sql.enc` con `.manifest`) en `git-transfer/` o `backups/`, sin filtrar por alcance; soporta backups `--all`, `--database` y `--databases`.
+- `restore-from-backup.sh` imprime antes de tocar datos el backup seleccionado, manifest, alcance y bases declaradas; despues del restore imprime resumen por base y tenants de `dashboard."User"` cuando aplica.
 
 Verificacion:
 - Paso `bash -n` en `common.sh`, `backup-and-stop.sh`, `export-for-git.sh`, `transfer-db.sh` y `restore-from-backup.sh`.
 - Paso `./scripts/backup-and-stop.sh --list-databases`; sincronizo modulos y listo exactamente `ecommerce`, `dashboard`, `facturacion` y `loyalty`.
+- Paso `./scripts/transfer-db.sh --help`; documenta backups `--all`, `--database` y `--databases` en origen y `transfer-db.sh restore --yes` en destino.
+- Paso prueba no destructiva de `latest_transfer_or_local_backup_file`: elige el paquete con manifest mas reciente entre `git-transfer/` y `backups/`, incluyendo backups parciales, e ignora `.sql.enc` sin manifest.
 
 ### 2026-07-05 - DB restore QA: diagnostico de arranque PostgreSQL
 
