@@ -270,6 +270,173 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-06 - Fidepuntos: emision Android con correo y objectIds por socio
+
+Objetivo: permitir que cualquier socio con cuenta propia pueda recibir una tarjeta Google Wallet, no solo la tarjeta legacy `CLI-00847`, y enviar por correo el boton para agregarla al Wallet con su saldo actual.
+
+Cambios:
+- El endpoint admin `POST /api/admin/loyalty/wallet/google-link` ahora envia correo por defecto al email del socio usando `MailService::sendHtml()`.
+- `MailService` agrega `sendHtml()` para correos con boton HTML y fallback `mail()`/SMTP, registrando outbox con cuerpo redaccionado cuando se usa para Wallet.
+- La respuesta de Google Wallet incluye `email.sent`, `email.recipient` y `email.reason` para que dashboard diferencie correo enviado vs enlace manual.
+- `Emitir tarjeta digital` cambia el boton a `Enviar Android` y muestra si el correo fue enviado o si solo quedo el enlace manual.
+- El objectId de Google Wallet se genera por socio con el formato canonico `{issuerId}.{tenantId}_{accountId}`; ejemplo verificado para Ana Salazar: `3388000000023170202.fidepuntos_FID-1003`.
+
+Decisiones:
+- El numero visible de la tarjeta es el `account_id` del socio. Se pueden generar tarjetas para todos los codigos/cuentas que se creen en la plataforma; no dependen de que Google "entregue" previamente un codigo como `CLI-00847`.
+- No se envio correo real durante la verificacion automatica para evitar notificaciones no solicitadas; se valido la firma del save URL sin imprimir el JWT completo.
+
+Verificacion:
+- Paso `php -l` para `MailService.php` y `LoyaltyRepository.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh backend`; `backend-http` quedo healthy.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Prueba CLI no destructiva genero save URL para Ana Salazar con `object_id=3388000000023170202.fidepuntos_FID-1003`, `class_id=3388000000023170202.tecnolts_test_fidelidad`, prefijo Google Wallet valido y `points_used=736`.
+
+### 2026-07-06 - Fidepuntos: gestion de premios en modal y verificacion de stock
+
+Objetivo: reemplazar los inputs inline de `Gestionar premios` por una edicion en modal y confirmar si cada canje descuenta el stock del premio.
+
+Cambios:
+- `Gestionar premios` ya no muestra el formulario superior ni edicion embebida dentro de la fila.
+- `Agregar premio` abre un modal dedicado con nombre, descripcion, puntos y stock.
+- `Editar` abre el mismo modal con los datos del premio y permite actualizar costo, stock y estado sin deformar la lista.
+- Se agregaron estilos `loyalty-modal-*`, `loyalty-field` y acciones responsivas para desktop/mobile.
+
+Decisiones:
+- Las acciones `Ver`, `Desactivar/Activar` y `Eliminar` se mantienen en la fila porque son acciones puntuales, no edicion de formulario.
+- No se cambio backend para stock: `redeemReward()` ya valida stock disponible y dentro de la transaccion ejecuta `UPDATE loyalty_rewards SET stock = GREATEST(stock - 1, 0)`.
+
+Verificacion:
+- Consulta en QA confirmo `Cafe de cortesia` con `stock=39` y `redemption_count=3`; en captura previa estaba `stock=40` y `2 canjes`, consistente con descuento de una unidad por canje.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: motivo visible para canjes bloqueados
+
+Objetivo: explicar en la pantalla `Canjear premio` por que el boton de canje queda deshabilitado cuando el socio no cumple una condicion operativa.
+
+Cambios:
+- Se confirmo que `Diego Jara / CLI-00847` tiene `280 pts` y el premio mas barato visible cuesta `300 pts`; el bloqueo era por saldo insuficiente.
+- `Canjear premio` centraliza la regla de bloqueo en `redeemBlockReason()`: socio seleccionado, tarjeta digital, premio activo, stock disponible, saldo suficiente y canje en proceso.
+- En modo canje, cada premio muestra un motivo visible cuando aplica, por ejemplo `Faltan 20 pts`, y el boton recibe el mismo motivo como `title`.
+- Se agregaron estilos `loyalty-redeem-*` responsivos para que el motivo quede junto a la accion sin romper la fila.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: mensajes de error operativos en compra
+
+Objetivo: evitar que la UI de compra oculte la causa real de rechazos backend, especialmente reglas de negocio como factura duplicada, minimo de compra, limites diarios o validaciones de saldo.
+
+Cambios:
+- `errorMessage()` en pantallas Fidepuntos de compra, clientes y premios ahora soporta formas reales de `HttpErrorResponse`: `error.message`, `error.error.message`, `error.error.error.message` y strings planos.
+- Se confirmo que el intento con factura `2342343423` fallaba por duplicado; backend devuelve `Esta factura ya fue registrada en el programa.`.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: redisenio POS de registrar compra
+
+Objetivo: recrear la pantalla `Registrar compra` para eliminar datos repetidos del socio y convertirla en una consola de caja con informacion util para decidir y confirmar la operacion.
+
+Cambios:
+- La pantalla de compra ahora usa un layout POS: seleccion de socio, captura de factura/monto e impacto estimado en columnas claras.
+- Se eliminan metricas redundantes de busqueda y la tabla de socios recientes en esta pantalla.
+- El socio se muestra una sola vez como contexto activo con cuenta, correo, nivel, tarjeta y acceso a historial.
+- El formulario de compra solo captura `N. de factura` y `Monto de factura`; no muestra datos maestros como inputs.
+- Se carga `getRules()` para estimar puntos con regla real de acumulacion, redondeo, maximo por compra y multiplicador por nivel; el backend sigue siendo la autoridad final.
+- El panel de impacto muestra saldo actual, puntos estimados, saldo proyectado, regla activa y estado de sincronizacion Google Wallet.
+- Se agregan estilos `loyalty-pos-*` responsivos para desktop/tablet/mobile.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: compra usa socio seleccionado como lectura
+
+Objetivo: corregir la pantalla de registrar compra para que no permita editar datos maestros del socio en el formulario operativo y muestre correo al seleccionar `CLI-00847`.
+
+Cambios:
+- Se completo el socio `Diego Jara / CLI-00847` con correo y telefono operativos, porque habia sido creado antes de endurecer la validacion obligatoria.
+- En `Registrar compra`, los campos `Cliente` y `Correo` pasan de inputs editables a datos de solo lectura basados en `selectedCustomer()`.
+- La tabla `Socios recientes` elimina la columna `Accion` y el boton `Usar`; la seleccion queda centralizada en el buscador superior.
+- Se agregan estilos `loyalty-readonly-field` para mostrar datos confirmados sin apariencia editable.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Consulta por repositorio devuelve `Diego Jara / CLI-00847` con correo cargado.
+
+### 2026-07-06 - Fidepuntos: limpieza de socio duplicado y validacion obligatoria
+
+Objetivo: eliminar el socio cargado por error con nombre `CLI-00847` y evitar nuevas altas incompletas desde dashboard o API backend.
+
+Cambios:
+- Se elimino de `loyalty` el socio erroneo `member_03845bad8ea61c40` (`account_id=FID-1013`, `account_name=CLI-00847`, saldo `0`) junto con dependencias de puntos/wallet/riesgo si existian.
+- Se conserva el socio correcto `Diego Jara` con cuenta `CLI-00847`, tarjeta Android y pase Google importado.
+- `LoyaltyRepository::createMember()` ahora exige cuenta, nombre, correo valido y telefono; ya no genera `FID-*` automaticamente cuando falta cuenta.
+- Formulario `Administrar clientes > Nuevo socio` agrega campo obligatorio `Cuenta`, marca nombre/cuenta/correo/telefono como requeridos y valida correo antes de enviar.
+
+Verificacion:
+- Paso `php -l` para `LoyaltyRepository.php` y `GoogleWalletService.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso prueba negativa en `backend-api`: `createMember(['name'=>'Prueba Incompleta'])` rechaza con `El correo del socio es obligatorio y debe ser valido.`
+- Paso `./scripts/deploy.sh backend`; `backend-http` quedo healthy.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Consulta por repositorio devuelve solo `Diego Jara / CLI-00847` para esa busqueda.
+
+### 2026-07-06 - Fidepuntos: vinculacion de pase Google Wallet legacy `CLI-00847`
+
+Objetivo: conectar la tarjeta Android ya existente del demo `generadorCardWallet` con el socio real del dashboard para poder consultar su saldo desde Google Wallet y sincronizar futuros ajustes/canjes contra el mismo objeto Google.
+
+Cambios:
+- Backend `GoogleWalletService` agrega lectura de `loyaltyObject`, extraccion de puntos y actualizacion por `objectId` explicito para pases legacy.
+- `syncGoogleWalletBestEffort()` ahora respeta `loyalty_wallet_passes.external_object_id` cuando pertenece al issuer configurado, evitando crear otro objeto para tarjetas importadas.
+- Se copio localmente el service account del demo a `backend/storage/wallet/service-account.json` con permisos restringidos; el archivo sigue ignorado por Git.
+- `backend/entorno/.env` activo recibe `GOOGLE_WALLET_ISSUER_ID` y `GOOGLE_WALLET_SA_PATH`.
+- `loyalty_program_settings` del tenant `fidepuntos` queda configurado con `googleWallet` usando la clase demo `tecnolts_test_fidelidad`.
+- Se creo/vinculo el socio `Diego Jara` con cuenta `CLI-00847` en tenant `fidepuntos`.
+- Se consulto Google Wallet para `3388000000023170202.socio_demo_001`; Google devolvio `10` puntos y se sincronizo el saldo de DB mediante ajuste auditado. El pase quedo asociado a `member_44f077c6dfbd2206` con `wallet_platform=google`.
+
+Decisiones:
+- `CLI-00847` era el `accountId` de la tarjeta demo, no un socio existente en la base; se creo como socio real para que el dashboard pueda operar.
+- No se desconto ningun punto automaticamente porque el usuario no indico cantidad; desde ahora ajustes negativos/canjes del dashboard sincronizan el mismo objeto Google importado.
+
+Verificacion:
+- Paso `php -l` para `GoogleWalletService.php` y `LoyaltyRepository.php`.
+- Paso `./scripts/deploy.sh backend`; `backend-http` quedo healthy.
+- Consulta por repositorio devuelve `CLI-00847` como `Diego Jara`, `wallet_platform=google` y saldo `10`.
+
+### 2026-07-06 - Fidepuntos: emision Google Wallet desde dashboard
+
+Objetivo: completar la integracion de `generadorCardWallet` migrada al backend PHP para poder emitir tarjetas Google Wallet desde el dashboard y dejar reproducible la configuracion operativa.
+
+Cambios:
+- Dashboard agrega `generateGoogleWalletLink()` en `LoyaltyPointsApiService` y tipa la respuesta `LoyaltyGoogleWalletLink`.
+- La pantalla `Emitir tarjeta digital` usa `POST /api/admin/loyalty/wallet/google-link` para generar el `saveUrl`, marca al socio como Android y muestra un modal con enlace explicito para abrir Google Wallet.
+- Configuracion Fidepuntos expone la seccion `googleWallet` soportada por backend: habilitado, sufijo de clase, emisor, nombre visible, color, logo HTTPS, etiqueta de puntos y origins.
+- Las claves API creadas desde dashboard para POS/integraciones generales incluyen `wallet:link`; backend tambien lo agrega al set por defecto cuando no se envian scopes explicitos.
+- `backend/templates/entorno/.env.example` documenta `GOOGLE_WALLET_ISSUER_ID` y `GOOGLE_WALLET_SA_PATH`; se agrega `backend/storage/wallet/.gitkeep` sin versionar JSON de service account.
+
+Decisiones:
+- No se copian ni imprimen credenciales reales de `generadorCardWallet`; el service account debe vivir como archivo local ignorado bajo `backend/storage/wallet/`.
+- El dashboard no abre automaticamente el `saveUrl` tras la respuesta async para evitar bloqueos de pop-up; muestra un CTA explicito en modal.
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `php -l backend/scripts/sync_wallet_passes.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+
 ### 2026-07-06 - Backups DB: `--all` respalda bases gestionadas
 
 Objetivo: asegurar que `./scripts/backup-and-stop.sh --all` incluya las cuatro bases logicas vigentes (`dashboard`, `ecommerce`, `facturacion`, `loyalty`) aunque otro ambiente no las haya sincronizado aun, y evitar que bases legacy/admin entren como alcance normal.
