@@ -270,6 +270,467 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-06 - Fidepuntos: QR valido para agregar tarjeta a Google Wallet
+
+Objetivo: corregir el QR mostrado en `loyalty-points/customer-card`, porque usaba un payload interno `LOYALTY:{tenant}:{memberId}` y no el enlace firmado que permite registrar la tarjeta en Google Wallet.
+
+Cambios:
+- Se agrego dependencia `qrcode` en `dashboard` para renderizar QR localmente desde el navegador, sin enviar el `saveUrl` firmado a servicios externos.
+- `LoyaltyPointsRegisterCardComponent` ahora guarda en memoria el `saveUrl` devuelto por `googleWalletLink` al emitir Android y genera un QR SVG inline escaneable con esa URL, evitando canvas/data-url.
+- La vista previa reemplazo la matriz simulada por un QR real enlazado al mismo `saveUrl` que usa el boton del correo.
+- Para que el QR sea menos denso y mas legible en camaras de iPhone desde pantalla, `googleWalletLink` devuelve `qrPath` con un token compacto firmado de 24 horas (`v1.accountId.exp36.firma`); el QR codifica `GET /api/l/w/{token}` y esa ruta valida firma/tenant/cuenta, regenera el `saveUrl` actual y redirige a Google Wallet. La ruta legacy `/api/loyalty/v1/wallet/google/{token}` queda disponible para compatibilidad.
+- Se agrego accion `Generar QR` para obtener un nuevo enlace sin reenviar correo (`sendEmail=false`) cuando el socio ya tiene Android activo o se necesita mostrar el QR en pantalla; tambien se autogenera al seleccionar un socio con Android activo.
+- Se elimino el enlace manual de la vista previa de pantalla y del modal posterior a emitir; ese fallback queda solo para el correo del cliente.
+- El QR SVG de la vista previa queda limitado por una caja cuadrada responsive, sin desbordarse del pase visual y sin efecto de hover; el panel de cola tambien limita ancho para evitar overflow lateral.
+- El QR usa correccion `L`, margen blanco `5`, negro puro sobre blanco, SVG de 640px, caja estable de hasta 368px y `shape-rendering="crispEdges"` inline para mejorar lectura en baja resolucion sin salirse del pase.
+- El QR de la vista previa dejo de ser un enlace clickeable; se renderiza como imagen (`role="img"`) para que solo funcione por escaneo.
+- Al cambiar de socio o retirar/marcar otra plataforma se limpia el QR en memoria para evitar mostrar enlaces de otro socio.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `php -l` sobre controlador, repositorio y rutas LoyaltyRewards.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Paso `./scripts/deploy.sh backend`.
+- APISIX respondio `422` controlado para QR invalido y para token firmado de socio inexistente, confirmando exposicion publica y validacion de firma.
+- APISIX respondio `302` hacia `https://pay.google.com/gp/v/save/...` con `GET` y `HEAD` sobre token firmado real para `CLI-00849`.
+- Se confirmo que la URL QR compacta para `CLI-00849` queda en 71 caracteres y 33 modulos, frente a 121 caracteres/41 modulos del token anterior y 53 modulos del formato JSON/base64 inicial.
+- Se confirmo en el bundle desplegado que las reglas nuevas del QR (`aspect-ratio`, `overflow:hidden`, ancho responsive y foco sin hover visual) estan presentes.
+- Se confirmo en el bundle desplegado `loyalty-wallet-qr-frame`, `shape-rendering="crispEdges"` y ausencia de `loyalty-wallet-qr-link`.
+- El build Angular emitio warnings CommonJS por `qrcode`, `dijkstrajs` y `sweetalert2`; no bloquearon el deploy.
+
+### 2026-07-06 - Fidepuntos: redisenio de emision de tarjeta digital
+
+Objetivo: mejorar la UX/UI de `loyalty-points/customer-card` para que la emision y administracion de tarjetas digitales sea una consola operativa clara, consistente y sin cargas innecesarias.
+
+Cambios:
+- La ruta `customer-card` conserva el componente compartido con registrar compra, pero ahora tiene modo visual propio `Emitir tarjeta digital`.
+- Se agrego una cabecera operativa con icono, pasos de emision (`Socio`, `Estado`, `Tarjeta`) y descripcion directa.
+- Se reemplazo la pantalla basica por un layout con KPIs compactos, busqueda controlada, socio seleccionado, estado de emision, acciones principales, vista previa del pase y cola de trabajo.
+- La busqueda sigue ejecutandose solo al presionar `Buscar`, con limite paginado existente, para evitar peticiones por cada letra y proteger el rendimiento ante volumen alto.
+- Se agregaron estilos responsive `loyalty-card-*` para evitar desbordes, mantener objetivos tactiles claros y conservar jerarquia en resoluciones bajas.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: cabeceras compactas sin textos redundantes
+
+Objetivo: eliminar textos de cabecera duplicados en pantallas de Loyalty sin perder el icono visual que identifica la seccion.
+
+Cambios:
+- Se eliminaron las cabeceras `app-page-header` redundantes en `customer-card`, catalogo de premios, reglas, configuracion y reportes.
+- Los iconos se integraron junto al titulo real de la seccion mediante `loyalty-title-with-icon`, evitando iconos sueltos encima del contenido.
+- Las cabeceras principales de resumen, administracion de socios, registrar compra y canjear premio usan `loyalty-command-title-with-icon` para conservar el icono al lado del titulo sin duplicar textos.
+- Se completo el patron de icono + titulo en las secciones de resumen, socios, POS, canjes, reglas, configuracion y reportes.
+- Las explicaciones quedan en la seccion operativa principal, sin repetir titulo/descripcion en una cabecera superior.
+- Se quito la logica de titulo/descripcion que ya no se usaba en tarjeta digital y premios.
+
+Verificacion:
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: redisenio de administracion de socios
+
+Objetivo: mejorar la UX/UI de `loyalty-points/customers` para que la administracion de socios sea mas clara, operativa y coherente con el resto de Fidepuntos.
+
+Cambios:
+- Se reemplazo la cabecera duplicada por una cabecera operativa unica `Administrar socios`, con acciones directas a registrar compra y canjear premio.
+- Se agrego un resumen compacto de la consulta actual con resultado, socios visibles en pagina, tarjetas visibles y bloqueados visibles.
+- El alta de socio paso a un panel secundario compacto, dejando la busqueda y la tabla como area principal.
+- Los filtros explicitan que la consulta es paginada y muestran conteo de filtros activos sin cargar listas completas.
+- La tabla ahora muestra identidad visual del socio con iniciales, correo truncado y acciones mas ordenadas.
+- Se agregaron estilos responsive para evitar columnas forzadas y mantener la tabla dentro de su contenedor en resoluciones bajas.
+
+Verificacion:
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: redisenio de canje de premios
+
+Objetivo: mejorar la UX/UI de `loyalty-points/rewards/redeem` para que el canje en mostrador sea claro, operativo y coherente con el flujo de registrar compra.
+
+Cambios:
+- Se agrego una cabecera operativa `Mostrador Fidepuntos` con pasos visibles: socio, saldo y premio.
+- La busqueda de socio ahora vive en un bloque de seleccion con ayuda clara, icono de busqueda y CTA principal.
+- El socio seleccionado se muestra como tarjeta de mostrador con iniciales, cuenta, saldo, tarjeta digital y accion de detalle.
+- Se agrego un panel lateral de elegibilidad con premios canjeables, activos con stock, costo minimo y reglas de validacion.
+- La lista de premios en modo canje diferencia visualmente premios listos y bloqueados, manteniendo las mismas validaciones backend.
+- El layout se adapta a resoluciones bajas sin columnas forzadas ni botones apretados.
+
+Verificacion:
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: redisenio POS de registrar compra
+
+Objetivo: mejorar la UX/UI de `loyalty-points/register-purchase` para que la captura de compras se entienda como flujo de caja, con estado claro, menos friccion y una vista de impacto coherente.
+
+Cambios:
+- Se agrego una cabecera operativa `Caja Fidepuntos` con pasos visibles: socio, factura y puntos.
+- La tarjeta del socio seleccionado ahora muestra iniciales, identidad, saldo, tarjeta digital y accion de ver detalle con mejor jerarquia.
+- La captura de factura incorpora iconos, prefijo monetario, accesos rapidos de monto y validacion visual antes de emitir puntos.
+- El panel lateral de impacto prioriza puntos a emitir y compara saldo actual vs saldo proyectado.
+- El layout mantiene el resumen de impacto fijo en desktop y vuelve a flujo normal en resoluciones bajas.
+
+Verificacion:
+- Paso `cd dashboard && npm run lint`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: graficos secundarios agrupados junto al ranking
+
+Objetivo: reducir espacio desperdiciado en la zona de graficos de `loyalty-points`, donde `Adopcion de tarjetas` y `Niveles de socios` ocupaban columnas altas con mucho vacio.
+
+Cambios:
+- La seccion de analisis paso de tres columnas (`adopcion` + `ranking` + `niveles`) a dos columnas.
+- `Clientes que mueven el programa` queda como grafico principal ancho.
+- `Adopcion de tarjetas` y `Niveles de socios` quedan agrupados y apilados en una columna lateral compacta.
+- Se agregaron clases `loyalty-analysis-side` y `loyalty-panel--compact-chart` para reducir padding y espacio muerto solo en los graficos secundarios.
+- El comportamiento responsive conserva una sola columna en anchos bajos.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: adopcion digital coherente por periodo
+
+Objetivo: corregir el dato imposible `Con tarjeta digital 12 · 109.1%` en `loyalty-points` y asegurar que los porcentajes usen numerador y denominador del mismo universo.
+
+Cambios:
+- Backend `LoyaltyRepository` agrega `digitalMembers` a las metricas base y a `periodMetrics` para `7`, `14`, `30` y `all`.
+- `digitalMembers` se calcula con los mismos filtros de actividad del periodo que `activeMembers`, evitando mezclar tarjetas generales con socios activos del periodo.
+- El embudo del dashboard usa `filteredMetrics.digitalMembers` en lugar de inferir tarjetas desde `walletSummary`/ranking visible.
+- La tarjeta lateral `Adopcion digital` tambien usa `digitalMembers / activeMembers` del periodo filtrado.
+- Se agrego defensa en helpers de porcentaje backend/frontend para no mostrar porcentajes fuera del rango `0..100`.
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh backend`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Verificacion interna desplegada para tenant `fidepuntos`: `periodMetrics.14.activeMembers=11`, `digitalMembers=9`, porcentaje esperado `81.8%`; `all.activeMembers=13`, `digitalMembers=11`, porcentaje esperado `84.6%`.
+
+### 2026-07-06 - Fidepuntos: selector de mes integrado en periodo
+
+Objetivo: reemplazar el input mensual separado del dashboard loyalty por una opcion `Mes` dentro del control `Periodo de puntos`, con un almanaque visual mas consistente.
+
+Cambios:
+- El filtro de periodo ahora se renderiza como `7 dias`, `14 dias`, `30 dias`, `Mes` y `Todo`; `Mes` abre un popover propio de seleccion mensual.
+- Se elimino el `input type="month"` nativo para evitar el calendario del navegador y reducir el espacio desperdiciado.
+- Al elegir `Mes`, el dashboard consulta el mes completo; al elegir `Todo` o rangos de dias se limpia el mes para evitar filtros ambiguos.
+- El popover incluye navegacion de anio, meses deshabilitados a futuro, acciones `Borrar` y `Este mes`, y estilos responsive sin heredar los estilos del segmentado.
+- El conteo de filtros ya no cuenta doble el caso mensual como `Todo + Mes`; se cuenta como un solo filtro de periodo.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: correccion responsive de actividad filtrada
+
+Objetivo: corregir el solapamiento entre nombres/premios e importes de puntos en la seccion `Actividad del filtro` de `loyalty-points` en anchos bajos.
+
+Cambios:
+- Las filas de consumos/canjes reservan ancho minimo para el valor de puntos y alinean el contenido arriba.
+- El texto descriptivo del premio puede ocupar hasta dos lineas con recorte controlado, sin invadir la columna de puntos.
+- Las tarjetas de actividad usan `container-type: inline-size` y una regla `@container` para apilar el importe debajo del texto cuando el card es estrecho, aunque el viewport completo no sea movil.
+- En viewport movil se conserva el layout apilado y alineado a la izquierda.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Verificacion del bundle desplegado confirmo `container-type: inline-size` y la regla `@container`.
+
+### 2026-07-06 - Fidepuntos: filtro mensual en dashboard loyalty
+
+Objetivo: agregar un filtro de mes a `loyalty-points` para consultar y mostrar datos del mes elegido sin romper los filtros existentes de 7/14/30 dias, movimiento, tarjeta, limite y socio.
+
+Cambios:
+- `GET /api/admin/loyalty/dashboard` acepta `month=YYYY-MM` y normaliza meses invalidos o futuros.
+- Backend genera tendencia diaria para el mes elegido, limitada hasta el dia actual cuando el mes seleccionado es el vigente.
+- `periodMetrics` se recalcula dentro del mes seleccionado; `Todo` representa el mes completo y `7/14/30` representan el tramo final dentro de ese mes.
+- Ranking, consumos recientes y canjes recientes se filtran por la ventana mensual con limites fijos para mantener respuestas acotadas.
+- El dashboard agrega control nativo `type="month"` junto al filtro de periodo; al elegir mes cambia a `Todo` para mostrar el mes completo y permite limpiar el mes.
+- Las etiquetas de grafica y actividad muestran el alcance de fecha (`Todos los meses` o el mes elegido).
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Controllers/LoyaltyController.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh backend`; `backend-http` quedo healthy.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- CLI en `backend-api` confirmo que `dashboard("2026-07")` devuelve tendencia mensual, metricas `[7,14,30,"all"]` y actividad filtrada.
+- Verificacion del bundle desplegado confirmo el control `Limpiar mes` y la etiqueta `Todos los meses`.
+
+### 2026-07-06 - Fidepuntos: dashboard loyalty sin secciones redundantes
+
+Objetivo: ordenar `loyalty-points` para reducir informacion repetida, mejorar la parte inferior de la pagina y mantener todos los bloques alineados con los filtros activos.
+
+Cambios:
+- Se elimino la tabla redundante de mejores clientes y el conteo separado de tarjetas digitales porque duplicaban el ranking y la adopcion.
+- Se reorganizo la zona inferior en un unico panel `Actividad del filtro`, con embudo compacto, consumos, canjes y acciones filtradas.
+- Consumos y canjes ahora respetan el periodo seleccionado (`7`, `14`, `30`, `Todo`) ademas de busqueda, socio, tarjeta y tipo de movimiento.
+- Las acciones recomendadas ahora se calculan sobre el segmento visible en vez de usar datos globales del dashboard.
+- Se agregaron estilos `loyalty-analysis-grid` y `loyalty-operations-*` para una lectura mas densa, consistente y menos repetida.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Verificacion del bundle desplegado confirmo `Actividad del filtro` y `loyalty-operations-grid`; `Mejores clientes` ya no aparece en la pantalla y `Tarjetas digitales` solo queda como opcion de navegacion del modulo.
+
+### 2026-07-06 - Fidepuntos: errores operativos con causa en clientes
+
+Objetivo: evitar mensajes genericos como "Error" al crear o editar socios, mostrando causas concretas como cuenta ya asignada, correo ya registrado o datos invalidos.
+
+Cambios:
+- `assertUniqueMemberIdentity()` ahora distingue conflictos de cuenta y correo, e incluye el socio propietario cuando existe.
+- La edicion de socios valida nombre/correo y bloquea correos duplicados contra otros socios.
+- Las colisiones de indice unico durante escritura se traducen a un mensaje operativo en vez de exponer un error tecnico.
+- `loyalty-points-customers` muestra el error real de la API en el modal y tambien como mensaje persistente debajo del formulario de nuevo socio.
+- Acciones de editar, cambiar estado, cargar lista y ver detalle usan el helper local de mensajes para no caer en titulos genericos.
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh backend`; el script reporto `backend-http` healthy.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Verificacion dentro de `backend-api` y `dashboard` confirmo los mensajes nuevos desplegados.
+
+### 2026-07-06 - Fidepuntos: correo Google Wallet sin URL extensa
+
+Objetivo: mejorar el correo de registro de tarjeta para que no muestre el enlace firmado gigante de Google Wallet en el cuerpo HTML.
+
+Cambios:
+- La plantilla HTML de `sendGoogleWalletEmail()` ahora conserva un unico CTA visual `Agregar tarjeta a Google Wallet`.
+- Se reemplazo el enlace visible de fallback por una nota corta para abrir el boton desde Chrome en Android.
+- La version de texto plano mantiene el enlace firmado para clientes de correo que no renderizan HTML; el outbox sigue guardando solo texto redactado sin el `saveUrl`.
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `./scripts/deploy.sh backend`; el script reporto `backend-http` healthy.
+- Verificacion dentro de `backend-api` confirmo que ya no existen `copia y pega este enlace` ni `word-break:break-all` en la plantilla desplegada.
+
+### 2026-07-06 - Fidepuntos: socios activos de periodo no supera total
+
+Objetivo: corregir la inconsistencia donde `Socios activos` mostraba mas socios en `30 dias` que en `Todo`.
+
+Cambios:
+- `periodMetrics` ahora cuenta socios activos de periodo solo si el socio sigue con `loyalty_members.status = 'active'`.
+- El conteo de actividad por periodo une `loyalty_point_ledger` con `loyalty_members` antes de calcular `active_7`, `active_14` y `active_30`.
+- Se mantiene `Todo` como base total de socios activos del programa.
+
+Verificacion:
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `./scripts/deploy.sh backend`; el script reporto `backend-http` healthy.
+- CLI en `backend-api` confirmo `30 active=11 all active=12`.
+
+### 2026-07-06 - Fidepuntos: KPIs superiores por periodo seleccionado
+
+Objetivo: corregir las tarjetas superiores del dashboard loyalty para que `Socios activos`, `Puntos emitidos`, `Canjes` y `Ticket promedio` respondan al filtro de periodo (`7 dias`, `14 dias`, `30 dias`, `Todo`) en vez de mostrar valores generales/mensuales.
+
+Cambios:
+- Backend `dashboardAnalytics` ahora incluye `periodMetrics` con agregados para `7`, `14`, `30` y `all`.
+- Los agregados por periodo calculan socios con actividad, puntos emitidos, canjes y ticket promedio usando `loyalty_point_ledger`.
+- En `Todo`, `Socios activos` conserva la base activa total del programa y los demas valores usan el historico completo.
+- El frontend `loyalty-points` usa `analytics.periodMetrics[activityRange]` cuando no hay scope de socio/tarjeta, y conserva el calculo por scope cuando hay busqueda o socio seleccionado.
+- La etiqueta `Canjes del mes` se cambio a `Canjes del periodo`.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `php -l backend/src/Modules/LoyaltyRewards/Infrastructure/LoyaltyRepository.php`.
+- Paso `./scripts/deploy.sh backend`; el script reporto `backend-http` healthy.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- CLI en `backend-api` confirmo que `analytics.periodMetrics` expone `[7,14,30,"all"]`.
+
+### 2026-07-06 - Fidepuntos: control de busquedas para escala alta
+
+Objetivo: preparar la busqueda de socios del dashboard loyalty para un volumen esperado de hasta 10 millones de clientes y muchas transacciones, evitando peticiones automaticas o consultas costosas innecesarias.
+
+Cambios:
+- El dashboard `loyalty-points` dejo de precargar automaticamente 100 socios al abrir la pantalla; ahora usa el resumen ya cargado y solo consulta socios cuando el operador presiona `Buscar`.
+- La busqueda de socio exige al menos 2 caracteres, limita sugerencias a 20 resultados y cancela la peticion anterior antes de iniciar otra.
+- `searchCustomers()` acepta `count: false` y envia `count=0` al backend para busquedas tipo sugerencia.
+- `/api/admin/loyalty/customers` soporta `count=0`; en ese modo evita `COUNT(*)`, consulta `limit + 1` y calcula `hasMore` sin recorrer todos los matches.
+- Se agregaron indices opcionales para busquedas exactas por `account_id`/email y busquedas parciales con `pg_trgm`; por permisos del usuario runtime, esas optimizaciones quedan como opcionales en `ensureSchema()` y deben crearse con usuario owner/migracion en ambientes grandes.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `php -l` en `LoyaltyController.php`, `LoyaltyRepository.php` y `LoyaltySchema.php`.
+- Paso `./scripts/deploy.sh backend`; el script reporto `backend-http` healthy.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Paso inicializacion CLI del repositorio loyalty para tenant `fidepuntos`: `loyalty schema ok`.
+
+### 2026-07-06 - Fidepuntos: KPIs compactos sobre grafica
+
+Objetivo: mover las tarjetas principales de metricas (`Socios activos`, `Puntos emitidos`, `Canjes del mes`, `Ticket promedio`) encima de la grafica principal y debajo de los filtros, reduciendo el espacio vertical desperdiciado.
+
+Cambios:
+- `loyalty-metric-grid` se movio dentro de `loyalty-command-center`, despues de filtros/seleccion de socio y antes de la grafica de tendencia.
+- El grid superior ahora incluye el area `metrics` en desktop, tablet y mobile.
+- Las tarjetas KPI se compactaron: icono de 38px, layout icono + texto en dos filas, padding menor, altura aproximada de 70px y gap reducido.
+- En mobile los KPIs mantienen layout responsive sin salir del ancho disponible.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: KPI de canje mide puntos, no compradores
+
+Objetivo: corregir la confusion del KPI lateral `Canje efectivo`, que mostraba 100% para un socio con canje porque media compradores que canjearon, no puntos canjeados contra puntos emitidos.
+
+Cambios:
+- La tarjeta se renombro a `Canje de puntos`.
+- El detalle ahora dice `puntos canjeados / emitidos`.
+- El porcentaje se calcula desde la tendencia filtrada del periodo como `puntos_redeemed / points_issued`, con tope de 100%.
+- El scope de socio/tarjeta/cantidad/periodo se mantiene para el calculo, pero ya no se interpreta como porcentaje de compradores.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: coherencia de KPIs filtrados en loyalty
+
+Objetivo: revisar que los valores de tarjetas, porcentajes y graficas del dashboard `loyalty-points` sean coherentes al combinar filtros de movimiento, tarjeta, cantidad de clientes y socio seleccionado.
+
+Cambios:
+- `Canje efectivo` en vistas filtradas ahora se calcula con socios unicos que compraron y socios unicos que canjearon, con tope de 100%, en vez de dividir cantidad bruta de canjes para cantidad bruta de consumos.
+- El calculo de `Canje efectivo` usa el scope real de socio/tarjeta/cantidad antes de ocultar consumos por el filtro visual `Solo canjeados`, para no convertir el porcentaje en 0 por efecto del propio filtro de movimiento.
+- La grafica de actividad ahora asigna colores segun la serie visible: emitidos mantiene verde/teal y canjeados mantiene marron aunque sea la unica serie mostrada.
+- El grosor de linea de la grafica se genera segun la cantidad real de series visibles para evitar configuraciones desalineadas cuando se muestra una sola serie.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+
+### 2026-07-06 - Fidepuntos: filtros arriba de graficas y busqueda real de socios
+
+Objetivo: corregir la barra de filtros del dashboard loyalty porque `Ranking` y `Buscar en tablas` no eran claros, la barra aparecia despues del primer grafico, los filtros de socios no generaban cambios visibles en graficas y la busqueda actualizaba la pagina por cada letra.
+
+Cambios:
+- La barra `loyalty-dashboard-filters` ahora vive dentro del bloque superior `loyalty-command-center`, antes del grafico de tendencia.
+- `Ranking` se renombro a `Clientes mostrados` y sus opciones ahora dicen `5 socios`, `10 socios`, `20 socios` y `Todos`.
+- `Buscar en tablas` se reemplazo por `Buscar socio`, usando el mismo patron de `Registrar compra`: escribir no filtra ni recarga el dashboard; el boton `Buscar` consulta socios y abre una lista tipo combobox para seleccionar.
+- El submit del buscador se cambio a evento nativo con `preventDefault()` para evitar recarga completa de la pagina al presionar Enter o `Buscar`.
+- `Clientes mostrados` ahora inicia por defecto en `Todos`; `Limpiar` tambien vuelve a `Todos`. Para evitar restauraciones del navegador, `Todos` quedo como primera opcion y los valores del select son strings (`all`, `5`, `10`, `20`) en vez de mezclar numeros con texto.
+- La busqueda aplicada filtra graficas y tablas aunque no se seleccione un socio de la lista; por ejemplo, buscar `Diego` limita ranking, adopcion/niveles, consumos, canjes y tendencia a los registros coincidentes disponibles.
+- Al seleccionar un socio aparece una ficha compacta con nombre, cuenta, correo, saldo y accion `Quitar`; solo entonces el dashboard filtra ranking, consumos y canjes para ese socio.
+- Las tarjetas KPI principales (`Socios activos`, `Puntos emitidos`, `Canjes del mes`, `Ticket promedio`), las tarjetas laterales (`Adopcion digital`, `Puntos disponibles`, `Canje efectivo`) y el embudo ahora usan el mismo scope filtrado por busqueda/socio/tarjeta/cantidad, en vez de conservar siempre los totales globales del backend.
+- Los filtros ahora se encadenan en este orden: clientes visibles por busqueda/socio/tarjeta/cantidad -> consumos/canjes permitidos solo para esos clientes -> movimiento (`Solo emitidos`/`Solo canjeados`) -> metricas y graficas. Si un socio Android queda filtrado por `iPhone`, todo el scope queda vacio en lugar de conservar datos Android.
+- El conjunto de clientes para ranking/graficas ahora se alimenta de `searchCustomers(limit=100, sort=points_desc, status=active)` con fallback al resumen, evitando que `Clientes mostrados` quede limitado por el `LIMIT 8` de `topCustomers`.
+- `Socios por tarjeta` y `Clientes mostrados` alimentan graficas visibles: ranking de clientes, adopcion de tarjetas, niveles de socios y tabla de mejores clientes usan el mismo conjunto filtrado.
+- Se eliminaron los estados de busqueda dentro de la tabla de mejores clientes porque la busqueda ya no es un filtro por tecla sino una seleccion explicita de socio.
+- La grilla del command center agrega area `filters` para asegurar que los filtros queden visualmente arriba de las graficas que controlan.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- El build Angular emitio solo el warning existente de `sweetalert2` CommonJS en reportes loyalty.
+
+### 2026-07-06 - Fidepuntos: filtros y mejora visual del dashboard loyalty
+
+Objetivo: revisar y mejorar la pagina completa `https://fidepuntos.tecnolts.com/dashboard/loyalty-points`, manteniendo graficos e informacion clave y agregando filtros para graficas y tablas.
+
+Cambios:
+- `LoyaltyPointsDashboardComponent` migro el resumen principal a estado derivado con señales Angular y filtros client-side.
+- Se agregaron filtros de rango de tendencia (`7`, `14`, `30`, `Todo`), serie de tendencia (`Emitidos y canjeados`, `Solo emitidos`, `Solo canjeados`), segmento de clientes por tarjeta (`Todos`, `Android`, `iPhone`, `Sin tarjeta`), limite del ranking (`Top 5`, `Top 10`, `Top 20`) y busqueda transversal para tablas.
+- El grafico de adopcion digital ahora alterna entre `Por plataforma` y `Digital vs pendiente`.
+- El ranking de clientes y la tabla de mejores clientes usan los mismos filtros de segmento/limite/busqueda.
+- Las tablas de clientes, consumos, canjes y acciones muestran estados vacios utiles cuando un filtro no devuelve resultados.
+- Se agrego una barra `loyalty-dashboard-filters` responsive con controles tactiles de 44px, estados activos accesibles, contador de filtros y boton `Limpiar`.
+- Se pulieron textos de graficos para reflejar el filtro activo y se mantuvo el estilo operativo denso del dashboard.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- El build Angular emitio solo el warning existente de `sweetalert2` CommonJS en reportes loyalty.
+- Se verifico estaticamente el bundle desplegado para confirmar inclusion de textos de filtros.
+
+### 2026-07-06 - Fidepuntos: cabecera unica en resumen de loyalty
+
+Objetivo: evitar cabeceras duplicadas y mejorar la jerarquia visual de `https://fidepuntos.tecnolts.com/dashboard/loyalty-points`.
+
+Cambios:
+- La pantalla principal `loyalty-points` ya no renderiza `app-page-header` encima del resumen; el titulo, descripcion y accion principal se integran en un solo `loyalty-command-center`.
+- El resumen ahora usa un `h1` unico `Programa de puntos y recompensas`, CTA `Registrar compra` en el mismo bloque y layout responsive con area `actions`.
+- Se elimino el wrapper interno `dashboard-main-body` de todas las pantallas `loyalty-points`, porque el shell ya lo provee y el duplicado generaba doble espaciado/estructura visual.
+- `LoyaltyPointsDashboardComponent` dejo de importar `PageHeaderComponent` porque esa cabecera ya no se usa en el resumen principal.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Se confirmo en el bundle desplegado que ya no aparece `dashboard-main-body loyalty-page` y que el chunk de loyalty contiene el titulo actualizado.
+- No se hizo captura autenticada de la URL final porque `FIDEPUNTOS_DEMO_ADMIN_PASSWORD` no estaba disponible en `backend/entorno/.env` ni en el contenedor `backend-api`.
+
+### 2026-07-06 - Fidepuntos: ojo de clave y favicon TECNOLTS por tenant
+
+Objetivo: agregar control para ver/ocultar la clave en el login y usar favicon TECNOLTS para Fidepuntos sin afectar el favicon de patita de Paramascotas.
+
+Cambios:
+- El campo `Clave` del login agrega boton accesible de ojo (`Mostrar clave`/`Ocultar clave`) con area tactil de 44px y padding extra para no solapar texto.
+- `SignInComponent` alterna el input de clave entre `password` y `text`.
+- `AppComponent` actualiza el favicon en arranque usando `resolveTenantFaviconUrl()`.
+- `resolveTenantFaviconUrl()` deja `paramascotasec` con `assets/images/tenants/paramascotasec-favicon.png` y usa el isotipo `assets/images/tenants/tecnolts-mark.svg` para Fidepuntos/otros tenants dashboard.
+- `Dockerfile` y `docker-compose.yml` pasan `NG_BUILD_MAX_WORKERS=2`; el build Angular local confirmo que esa limitacion evita cortes SIGTERM 143 durante `ng build`.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso build local con `NG_BUILD_MAX_WORKERS=2`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Playwright en QA con host forzado confirmo `before=password`, `after=text`, `toggleCount=1`, favicon Fidepuntos `assets/images/tenants/tecnolts-mark.svg` como `image/svg+xml` y favicon Paramascotas `assets/images/tenants/paramascotasec-favicon.png`.
+
+### 2026-07-06 - Fidepuntos: login sin logo duplicado y formulario pulido
+
+Objetivo: mejorar el login de Fidepuntos usando una sola marca visible por viewport y ordenar el formulario de acceso.
+
+Cambios:
+- El login desktop conserva solo el logo grande del panel izquierdo; se elimino el logo duplicado sobre el formulario.
+- En mobile, donde el panel izquierdo no existe, se mantiene una unica marca superior.
+- El formulario ahora usa jerarquia propia (`auth-panel`, `auth-form`, `auth-field`), labels visibles, inputs con foco claro, CTA mas consistente y espaciado responsive.
+- El campo MFA adopta el mismo patron visual que email/clave.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Capturas Playwright con host QA forzado `fidepuntos.tecnolts.com -> 192.168.100.229`: desktop `visibleLogos=1`, mobile `visibleLogos=1`, sin scroll horizontal (`scrollWidth=innerWidth`).
+
+### 2026-07-06 - Fidepuntos: cabecera dashboard con branding TECNOLTS
+
+Objetivo: mejorar la cabecera de `https://fidepuntos.tecnolts.com/dashboard/loyalty-points`, reemplazando el logo/placeholder visual por branding oficial TECNOLTS y puliendo avatar, logout y modo oscuro.
+
+Cambios:
+- Se descargo `https://tecnolts.com/logos/tecnolts-logo-v2.svg` en `dashboard/public/assets/images/tenants/tecnolts-logo-v2.svg`.
+- Se agrego `tecnolts-mark.svg` como marca compacta para estados colapsados.
+- `fidepuntos` queda registrado en `tenant-branding.ts` con logo oficial TECNOLTS y color primario `#126e95`.
+- La cabecera del shell muestra logo del tenant, avatar por iniciales, labels accesibles para modo claro/oscuro y boton de cerrar sesion mas consistente.
+- Los estilos del shell ajustan tamanos tactiles, truncado, estados hover/focus, modo oscuro via `:host-context([data-theme=dark])` y responsividad movil sin scroll horizontal.
+
+Verificacion:
+- Paso `cd dashboard && npm run type:check`.
+- Paso `cd dashboard && npm run lint`.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Capturas Playwright con host QA forzado `fidepuntos.tecnolts.com -> 192.168.100.229`: login con logo oficial, cabecera autenticada en claro/oscuro y viewport movil `390px`; `scrollWidth=390`.
+
 ### 2026-07-06 - Fidepuntos: emision Android con correo y objectIds por socio
 
 Objetivo: permitir que cualquier socio con cuenta propia pueda recibir una tarjeta Google Wallet, no solo la tarjeta legacy `CLI-00847`, y enviar por correo el boton para agregarla al Wallet con su saldo actual.
