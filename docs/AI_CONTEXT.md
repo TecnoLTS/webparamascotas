@@ -270,6 +270,40 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-07 - Fidepuntos: hardening responsive de tablas, formularios y acciones
+
+Objetivo: corregir recortes y desbordes en pantallas pequenas del dashboard Fidepuntos, especialmente tablas con acciones, filtros, inputs y botones en socios, reportes, reglas, configuracion, premios, notificaciones y emision de tarjeta.
+
+Cambios:
+- `dashboard-overrides.css` ahora fuerza tablas a scroll horizontal contenido, limita ancho de superficies, y en movil usa botones/inputs de objetivo tactil con texto envolvente en vez de recortado.
+- `loyalty-points.shared.css` agrega hardening responsive comun para pantallas operativas densas: paneles con `min-width: 0`, wrappers de tabla contenidos, layouts secundarios a una columna antes, filtros/reportes a grid fluido, acciones de fila mas compactas y formularios full-width en movil.
+- La administracion de socios pasa a una columna antes de romper el ancho util; las acciones de cliente reducen su ancho minimo y se apilan correctamente en vistas estrechas.
+- Ajuste posterior especifico en `loyalty-points/customers`: el layout de socios pasa a una columna hasta 1799 px para no comprimir busqueda contra el panel `Nuevo socio`; los filtros usan columnas fluidas sin inputs desbordados; la tabla encaja completa en desktop estrecho y, bajo 1199 px, la columna `Acciones` queda sticky a la derecha del wrapper para que los botones no aparezcan partidos durante el scroll horizontal.
+- Reportes de riesgo, reglas y configuracion mantienen tablas desplazables dentro de su propio contenedor sin ensanchar el documento ni recortar paneles externos.
+- Notificaciones reduce la columna fija inicial y adapta audiencia, segmento y CTA a una columna en movil.
+
+Verificacion:
+- Paso `cd dashboard && npm run build` en QA; warnings CommonJS existentes por `qrcode`, `sweetalert2` y `dijkstrajs` no bloquearon.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Se valido con Playwright por `https://fidepuntos.tecnolts.com` resolviendo a `192.168.100.229` en 375, 768, 1024 y 1366 px sobre rutas `customers`, `reports/risk-events`, `notifications`, `rewards`, `rules`, `settings` y `customer-card`: `overflow=0`, sin paneles fuera del viewport y sin tablas fuera de su contenedor.
+- Revalidacion especifica de `loyalty-points/customers` desplegado en 375, 768, 1024, 1366 y 1743 px: `docOverflow=0`, `formBad=0`, `clippedPanels=0`, `partialVisibleActions=0`; las 6 acciones visibles quedaron dentro del shell de tabla.
+- Se crearon y eliminaron cuentas QA temporales `qa.ui.fidepuntos.20260707@paramascotasec.com` y `qa.ui.customers.20260707@paramascotasec.com` para emitir sesiones de prueba sin usar credenciales reales; conteo final de la segunda: 0.
+
+### 2026-07-07 - Fidepuntos: nuevo socio en modal
+
+Objetivo: retirar el formulario permanente `Nuevo socio` de la parte inferior de `loyalty-points/customers` y abrirlo solo bajo demanda desde un boton superior `Registrar nuevo socio`.
+
+Cambios:
+- `LoyaltyPointsCustomersComponent` agrega estado `createMemberModalOpen`, metodos de apertura/cierre y cierre por `Escape` a nivel documento.
+- `loyalty-points-customers.component.html` elimina el aside/formulario inferior, agrega el boton `Registrar nuevo socio` en la cabecera de busqueda y mueve el formulario existente a un `role="dialog"` con `aria-modal`, descripcion, boton de cierre, cancelacion y cierre por backdrop.
+- `loyalty-points.shared.css` deja el layout de clientes en una columna, define el modal de nuevo socio con grid responsive y eleva el backdrop a `z-index: 10000`; el modal se renderiza fuera de `.loyalty-workspace` para no quedar atrapado por el stacking context aislado.
+
+Verificacion:
+- Paso `cd dashboard && npm run build`; warnings CommonJS existentes por `qrcode`, `sweetalert2` y `dijkstrajs` no bloquearon.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
+- Playwright contra `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/customers` en 375, 1024 y 1743 px: sin aside inferior, sin formulario permanente en el flujo, `docOverflow=0`, boton visible, modal con 5 campos, `aria-modal=true`, dentro del viewport, cierre por `Escape` y por backdrop.
+- Se creo y elimino la cuenta QA temporal `qa.ui.modal.customers.20260707@paramascotasec.com`; conteo final: 0.
+
 ### 2026-07-06 - Fidepuntos: QR valido para agregar tarjeta a Google Wallet
 
 Objetivo: corregir el QR mostrado en `loyalty-points/customer-card`, porque usaba un payload interno `LOYALTY:{tenant}:{memberId}` y no el enlace firmado que permite registrar la tarjeta en Google Wallet.
