@@ -932,9 +932,57 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:GET:/api/admin/loyalty/rewards/{rewardId}",
+    "method": "GET",
+    "path": "/api/admin/loyalty/rewards/{rewardId}",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:PATCH:/api/admin/loyalty/rewards/{rewardId}",
+    "method": "PATCH",
+    "path": "/api/admin/loyalty/rewards/{rewardId}",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:DELETE:/api/admin/loyalty/rewards/{rewardId}",
+    "method": "DELETE",
+    "path": "/api/admin/loyalty/rewards/{rewardId}",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:POST:/api/admin/loyalty/redemptions",
     "method": "POST",
     "path": "/api/admin/loyalty/redemptions",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/redemption-claims",
+    "method": "GET",
+    "path": "/api/admin/loyalty/redemption-claims",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/loyalty/redemption-claims/validate-code",
+    "method": "POST",
+    "path": "/api/admin/loyalty/redemption-claims/validate-code",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/approve",
+    "method": "POST",
+    "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/approve",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/deliver",
+    "method": "POST",
+    "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/deliver",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/cancel",
+    "method": "POST",
+    "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/cancel",
     "capabilityId": "loyalty.admin"
   },
   {
@@ -1010,6 +1058,12 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:PATCH:/api/admin/loyalty/risk-events/{eventId}/resolve",
+    "method": "PATCH",
+    "path": "/api/admin/loyalty/risk-events/{eventId}/resolve",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:GET:/api/admin/loyalty/api-clients",
     "method": "GET",
     "path": "/api/admin/loyalty/api-clients",
@@ -1034,6 +1088,30 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:POST:/api/admin/loyalty/notifications/preview",
+    "method": "POST",
+    "path": "/api/admin/loyalty/notifications/preview",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/loyalty/notifications",
+    "method": "POST",
+    "path": "/api/admin/loyalty/notifications",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/notifications",
+    "method": "GET",
+    "path": "/api/admin/loyalty/notifications",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/notifications/{campaignId}",
+    "method": "GET",
+    "path": "/api/admin/loyalty/notifications/{campaignId}",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:PATCH:/api/admin/loyalty/members/{memberId}/wallet",
     "method": "PATCH",
     "path": "/api/admin/loyalty/members/{memberId}/wallet",
@@ -1052,9 +1130,51 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:POST:/api/admin/loyalty/wallet/notify",
+    "method": "POST",
+    "path": "/api/admin/loyalty/wallet/notify",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:GET:/api/loyalty/v1/health",
     "method": "GET",
     "path": "/api/loyalty/v1/health",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:GET:/api/l/w/{token}",
+    "method": "GET",
+    "path": "/api/l/w/{token}",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:HEAD:/api/l/w/{token}",
+    "method": "HEAD",
+    "path": "/api/l/w/{token}",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:GET:/api/l/r/{token}",
+    "method": "GET",
+    "path": "/api/l/r/{token}",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/l/r/{token}/claims",
+    "method": "POST",
+    "path": "/api/l/r/{token}/claims",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/l/r/{token}/claims/{redemptionId}/cancel",
+    "method": "POST",
+    "path": "/api/l/r/{token}/claims/{redemptionId}/cancel",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:GET:/api/loyalty/v1/wallet/google/{token}",
+    "method": "GET",
+    "path": "/api/loyalty/v1/wallet/google/{token}",
     "capabilityId": "loyalty.public"
   },
   {
@@ -1073,6 +1193,12 @@ export const backendApiRoutes = [
     "id": "backend:POST:/api/loyalty/v1/members/upsert",
     "method": "POST",
     "path": "/api/loyalty/v1/members/upsert",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/loyalty/v1/members/{accountId}/wallet/google-link",
+    "method": "POST",
+    "path": "/api/loyalty/v1/members/{accountId}/wallet/google-link",
     "capabilityId": "loyalty.public"
   },
   {

@@ -83,18 +83,18 @@
     },
     {
       "id": "loyalty.admin",
-      "summary": "Gestion de socios, puntos, tarjetas digitales, reglas, premios, canjes, reportes y auditoria Fidepuntos.",
+      "summary": "Gestion de socios, puntos, tarjetas digitales, reglas, premios, solicitudes de reclamo, canjes, reportes y auditoria Fidepuntos.",
       "auth": "admin",
       "gateway": { "exposure": "tenant-api" },
-      "data": { "fixture": "e2e-loyalty-policy", "assertions": ["member-created", "purchase-registered", "redemption-guarded", "reports-readable"] },
+      "data": { "fixture": "e2e-loyalty-policy", "assertions": ["member-created", "purchase-registered", "redemption-guarded", "wallet-redemption-claims-managed", "reports-readable"] },
       "e2e": { "mode": "scenario", "fixture": "e2e-loyalty-policy", "assertDb": true, "cleanup": true, "scenario": "loyalty-policy-flow" }
     },
     {
       "id": "loyalty.public",
-      "summary": "API externa autorizada para consultar programa, sincronizar socios, registrar compras, reversas, canjes y reportes de fidelizacion.",
+      "summary": "API externa autorizada y portal tokenizado Wallet para consultar programa, sincronizar socios, registrar compras, reversas, canjes, reclamos de premios y reportes de fidelizacion.",
       "auth": "api-key-or-bearer",
       "gateway": { "exposure": "external-api" },
-      "data": { "fixture": "external-loyalty-api-client", "assertions": ["api-key-required", "idempotency-required", "external-health-readable"] },
+      "data": { "fixture": "external-loyalty-api-client", "assertions": ["api-key-required", "idempotency-required", "wallet-rewards-portal-tokenized", "external-health-readable"] },
       "e2e": { "mode": "scenario", "fixture": "external-loyalty-api-client", "assertDb": true, "cleanup": true, "scenario": "loyalty-external-api-flow" }
     }
   ]

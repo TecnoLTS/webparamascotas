@@ -110,6 +110,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
 - Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
 - LoyaltyRewards guarda programas, socios, cuentas, ledger, recompensas, canjes y pases wallet en `loyalty.loyalty_*`; no debe crear foreign keys hacia ecommerce/dashboard. Las relaciones con clientes/facturas usan IDs estables, snapshots o contratos API.
+- Portal Wallet de LoyaltyRewards: los premios tienen `claim_mode` (`staff_only`, `in_store`, `managed`). `staff_only` queda oculto al cliente y se usa para canje inmediato de mostrador; `in_store` genera codigo temporal de 15 minutos para validar en local; `managed` crea solicitud `pending_review` para que el gestor coordine retiro o entrega. El portal publico entra por APISIX como `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}` y reescribe a `/api/l/r/{token}`; Google Wallet recibe el enlace mediante `linksModuleData`. Toda solicitud de cliente reserva puntos y stock; al expirar o cancelar se devuelven ambos. La cola operativa vive en dashboard `/loyalty-points/redemptions`; `/loyalty-points/rewards/redeem` sigue siendo canje inmediato de mostrador.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - Excepcion demo TECNOLTS: un correo `@tecnolts.com` puede operar como admin de un tenant si su perfil declara explicitamente `identityType=tenant_staff`; ejemplo vigente `dev@tecnolts.com` en `tenant_id=fidepuntos` con rol `fidepuntos_admin` y alias de login `demo@tecnolts.com`. Esa identidad no debe recibir `platform-admin`.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
@@ -269,6 +270,45 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-08 - Fidepuntos: portal Wallet para reclamo de premios
+
+Objetivo: permitir que clientes con Wallet registrada reclamen premios desde un enlace tokenizado, diferenciando premios de mostrador, entrega en local y solicitudes gestionadas por el negocio.
+
+Cambios:
+- Backend LoyaltyRewards agrega `claim_mode`, instrucciones y opciones de entrega/retiro en `loyalty_rewards`; `loyalty_redemptions` ahora guarda origen `customer_portal`, tipo de entrega, codigo hash/expiracion, expiracion de reserva, resolucion y gestor.
+- Se agregan rutas publicas tokenizadas `GET /api/l/r/{token}`, `POST /api/l/r/{token}/claims` y cancelacion propia pendiente; APISIX las publica por `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/*`.
+- Se agregan rutas admin para cola de solicitudes, aprobacion gestionada, validacion de codigo en local, entrega y cancelacion con devolucion de puntos/stock.
+- Google Wallet incluye enlace `Ver premios` en `LoyaltyObject.linksModuleData`; la landing existente conserva boton fallback hacia el portal.
+- Dashboard agrega controles de modo de reclamo, instrucciones y opciones de retiro/entrega en premios; nueva pantalla `/loyalty-points/redemptions` lista solicitudes por estado, valida codigos y permite aprobar, entregar o cancelar. `/loyalty-points/rewards/redeem` queda para canje inmediato de mostrador.
+- Capacidades `loyalty.admin` y `loyalty.public` documentan reclamos Wallet y se regeneraron `system-capabilities.generated.json` y `systemCapabilities.ts`.
+
+Decisiones:
+- V1 no integra logistica externa ni cobro de envio; el gestor coordina retiro o entrega desde la cola.
+- Los premios existentes quedan por defecto en `staff_only` para no publicarse accidentalmente al cliente.
+- Apple Wallet queda reconocido como tarjeta activa por `wallet_platform != none`; el enlace visible dentro del pase se implementa primero en Google Wallet.
+
+Verificacion:
+- Paso `php -l` en repositorio, controlador, esquema, servicio Google Wallet, `public/index.php` y rutas LoyaltyRewards.
+- Paso `php backend/scripts/check_modular_routes.php`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs`.
+- Paso `cd webparamascotas/app && npm run capabilities:generate && npm run capabilities:check`.
+- Paso `cd dashboard && npm run build`; warnings CommonJS existentes por `qrcode`, `sweetalert2` y `dijkstrajs` no bloquearon.
+- Se desplego QA con `RUN_DB_SETUP=1 ./scripts/deploy.sh backend`, `./scripts/deploy.sh dashboard` y `./scripts/deploy.sh gateway`.
+- Probes APISIX: `GET /paramascotasec/api/l/r/token-invalido -> 422` desde backend, `POST /paramascotasec/api/l/r/token-invalido/claims -> 422`, `GET /paramascotasec/api/admin/loyalty/redemption-claims -> 401` protegido y `/dashboard/loyalty-points/redemptions -> 200`.
+- Paso `scripts/check-container-connectivity.sh qa`; unico warning esperado: certificado QA local/no confiado por CA publica.
+
+### 2026-07-07 - Fidepuntos: ajuste fino de tabla de socios en laptops angostas
+
+Objetivo: corregir el recorte residual de la tabla de `loyalty-points/customers` en anchos intermedios, donde la columna `Acciones` aun quedaba demasiado justa y el extremo derecho se percibia cortado.
+
+Cambios:
+- `loyalty-points.shared.css` agrega `padding-inline-end` extra a la ultima columna de la tabla de socios para que el borde derecho no quede pegado al shell scrollable.
+- El breakpoint que compacta la columna `Acciones` y pasa la grilla de botones de 3 a 2 columnas se adelanta de `1399px` a `1599px`, cubriendo laptops/desktop estrecho donde la sidebar reduce el ancho real disponible.
+
+Verificacion:
+- Paso `cd dashboard && npm run build` en QA; warnings CommonJS existentes por `qrcode`, `sweetalert2` y `dijkstrajs` no bloquearon.
+- Paso `./scripts/deploy.sh dashboard`; health `http://127.0.0.1:8081/health -> ok`.
 
 ### 2026-07-07 - Fidepuntos: hardening responsive de tablas, formularios y acciones
 

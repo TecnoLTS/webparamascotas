@@ -1670,7 +1670,7 @@
       "domain": "admin",
       "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "loyalty.admin",
-      "summary": "Gestion de socios, puntos, tarjetas digitales, reglas, premios, canjes, reportes y auditoria Fidepuntos.",
+      "summary": "Gestion de socios, puntos, tarjetas digitales, reglas, premios, solicitudes de reclamo, canjes, reportes y auditoria Fidepuntos.",
       "auth": "admin",
       "gateway": {
         "exposure": "tenant-api"
@@ -1681,6 +1681,7 @@
           "member-created",
           "purchase-registered",
           "redemption-guarded",
+          "wallet-redemption-claims-managed",
           "reports-readable"
         ]
       },
@@ -1749,10 +1750,74 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:GET:/api/admin/loyalty/rewards/{rewardId}",
+          "method": "GET",
+          "path": "/api/admin/loyalty/rewards/{rewardId}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rewardDetail",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/admin/loyalty/rewards/{rewardId}",
+          "method": "PATCH",
+          "path": "/api/admin/loyalty/rewards/{rewardId}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@updateReward",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:DELETE:/api/admin/loyalty/rewards/{rewardId}",
+          "method": "DELETE",
+          "path": "/api/admin/loyalty/rewards/{rewardId}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@deleteReward",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:POST:/api/admin/loyalty/redemptions",
           "method": "POST",
           "path": "/api/admin/loyalty/redemptions",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redeemReward",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/redemption-claims",
+          "method": "GET",
+          "path": "/api/admin/loyalty/redemption-claims",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redemptionClaims",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/loyalty/redemption-claims/validate-code",
+          "method": "POST",
+          "path": "/api/admin/loyalty/redemption-claims/validate-code",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@validateRedemptionClaimCode",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/approve",
+          "method": "POST",
+          "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/approve",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@approveRedemptionClaim",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/deliver",
+          "method": "POST",
+          "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/deliver",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@deliverRedemptionClaim",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/cancel",
+          "method": "POST",
+          "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/cancel",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@cancelRedemptionClaim",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
         },
@@ -1853,6 +1918,14 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:PATCH:/api/admin/loyalty/risk-events/{eventId}/resolve",
+          "method": "PATCH",
+          "path": "/api/admin/loyalty/risk-events/{eventId}/resolve",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@resolveRiskEvent",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:GET:/api/admin/loyalty/api-clients",
           "method": "GET",
           "path": "/api/admin/loyalty/api-clients",
@@ -1885,6 +1958,38 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:POST:/api/admin/loyalty/notifications/preview",
+          "method": "POST",
+          "path": "/api/admin/loyalty/notifications/preview",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notificationsPreview",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/loyalty/notifications",
+          "method": "POST",
+          "path": "/api/admin/loyalty/notifications",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@createNotificationCampaign",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/notifications",
+          "method": "GET",
+          "path": "/api/admin/loyalty/notifications",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notifications",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/notifications/{campaignId}",
+          "method": "GET",
+          "path": "/api/admin/loyalty/notifications/{campaignId}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notificationDetail",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:PATCH:/api/admin/loyalty/members/{memberId}/wallet",
           "method": "PATCH",
           "path": "/api/admin/loyalty/members/{memberId}/wallet",
@@ -1907,6 +2012,14 @@
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@googleWalletLink",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/loyalty/wallet/notify",
+          "method": "POST",
+          "path": "/api/admin/loyalty/wallet/notify",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@googleWalletNotify",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
@@ -1915,7 +2028,7 @@
       "domain": "admin",
       "source": "webparamascotas/docs/capabilities/admin.json",
       "id": "loyalty.public",
-      "summary": "API externa autorizada para consultar programa, sincronizar socios, registrar compras, reversas, canjes y reportes de fidelizacion.",
+      "summary": "API externa autorizada y portal tokenizado Wallet para consultar programa, sincronizar socios, registrar compras, reversas, canjes, reclamos de premios y reportes de fidelizacion.",
       "auth": "api-key-or-bearer",
       "gateway": {
         "exposure": "external-api"
@@ -1925,6 +2038,7 @@
         "assertions": [
           "api-key-required",
           "idempotency-required",
+          "wallet-rewards-portal-tokenized",
           "external-health-readable"
         ]
       },
@@ -1941,6 +2055,54 @@
           "method": "GET",
           "path": "/api/loyalty/v1/health",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalHealth",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/l/w/{token}",
+          "method": "GET",
+          "path": "/api/l/w/{token}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:HEAD:/api/l/w/{token}",
+          "method": "HEAD",
+          "path": "/api/l/w/{token}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/l/r/{token}",
+          "method": "GET",
+          "path": "/api/l/r/{token}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortal",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/l/r/{token}/claims",
+          "method": "POST",
+          "path": "/api/l/r/{token}/claims",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsClaim",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/l/r/{token}/claims/{redemptionId}/cancel",
+          "method": "POST",
+          "path": "/api/l/r/{token}/claims/{redemptionId}/cancel",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsCancel",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/loyalty/v1/wallet/google/{token}",
+          "method": "GET",
+          "path": "/api/loyalty/v1/wallet/google/{token}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
           "capabilityId": "loyalty.public",
           "source": "backend/config/routes.php"
         },
@@ -1965,6 +2127,14 @@
           "method": "POST",
           "path": "/api/loyalty/v1/members/upsert",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalMemberUpsert",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/loyalty/v1/members/{accountId}/wallet/google-link",
+          "method": "POST",
+          "path": "/api/loyalty/v1/members/{accountId}/wallet/google-link",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalGoogleWalletLink",
           "capabilityId": "loyalty.public",
           "source": "backend/config/routes.php"
         },
@@ -4163,10 +4333,74 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:GET:/api/admin/loyalty/rewards/{rewardId}",
+        "method": "GET",
+        "path": "/api/admin/loyalty/rewards/{rewardId}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rewardDetail",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/admin/loyalty/rewards/{rewardId}",
+        "method": "PATCH",
+        "path": "/api/admin/loyalty/rewards/{rewardId}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@updateReward",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:DELETE:/api/admin/loyalty/rewards/{rewardId}",
+        "method": "DELETE",
+        "path": "/api/admin/loyalty/rewards/{rewardId}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@deleteReward",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:POST:/api/admin/loyalty/redemptions",
         "method": "POST",
         "path": "/api/admin/loyalty/redemptions",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redeemReward",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/redemption-claims",
+        "method": "GET",
+        "path": "/api/admin/loyalty/redemption-claims",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redemptionClaims",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/loyalty/redemption-claims/validate-code",
+        "method": "POST",
+        "path": "/api/admin/loyalty/redemption-claims/validate-code",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@validateRedemptionClaimCode",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/approve",
+        "method": "POST",
+        "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/approve",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@approveRedemptionClaim",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/deliver",
+        "method": "POST",
+        "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/deliver",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@deliverRedemptionClaim",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/loyalty/redemption-claims/{redemptionId}/cancel",
+        "method": "POST",
+        "path": "/api/admin/loyalty/redemption-claims/{redemptionId}/cancel",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@cancelRedemptionClaim",
         "capabilityId": "loyalty.admin",
         "source": "backend/config/routes.php"
       },
@@ -4267,6 +4501,14 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:PATCH:/api/admin/loyalty/risk-events/{eventId}/resolve",
+        "method": "PATCH",
+        "path": "/api/admin/loyalty/risk-events/{eventId}/resolve",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@resolveRiskEvent",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/admin/loyalty/api-clients",
         "method": "GET",
         "path": "/api/admin/loyalty/api-clients",
@@ -4299,6 +4541,38 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:POST:/api/admin/loyalty/notifications/preview",
+        "method": "POST",
+        "path": "/api/admin/loyalty/notifications/preview",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notificationsPreview",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/loyalty/notifications",
+        "method": "POST",
+        "path": "/api/admin/loyalty/notifications",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@createNotificationCampaign",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/notifications",
+        "method": "GET",
+        "path": "/api/admin/loyalty/notifications",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notifications",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/notifications/{campaignId}",
+        "method": "GET",
+        "path": "/api/admin/loyalty/notifications/{campaignId}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notificationDetail",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:PATCH:/api/admin/loyalty/members/{memberId}/wallet",
         "method": "PATCH",
         "path": "/api/admin/loyalty/members/{memberId}/wallet",
@@ -4323,10 +4597,66 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:POST:/api/admin/loyalty/wallet/notify",
+        "method": "POST",
+        "path": "/api/admin/loyalty/wallet/notify",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@googleWalletNotify",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/loyalty/v1/health",
         "method": "GET",
         "path": "/api/loyalty/v1/health",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalHealth",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/l/w/{token}",
+        "method": "GET",
+        "path": "/api/l/w/{token}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:HEAD:/api/l/w/{token}",
+        "method": "HEAD",
+        "path": "/api/l/w/{token}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/l/r/{token}",
+        "method": "GET",
+        "path": "/api/l/r/{token}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortal",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/l/r/{token}/claims",
+        "method": "POST",
+        "path": "/api/l/r/{token}/claims",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsClaim",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/l/r/{token}/claims/{redemptionId}/cancel",
+        "method": "POST",
+        "path": "/api/l/r/{token}/claims/{redemptionId}/cancel",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsCancel",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/loyalty/v1/wallet/google/{token}",
+        "method": "GET",
+        "path": "/api/loyalty/v1/wallet/google/{token}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
         "capabilityId": "loyalty.public",
         "source": "backend/config/routes.php"
       },
@@ -4351,6 +4681,14 @@
         "method": "POST",
         "path": "/api/loyalty/v1/members/upsert",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalMemberUpsert",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/loyalty/v1/members/{accountId}/wallet/google-link",
+        "method": "POST",
+        "path": "/api/loyalty/v1/members/{accountId}/wallet/google-link",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalGoogleWalletLink",
         "capabilityId": "loyalty.public",
         "source": "backend/config/routes.php"
       },
