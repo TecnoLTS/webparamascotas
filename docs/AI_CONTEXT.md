@@ -110,7 +110,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
 - Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
 - LoyaltyRewards guarda programas, socios, cuentas, ledger, recompensas, canjes y pases wallet en `loyalty.loyalty_*`; no debe crear foreign keys hacia ecommerce/dashboard. Las relaciones con clientes/facturas usan IDs estables, snapshots o contratos API.
-- Portal Wallet de LoyaltyRewards: los premios tienen `claim_mode` (`staff_only`, `in_store`, `managed`). `staff_only` queda oculto al cliente y se usa para canje inmediato de mostrador; `in_store` genera codigo temporal de 15 minutos para validar en local; `managed` crea solicitud `pending_review` para que el gestor coordine retiro o entrega. El portal publico entra por APISIX como `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}` y reescribe a `/api/l/r/{token}`; en hosts tenantizados del dashboard, `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/*` debe ir al backend antes del comodin dashboard. Google Wallet recibe el enlace mediante `linksModuleData`. Toda solicitud de cliente reserva puntos y stock; al expirar o cancelar se devuelven ambos. La cola operativa vive en dashboard `/loyalty-points/redemptions`; `/loyalty-points/rewards/redeem` sigue siendo canje inmediato de mostrador.
+- Portal Wallet de LoyaltyRewards: los premios tienen `claim_mode` (`staff_only`, `in_store`, `managed`). `staff_only` queda oculto al cliente y se usa para canje inmediato de mostrador; `in_store` genera codigo temporal de 15 minutos para validar en local; `managed` crea solicitud `pending_review` para que el gestor coordine retiro o entrega. Google Wallet no debe llevar tokens de cliente: `linksModuleData` usa el acceso por cuenta no secreto `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/access?account={account_id}`; el cliente no escribe su ID y confirma OTP por correo. Solo despues el backend redirige a un portal temporal `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}`. En hosts tenantizados del dashboard, `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/*` debe ir al backend antes del comodin dashboard. Toda solicitud de cliente reserva puntos y stock; al expirar o cancelar se devuelven ambos. La cola operativa vive en dashboard `/loyalty-points/redemptions`; `/loyalty-points/rewards/redeem` sigue siendo canje inmediato de mostrador.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - Excepcion demo TECNOLTS: un correo `@tecnolts.com` puede operar como admin de un tenant si su perfil declara explicitamente `identityType=tenant_staff`; ejemplo vigente `dev@tecnolts.com` en `tenant_id=fidepuntos` con rol `fidepuntos_admin` y alias de login `demo@tecnolts.com`. Esa identidad no debe recibir `platform-admin`.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
@@ -270,6 +270,142 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-09 - Fidepuntos: buscador y filtros en notificaciones Wallet
+
+Objetivo: mejorar `/dashboard/loyalty-points/notifications` para que el envio individual tenga buscador real de socio y las campanias masivas permitan filtrar audiencia por tipo de tarjeta.
+
+Cambios:
+- La pantalla de notificaciones ahora usa un buscador de socio por ID, nombre o correo, con lista de resultados, saldo y estado de tarjeta.
+- La audiencia masiva agrega un select `Filtro de tarjeta` con opciones `Todos con tarjeta`, `Solo Android`, `Solo iPhone` y `Sin tarjeta`.
+- El preview masivo se recalcula al cambiar el filtro y el boton de envio queda bloqueado si el segmento no tiene destinatarios.
+- `LoyaltyNotificationSegmentFilter` acepta `wallet`.
+- `notificationAudienceQuery()` aplica el filtro de tarjeta y excluye pases Google Wallet inactivos, revocados o eliminados.
+- `sanitizeAudienceFilter()` persiste el filtro `wallet` tanto para `all` como para `segment`.
+- `scripts/run_wallet_notification_exercises.php` valida preview filtrado por Android y que `Sin tarjeta` no agenda push.
+
+Decisiones:
+- El canal push operativo actual es Google Wallet; los filtros `Solo iPhone` y `Sin tarjeta` existen para segmentar/medir, pero no se convierten en envios push falsos mientras no exista un mensajero compatible para Apple Wallet o un canal alternativo.
+
+Verificacion:
+- `npm run type:check` en `dashboard`.
+- ESLint puntual de los archivos de notificaciones y modelo Loyalty.
+- `npm test -- --watch=false --include=src/app/features/loyalty-points/pages/loyalty-points-notifications/loyalty-points-notifications.component.spec.ts --include=src/app/features/loyalty-points/state/notifications.facade.spec.ts` paso 5 tests.
+- `php -l` en `LoyaltyRepository.php` y `scripts/run_wallet_notification_exercises.php`.
+- `./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard`.
+- `docker exec backend-api php scripts/run_wallet_notification_exercises.php` paso incluyendo las nuevas aserciones.
+- APISIX confirmo `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/notifications` con HTTP 200.
+- Preview QA por backend para `fidepuntos`: `all=7`, `google=7`, `apple=0`, `none=0`.
+
+### 2026-07-09 - Fidepuntos: modales de feedback en reclamo Wallet
+
+Objetivo: reemplazar la pagina generica `No pudimos abrir la tarjeta` al solicitar o cancelar premios desde el portal Wallet por mensajes profesionales dentro del catalogo.
+
+Cambios:
+- `publicRewardsClaim()` y `publicRewardsCancel()` ahora vuelven a renderizar el portal con un modal de resultado cuando hay exito, cancelacion o rechazo recuperable.
+- Se agregaron variantes visuales `success`, `error` y `cancel` con scrim, rol `dialog`, `aria-modal`, acciones tactiles y foco inicial en la accion principal.
+- Los rechazos comunes tienen copy especifico y accionable: puntos insuficientes, limite diario, premio sin stock, premio inactivo, duplicado del mismo premio y cancelacion no permitida.
+- El modal de exito muestra premio, estado o codigo temporal y puntos reservados; el de cancelacion confirma devolucion de puntos y stock.
+
+Verificacion:
+- `./scripts/deploy.sh backend`.
+- APISIX confirmo que un rechazo por puntos insuficientes en `https://fidepuntos.tecnolts.com/paramascotasec/api/l/r/{token}/claims` responde HTTP 422 con `.result-modal--error`, titulo `No tienes puntos suficientes`, acciones `Volver al catalogo` y `Ver solicitudes`, sin mostrar la pagina generica `No pudimos abrir la tarjeta`.
+- Se probo una solicitud gestionada QA con socio alterno y se cancelo de inmediato; saldo y stock quedaron restaurados.
+- Playwright headless confirmo desktop y movil sin overflow horizontal y con foco inicial en `Volver al catalogo`.
+- Pasaron `docker exec backend-api php scripts/check_modular_routes.php`, `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`, `docker exec backend-api php scripts/check_module_databases.php` y `git -C backend diff --check`.
+
+### 2026-07-09 - Fidepuntos: catalogo visual de premios Wallet
+
+Objetivo: convertir el portal temporal de premios en un catalogo real para cliente, con varias recompensas visibles, imagenes en grilla y formularios de solicitud menos invasivos.
+
+Cambios:
+- El portal `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}` ahora usa un ancho mayor y grilla responsive de tarjetas.
+- Cada premio muestra imagen, precio en puntos sobre la imagen, categoria, modo de reclamo, stock, descripcion e instrucciones.
+- Los premios gestionados ya no muestran el formulario abierto de entrada; el cliente primero ve el boton `Solicitar premio` y el formulario se despliega solo al tocarlo.
+- Se agrego `backend/scripts/seed_fidepuntos_wallet_catalog.php`, idempotente por nombre de premio, para poblar el catalogo demo Fidepuntos con recompensas `in_store` y `managed`, imagenes y metadata de categoria.
+- En QA `fidepuntos` quedaron 11 premios visibles para cliente despues del seed.
+
+Verificacion:
+- `./scripts/deploy.sh backend`.
+- `docker exec backend-api php scripts/seed_fidepuntos_wallet_catalog.php fidepuntos` creo 4 premios y actualizo 7.
+- APISIX confirmo `https://fidepuntos.tecnolts.com/paramascotasec/api/l/r/{token}` con 12 tarjetas HTML totales, 11 imagenes de premio y textos `Catalogo de premios`, `Selecciona un premio` y `Solicitar premio`.
+- Playwright headless por `fidepuntos.tecnolts.com` confirmo desktop y movil sin overflow horizontal; en movil las 11 imagenes cargan correctamente al hacer scroll.
+- Pasaron `docker exec backend-api php scripts/check_modular_routes.php`, `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`, `docker exec backend-api php scripts/check_module_databases.php` y `git -C backend diff --check`.
+
+### 2026-07-09 - Fidepuntos: acceso OTP al catalogo desde Wallet
+
+Objetivo: permitir que el boton `Catalogo` de Google Wallet abra el catalogo de premios sin exponer un token reutilizable del cliente y sin confiar en `Referer`/origen del clic.
+
+Cambios:
+- Se agrego el acceso publico `GET /api/l/access`, `POST /api/l/access/request` y `POST /api/l/access/verify` dentro de LoyaltyRewards.
+- Google Wallet vuelve a publicar un unico enlace `Catalogo`, pero ahora apunta a la URL por cuenta no secreta `https://fidepuntos.tecnolts.com/paramascotasec/api/l/access?account={account_id}`.
+- El cliente ingresa cuenta, correo o telefono registrado; el backend exige socio activo, tarjeta Wallet activa y correo valido.
+- Se agrego la tabla `loyalty_portal_otp_challenges` para retos OTP por correo, con hash HMAC, expiracion de 10 minutos, maximo de intentos y cooldown de reenvio.
+- Al verificar el OTP, el backend responde `303` hacia el portal temporal `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}`; ese token no queda guardado en Wallet ni visible en dashboard.
+- El portal temporal se presenta como catalogo de premios; cada premio disponible se muestra en una tarjeta y la accion cliente dice `Solicitar premio`.
+- El correo de asociar tarjeta a Google Wallet usa un enlace corto propio `/l/w/{token}` en el boton, no el `saveUrl` largo de Google; esto evita que Gmail oculte el boton tras el control `...`.
+- `sync_wallet_passes.php --all` sincroniza todos los pases Google activos y actualiza `linksModuleData` usando el primer origen configurado en `settings.googleWallet.origins`, o `LOYALTY_WALLET_PUBLIC_BASE_URL` si existe.
+
+Decisiones:
+- Google Wallet queda como punto de entrada y pase de fidelizacion, no como autenticador del titular.
+- El reclamo privado siempre requiere OTP antes de ver productos y crear canjes.
+- En QA, el dominio `fidepuntos.tecnolts.com` debe resolver a `192.168.100.229` para que la Wallet abra el acceso por APISIX.
+
+Verificacion:
+- `./scripts/deploy.sh backend`.
+- `docker exec backend-api php scripts/sync_wallet_passes.php --all --tenant=fidepuntos --limit=250` proceso 9 pases, 9 ok, 0 fallidos.
+- Google Wallet API confirmo que `3388000000023170202.fidepuntos_CLI-00849` tiene `linksModuleData.uris[0].uri=https://fidepuntos.tecnolts.com/paramascotasec/api/l/access?account=CLI-00849`.
+- APISIX confirmo `GET https://fidepuntos.tecnolts.com/paramascotasec/api/l/access?account=CLI-00849` con HTTP 200 y pantalla `Tarjeta detectada`, sin input de ID.
+- Prueba OTP por APISIX: envio para la cuenta precargada `CLI-00849`, verificacion con codigo controlado de QA, redireccion 303 al portal temporal y portal con `Premios disponibles` HTTP 200.
+- APISIX confirmo en el portal temporal los textos `Catalogo de premios`, `Selecciona un premio` y `Solicitar premio`, sin `Solicitar revision`.
+- APISIX confirmo el enlace corto de asociacion `https://fidepuntos.tecnolts.com/paramascotasec/api/l/w/{token}` con HTTP 200 y pagina `Agregar a Google Wallet`.
+- Pasaron `docker exec backend-api php scripts/check_modular_routes.php`, `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`, `docker exec backend-api php scripts/run_wallet_notification_exercises.php`, `docker exec backend-api php scripts/check_module_databases.php` y `git -C backend diff --check`.
+
+### 2026-07-09 - Fidepuntos: retirar catalogo privado de Google Wallet
+
+Objetivo: impedir que el boton `Catalogo` de Google Wallet exponga un enlace tokenizado reutilizable del cliente, porque Google Wallet no autentica los clics de `linksModuleData` como originados por la Wallet del titular.
+
+Cambios:
+- `GoogleWalletService` ya no incluye `linksModuleData` al crear el `LoyaltyObject` ni al generar el JWT `Save to Wallet`.
+- Las sincronizaciones de puntos hacia Google Wallet envian `linksModuleData` vacio para limpiar enlaces de catalogo en objetos existentes.
+- `LoyaltyRepository` dejo de pasar `catalogUrlForMember()` a Google Wallet, dejo de devolver `portalUrl` en la emision Android y retiro el boton fallback al portal desde la landing publica de agregar tarjeta.
+- El endpoint legacy `GET /api/l/c/{token}` ya no valida ni reenvia el token del socio al portal privado; si `LOYALTY_CATALOG_URL` esta configurado redirige ahi sin `k`, y si no existe responde error de catalogo privado retirado.
+- `scripts/sync_wallet_passes.php` agrega `--all` para forzar sincronizacion de pases Google activos por tenant y limpiar enlaces antiguos; respeta `external_object_id` existente cuando pertenece al issuer.
+- `scripts/run_loyalty_policy_exercises.php` se alineo al contrato vigente de socio temporal agregando `accountId` y `phone`.
+
+Decisiones:
+- No se intenta validar `Referer`, `User-Agent` ni origen del clic; no son pruebas confiables de que el enlace venga de la Wallet del cliente.
+- Google Wallet queda como pase de puntos/QR y canal de notificaciones, no como autenticador de un portal privado por URL.
+- Si se desea un catalogo desde Wallet, debe ser una URL publica sin token ni datos del socio; reclamos privados deben seguir exigiendo verificacion adicional del cliente.
+
+Verificacion:
+- Paso `php -l` en los archivos backend modificados y `scripts/run_loyalty_policy_exercises.php`.
+- Paso `docker exec backend-api php scripts/check_modular_routes.php`.
+- Paso `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`.
+- Paso `docker exec backend-api php scripts/run_wallet_notification_exercises.php`.
+- Paso `./scripts/deploy.sh backend`.
+- Paso limpieza real: `docker exec backend-api php scripts/sync_wallet_passes.php --all --tenant=fidepuntos --limit=250` proceso 9 pases Google, 9 ok, 0 fallidos.
+- Verificado contra Google Wallet API: objeto `3388000000023170202.fidepuntos_CLI-00849` quedo con `linksModuleData=null` y saldo `5006`.
+- Verificado por APISIX: `GET https://fidepuntos.tecnolts.com/paramascotasec/api/l/c/v1.CLI-00849...` responde `410`.
+
+### 2026-07-09 - Fidepuntos: no exponer portal de reclamo del cliente en dashboard
+
+Objetivo: retirar de `/dashboard/loyalty-points/customer-card` el enlace directo al portal publico de premios del cliente, porque es un token de acceso del cliente y no debe quedar visible ni copiable por operadores.
+
+Cambios:
+- `LoyaltyPointsRegisterCardComponent` ya no guarda ni renderiza `walletPortalUrl` en la vista previa de tarjeta digital.
+- El modal de emision Android ya no muestra el `portalUrl` devuelto por backend ni texto de "Portal de premios".
+- Se elimino la accion `copyWalletPortalUrl()` y los estilos `.loyalty-wallet-portal-link`.
+- Los mensajes fallback de Google Wallet ahora orientan a corregir correo, reintentar envio o usar el QR con el cliente presente, sin sugerir compartir enlaces manuales del portal.
+- La spec del componente cubre que el dropdown de busqueda no reaparece tras seleccionar socio y que un `portalUrl` devuelto por backend no se expone en el modal.
+
+Decisiones:
+- El portal de reclamo sigue siendo un flujo del cliente, accesible desde Google Wallet/canales propios del cliente; el dashboard operativo no debe abrir ni copiar ese token.
+- El QR de Google Wallet queda como soporte presencial para que el cliente agregue su tarjeta en su dispositivo.
+
+Verificacion:
+- `npm run type:check`, spec puntual de `loyalty-points-register-card`, ESLint de TS/HTML afectados y deploy canonico `./scripts/deploy.sh dashboard`.
+- APISIX responde `200` en `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/customer-card`; el bundle servido no contiene `Portal de premios del cliente`, `copyWalletPortalUrl` ni `walletPortalUrl`.
 
 ### 2026-07-08 - Paramascotas dashboard: UX de precios en productos
 
