@@ -271,6 +271,68 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-08 - Paramascotas dashboard: UX de precios en productos
+
+Objetivo: corregir la entrada y lectura de precios en `/dashboard/paramascotas-panel/catalog/products`, evitando mascara agresiva, saltos de cursor, valores tipo `0,001` al escribir `1` y ambiguedad entre importes con IVA/sin IVA.
+
+Cambios:
+- `ParamascotasProductsWorkspaceComponent` ahora maneja borradores de campos monetarios durante foco y formatea solo al perder foco.
+- Los campos precio sin IVA, precio con IVA (PVP), mercado con IVA, costo unitario y utilidad neta muestran prefijo `$` interno, usan `autocomplete="off"`, figuras tabulares y alineacion derecha sin cambiar el modelo de guardado.
+- El formato visible de dinero usa agrupacion Ecuador `1.123.123,12` y conserva coma decimal.
+- El bloque Precio e inventario separa inputs editables para precio sin IVA, PVP con IVA, IVA de venta, mercado con IVA, costo, markup, margen neto y utilidad neta.
+- Precio sin IVA y PVP con IVA se recalculan en ambos sentidos usando la tasa IVA vigente del formulario; editar IVA actualiza PVP/base sin perder el contrato backend de precio neto.
+- IVA de venta ahora es un input porcentual editable: `0` se trata como exento explicito y no vuelve al default 15%; cualquier tasa valida como `20` recalcula los importes relacionados.
+- IVA de compra tambien queda visible en el bloque principal: `Costo sin IVA`, `Costo con IVA` e `IVA compra` se recalculan en ambos sentidos; el costo neto sigue siendo la fuente de verdad para margen/FIFO.
+- El `purchaseTaxRate` queda sincronizado con proveedor/factura y tambien se conserva en atributos del producto para que no desaparezca cuando no hay ingreso de stock nuevo.
+- Costo, markup, margen neto y utilidad neta funcionan como entradas de calculadora: al cambiar una de ellas se recalcula el precio base, el PVP y los indicadores derivados.
+- La franja financiera queda como resumen compacto con `IVA calculado`, `IVA compra`, `PVP minimo` y `Resultado`; los montos en dolares van en texto pequeno para no duplicar visualmente los inputs principales.
+- El chip antes llamado margen bruto se reemplazo por `PVP minimo`, calculado con IVA, para explicar el precio de equilibrio necesario para no vender bajo costo cuando el PVP incluye impuesto.
+- `ParamascotasProductTaxService` concentra los calculos de monto IVA, utilidad neta, markup, margen neto, precio base derivado y PVP bruto de equilibrio para evitar formulas fiscales duplicadas en el componente.
+- La seccion Precio e inventario usa una grilla compacta propia de cuatro columnas en desktop; PVP, mercado, costo e IVA ya no heredan la grilla general de dos columnas que desperdiciaba ancho.
+- Se elimino el segundo aviso redundante de "Sin ingreso de stock nuevo" para recuperar altura util en el bloque Precio e inventario.
+- Se agregaron estilos locales para el control monetario encapsulado y los chips de ayuda financiera del workspace de productos.
+- Se agrego `paramascotas-products-workspace.component.spec.ts` con cobertura de prefijo `$`, edicion libre de PVP, costo normalizado como valor monetario directo, formato con miles Ecuador y resumen de markup/margenes.
+
+Decisiones:
+- Mantener el parser local `es-EC` existente y la conversion PVP bruto -> base sin IVA; el cambio se limita a la experiencia de escritura y presentacion.
+- Formatear en `blur` para conservar texto parcial mientras el usuario escribe y evitar que Angular reinyecte la mascara en cada tecla.
+- Usar el IVA default actual como base de calculo, pero respetar siempre una tasa explicita del formulario, incluido `0`.
+- Ubicar las metricas como chips pequenos bajo los inputs principales, reservar la linea secundaria para montos en dolares y ayuda breve, evitar presentar como rentabilidad positiva una diferencia contra PVP que incluye IVA y compactar los inputs al ancho necesario para precios grandes.
+
+Verificacion:
+- Paso `npm run type:check` en `dashboard`.
+- Paso `npm test -- --watch=false --include=src/app/features/dashboard/pages/paramascotas-products-workspace/paramascotas-products-workspace.component.spec.ts --include=src/app/features/dashboard/services/paramascotas-product-tax.service.spec.ts` con 17 tests.
+- Paso `npm run lint` en `dashboard`.
+- Paso `./scripts/deploy.sh dashboard`.
+- Paso validacion por APISIX QA: `GET https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products -> 200`, bundle servido `main-YKA26MKS.js`.
+- Se desplego QA con `./scripts/deploy.sh dashboard`.
+- Paso verificacion publica APISIX: `GET https://paramascotasec.com/dashboard/paramascotas-panel/catalog/products -> 200`, sirviendo `main-BXX576MF.js`.
+
+### 2026-07-08 - Fidepuntos: hardening de Wallet y canjes
+
+Objetivo: reducir abuso por enlaces Wallet compartidos y cerrar carreras de canjes, reservas, entregas y cancelaciones en LoyaltyRewards.
+
+Cambios:
+- `GoogleWalletService` declara `multipleDevicesAndHoldersAllowedStatus=ONE_USER_ALL_DEVICES` en el payload de clase para pases nuevos, alineado a tarjetas personales de fidelizacion.
+- El portal publico `GET/POST /api/l/r/{token}` ahora exige verificacion antes de reclamar o cancelar: ultimos 4 digitos del telefono registrado, o correo registrado como fallback si no hay telefono.
+- Fallos de verificacion del portal registran eventos de riesgo; si un socio no tiene telefono/correo, el portal bloquea reclamos hasta actualizar datos de contacto.
+- Canje inmediato, reserva de portal, aprobacion, entrega, cancelacion y expiracion bloquean filas criticas con `FOR UPDATE` y revalidan saldo, stock, estado y limites tras el lock para evitar dobles gastos o dobles devoluciones.
+- `scripts/run_loyalty_policy_exercises.php` se actualizo al contrato vigente de socio (`phone` y `accountId`) y agrega casos de portal Wallet: token sin verificacion bloqueado, verificacion incorrecta bloqueada, reclamo valido con codigo y cancelacion con devolucion.
+
+Decisiones:
+- La pagina de reclamos del cliente es el enlace por objeto `linksModuleData` con descripcion `Ver premios`; no debe configurarse como `URL de la pagina principal` ni como modulo de enlace de clase en Google Wallet porque esos campos son generales para todos.
+- La clase existente en Google Wallet Console debe cambiarse manualmente de `MULTIPLE_HOLDERS` a `ONE_USER_ALL_DEVICES`; el cambio de codigo cubre clases/payloads nuevos, pero no garantiza corregir una clase ya aprobada si Google no acepta sobrescritura desde el JWT.
+- El enlace tokenizado sigue permitiendo lectura del portal si se comparte; para reclamar o cancelar ya no basta el enlace. Para un bloqueo mas fuerte al guardar la tarjeta, evaluar `saveRestrictions.restrictToEmailSha256` solo con soporte/consentimiento explicito de Google.
+
+Verificacion:
+- Paso `php -l` en `LoyaltyRepository.php`, `LoyaltyController.php`, `GoogleWalletService.php` y `scripts/run_loyalty_policy_exercises.php`.
+- Paso `php backend/scripts/check_modular_routes.php`.
+- Paso `node dashboard/tools/check-dashboard-api-contracts.mjs`.
+- Paso `docker exec backend-api php scripts/check_module_databases.php`.
+- Paso `docker exec backend-api php scripts/run_loyalty_policy_exercises.php`, incluyendo los nuevos casos de verificacion del portal Wallet.
+- Paso health publico por APISIX: `GET https://paramascotasec.com/paramascotasec/api/health -> ok`.
+- Se desplego QA con `./scripts/deploy.sh backend`.
+
 ### 2026-07-08 - Fidepuntos: portal Wallet para reclamo de premios
 
 Objetivo: permitir que clientes con Wallet registrada reclamen premios desde un enlace tokenizado, diferenciando premios de mostrador, entrega en local y solicitudes gestionadas por el negocio.
