@@ -271,6 +271,29 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-10 - Fidepuntos: diagnostico real de push Google Wallet
+
+Objetivo: corregir el caso en que `/dashboard/loyalty-points/notifications` marcaba notificaciones Android como enviadas aunque Google Wallet no hubiera confirmado una notificacion push visible.
+
+Cambios:
+- `GoogleWalletService::addMessage()` ahora valida primero que el `LoyaltyObject` exista y tenga `hasUsers=true`; si el objeto no esta guardado en ningun telefono, falla antes de agregar mensaje.
+- El envio valida el `messageType` devuelto por Google despues de `addMessage`; solo cuenta como enviado si queda `textAndNotify`. Si Google lo degrada a `text` por cuota/throttling, el destinatario queda `skipped`.
+- `WalletNotificationProcessor` usa el `external_object_id` guardado en `loyalty_wallet_passes` cuando existe, para no recalcular un objeto distinto desde `account_id`.
+- El endpoint legacy `googleWalletNotify()` usa el mismo objeto persistido y registra `messageType` en auditoria.
+- La pantalla de dashboard cambio el copy de confirmacion para hablar de intento de envio y no prometer entrega garantizada.
+
+Decisiones:
+- Google Wallet sigue siendo el canal push vigente, pero la entrega visible depende de que el usuario tenga el pase guardado, notificaciones activas y no exceda el limite de Google de 3 notificaciones por tarjeta en 24 horas.
+- No se implementaron callbacks de alta/baja de Google Wallet en esta tarea; el backend hace verificacion remota justo antes de enviar.
+
+Verificacion:
+- Google Wallet API confirmo para QA que `CLI-00849` tiene `hasUsers=true` y mensajes recientes degradados a `text`; `CLI-00848` existe con `hasUsers=false`; `FID-1012` no existe en Google.
+- Prueba transaccional con doble `WalletMessenger` verifico que un push no confirmado queda `skipped`, no `sent`, usando `external_object_id`.
+- Pruebas no invasivas reales confirmaron que objetos sin usuarios o inexistentes se rechazan antes de agregar mensaje.
+- Pasaron `php -l` en archivos backend modificados, `npm run type:check` en `dashboard`, y los specs puntuales de notificaciones (`5 tests`).
+- Se desplego `./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard`.
+- APISIX confirmo `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/notifications` con HTTP 200.
+
 ### 2026-07-09 - Fidepuntos: buscador y filtros en notificaciones Wallet
 
 Objetivo: mejorar `/dashboard/loyalty-points/notifications` para que el envio individual tenga buscador real de socio y las campanias masivas permitan filtrar audiencia por tipo de tarjeta.
