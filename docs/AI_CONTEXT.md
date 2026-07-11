@@ -271,6 +271,213 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-11 - Fidepuntos: puntos de guia integrados a las etiquetas
+
+Objetivo: mover los puntos de orientacion desde el extremo derecho al lado izquierdo de las etiquetas para que guien la lectura.
+
+Cambios:
+- El punto del grupo abierto se inserta antes de su texto, despues del icono: 5 px, opacidad 0.64 y separacion de 7 px.
+- El punto de la pagina activa se inserta antes de su texto: 6 px, opacidad 0.90 y la misma separacion de 7 px.
+- Se elimino el posicionamiento absoluto derecho de ambos puntos; el menu principal permanece sin punto.
+- Las variantes oscuras conservan la misma geometria con azul claro.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- Playwright confirmo ausencia de marca en el padre, punto de 5 px antes de `Caja y canjes` y punto de 6 px antes de `Registrar compra`, sin errores de consola ni fallas inesperadas de red.
+- `./scripts/deploy.sh dashboard` completo; el contenedor quedo healthy y la ruta publica respondio `200` por APISIX.
+- La cuenta QA efimera usada para inspeccion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: puntos discretos solo en navegacion secundaria
+
+Objetivo: retirar la marca del modulo principal y conservar la orientacion dentro de submenu mediante puntos mas sutiles.
+
+Cambios:
+- Se retiro cualquier marca de `Recompensas y puntos`; el menu principal queda sin subrayado ni punto.
+- El grupo interno abierto, como `Caja y canjes`, muestra un punto azul tenue de 3 px antes de su flecha.
+- La pagina interna activa, como `Registrar compra`, conserva un punto azul de 4 px al extremo derecho.
+- Se alineo el codigo fuente con la variante plana publicada: submenu transparente, sin fondos, sombras ni degradados en claro u oscuro.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- Playwright confirmo ausencia de marca en el menu padre, punto de 3 px para el grupo abierto y punto de 4 px para la ruta activa, sin errores de consola ni fallas inesperadas de red.
+- La busqueda estatica confirmo 0 usos de `gradient` en `side-nav.component.css`.
+- `./scripts/deploy.sh dashboard` completo; el contenedor quedo healthy y la ruta publica respondio `200` por APISIX.
+- La cuenta QA efimera usada para inspeccion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: marca de orientacion para el modulo activo
+
+Objetivo: dar al menu padre una señal de ubicación equivalente a la del submenu activo, preservando el diseño plano.
+
+Cambios:
+- La linea horizontal completa bajo el modulo abierto se reemplazo por una marca azul solida de 30 x 2 px bajo su etiqueta.
+- La pagina activa conserva una marca menor de 22 x 2 px, formando una escala visual padre-hijo coherente.
+- Las marcas no agregan fondos, sombras, degradados ni barras laterales y tienen variante clara para modo oscuro.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- Playwright confirmo marcas de 30 x 2 px y 22 x 2 px, sin errores de consola ni fallas inesperadas de red, en claro y oscuro.
+- `./scripts/deploy.sh dashboard` completo; el contenedor quedo healthy y la ruta publica respondio `200` por APISIX.
+- La cuenta QA efimera usada para inspeccion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: menu lateral plano sin fondos ni degradados
+
+Objetivo: reemplazar el contenedor gris y las superficies degradadas del menu por una solucion mas sobria, blanca y tipografica.
+
+Cambios:
+- Se elimino el fondo gris del submenu, sus radios y cualquier panel visual; el menu claro usa blanco puro.
+- Se retiraron todos los degradados, fondos de seleccion, fondos hover y sombras de la navegacion lateral en claro y oscuro.
+- El modulo abierto se delimita con una linea horizontal fina; los grupos internos se distinguen por escala, mayusculas, espaciado y sangria.
+- La ruta activa usa texto e icono azules con peso 600 y un subrayado solido de 22 x 2 px bajo la etiqueta; no usa capsula, punto ni barra lateral.
+- Las profundidades quedan en 16 px, 38 px y 58 px, sin fondos auxiliares y con foco de teclado visible.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- La busqueda estatica confirmo 0 usos de `gradient` en `side-nav.component.css`.
+- Playwright confirmo fondos transparentes y sombras inexistentes en los tres niveles, subrayado activo de 22 x 2 px, textos largos en una linea y paridad clara/oscura, sin errores de consola ni fallas de red.
+- `./scripts/deploy.sh dashboard` completo; el contenedor quedo healthy y la ruta publica respondio `200` por APISIX.
+- La cuenta QA efimera de inspeccion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: niveles estructurales del menu lateral
+
+Objetivo: hacer inequívoca la diferencia entre modulo, secciones internas y paginas despues de que la jerarquia basada solo en tonos y sangria siguiera resultando insuficiente.
+
+Cambios:
+- El submenu completo del modulo abierto ahora vive dentro de una superficie contenida con radio de 12 px, diferenciada del menu principal sin bordes laterales.
+- Los grupos internos se presentan como rotulos de seccion de 12 px, en mayusculas, con iconos y flechas compactos; ya no parecen destinos equivalentes al modulo principal.
+- Los destinos navegables mantienen caja baja y peso 500; la pagina activa conserva la unica capsula con sombra y punto indicador.
+- La tercera profundidad aumento su sangria a 20 px dentro del contenedor, produciendo inicios medidos de 16 px, 34 px y 54 px.
+- Se optimizo el ancho de los rotulos para que `Reglas y configuracion` permanezca en una sola linea y se mantuvo paridad clara/oscura.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- Playwright confirmo los tres roles tipograficos, tres profundidades distintas, contenedor secundario y textos largos en una linea, sin errores de consola ni fallas de red.
+- `./scripts/deploy.sh dashboard` completo; el contenedor quedo healthy y la ruta publica respondio `200` por APISIX.
+- La cuenta QA efimera usada para inspeccion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: jerarquia visual por profundidad en el menu
+
+Objetivo: recuperar una lectura inequívoca entre modulo principal, grupo interno y pagina activa sin aumentar el peso general ni usar barras laterales.
+
+Cambios:
+- El modulo principal conserva la superficie contextual de mayor amplitud y el peso 600 solo cuando esta abierto.
+- Los grupos internos usan una superficie casi neutra, sin sombra, tipografia secundaria y color de contexto; ya no compiten visualmente con la pagina seleccionada.
+- Solo la ruta hoja activa conserva la capsula tonal, sombra tenue y punto derecho.
+- Las tres profundidades parten de 16 px, 36 px y 50 px respectivamente; la sangria, el ancho y el contraste comunican la estructura sin adornos adicionales.
+- Se agrego paridad oscura especifica para el modulo abierto y los grupos internos.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- Playwright en `/loyalty-points/register-purchase` confirmo tres niveles visuales distintos, sin errores de consola ni solicitudes fallidas, tanto en claro como en oscuro.
+- `./scripts/deploy.sh dashboard` completo; contenedor `dashboard` healthy y ruta publica respondio `200` por APISIX.
+- La cuenta QA efimera usada para la inspeccion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: tipografia y densidad del menu lateral
+
+Objetivo: corregir el peso excesivo, la cercania entre texto e iconos y el desperdicio de ancho del menu lateral tenantizado.
+
+Cambios:
+- Se neutralizo el escalado tipografico heredado de la plantilla para pantallas grandes: grupos principales usan 14 px con peso 500, el grupo abierto 600 y las opciones internas 13.5 px con peso 500.
+- Se normalizaron iconos a 18-20 px, separaciones de 8-9 px y alturas de 38-42 px para mejorar lectura sin inflar cada fila.
+- La sangria del primer submenu bajo de 44 px heredados a 20 px; los grupos internos usan padding horizontal de 8 px y aprovechan el ancho disponible.
+- El enlace activo conserva el fondo tonal y punto derecho, pero sin bloque detras del icono ni negrita adicional.
+
+Verificacion:
+- SideNav paso 18/18 pruebas; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- Playwright a 1440 px confirmo `Recompensas y puntos`, `Resumen del programa` y `Reglas y configuracion` en una linea, sin errores de consola ni solicitudes fallidas.
+- `./scripts/deploy.sh dashboard` completo; contenedor `dashboard` healthy y ruta publica de Fidepuntos respondio `200` por APISIX.
+- La cuenta QA efimera usada para validacion fue eliminada.
+
+### 2026-07-11 - Fidepuntos: navegacion activa sin barra lateral generica
+
+Objetivo: retirar del menu lateral el acento vertical izquierdo de los enlaces activos y sustituirlo por un lenguaje de seleccion mas sobrio.
+
+Cambios:
+- Se elimino el `box-shadow: inset 3px 0` y el contorno del enlace activo.
+- La ruta actual usa una superficie tonal con degradado muy leve, sombra ambiental, icono sobre fondo propio y un punto discreto al extremo derecho.
+- Los grupos abiertos conservan una jerarquia secundaria neutra; la variante colapsada oculta el punto y las variantes clara/oscura mantienen el mismo criterio.
+- Se neutralizo cualquier `::before` heredado que pudiera reconstruir una barra lateral.
+
+Verificacion:
+- Suite focalizada de SideNav: 18/18 pruebas pasaron; `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- `./scripts/deploy.sh dashboard` completo y contenedor healthy.
+- Playwright en `https://fidepuntos.tecnolts.com/dashboard/loyalty-points`: HTTP 200, sin errores de consola/red; borde izquierdo y derecho computados en `0px` tanto en claro como en oscuro.
+- La cuenta QA efimera usada para inspeccion visual fue eliminada.
+
+### 2026-07-11 - Fidepuntos: configuracion general reducida a controles funcionales
+
+Objetivo: retirar de `/dashboard/loyalty-points/settings` las opciones que solo se persistian o mostraban sin producir un efecto operativo comprobado.
+
+Cambios:
+- Se eliminaron de la UI el estado del programa, zona horaria, idioma regional, color/logo general, la seccion Email/Webhooks y el supuesto limite por minuto de cada clave API.
+- Identidad y soporte conserva solo nombre, moneda, correo y telefono; Google Wallet conserva sus datos porque intervienen en la emision de nuevas tarjetas y ahora aclara que no modifica una clase ya aprobada en Google.
+- Acceso API conserva sistema, tipo, scopes, estado, ultimo uso y acciones; el alta ya no envia `rateLimitPerMinute` y la tabla no presenta ese valor como aplicado.
+- Se simplificaron diagnosticos, metricas, layout responsive y estilos asociados; los campos legacy siguen preservados en el payload/backend para compatibilidad, pero no se ofrecen como controles operativos.
+- Se agrego `loyalty-points-settings.component.spec.ts` para bloquear la reaparicion de controles sin efecto y verificar que el alta de claves no envie el limite ficticio.
+
+Verificacion:
+- Prueba focalizada: 2/2 casos pasaron.
+- `npm run type:check`, `npm run lint`, `npm run module:check` y `git diff --check` pasaron.
+- `./scripts/deploy.sh dashboard` completo; contenedor `dashboard` healthy y ruta publica respondio `200` por APISIX.
+- Auditoria Playwright publicada: solo quedaron los inputs esperados, validacion de moneda bloquea guardado, 0 overflow en 1440/375 px, sin errores de consola ni fallas de red en la repeticion final.
+- Las cuentas QA efimeras de la prueba se eliminaron y no quedaron usuarios de auditoria.
+
+### 2026-07-11 - Fidepuntos: auditoria funcional de configuracion general
+
+Objetivo: comprobar si `/dashboard/loyalty-points/settings` contiene opciones relevantes, correctamente persistidas y conectadas con el comportamiento real del programa.
+
+Hallazgos:
+- La carga y el guardado real por APISIX funcionan (`GET/PUT 200`), la validacion visual bloquea colores invalidos, no hubo errores de consola/red ni overflow en 1440 px o 375 px; `npm run type:check`, `npm run lint` y `git diff --check` pasaron.
+- Google Wallet esta configurado en runtime (issuer, service account y class ID disponibles), el logo configurado responde `200 image/svg+xml` y el worker de notificaciones esta activo.
+- La clase aprobada consultada de solo lectura en Google no coincide con la pantalla: Google conserva `TecnoLTS / Cashback`, color `#0f2e38` y `https://tecnolts.com/logos/logo-wallet.png`; settings muestra `TecnoLTS-test / Programa de fidelizacion`, color `#2B648F` y el logo SVG. El backend genera la clase dentro del JWT de alta, pero no implementa `GET/PATCH loyaltyClass`, por lo que guardar settings no sincroniza una clase ya existente.
+- `program.status` se persiste pero no bloquea compras, canjes ni endpoints; `program.timezone`, `program.locale`, `communication.emailEnabled` y `communication.webhooksEnabled` no tienen consumidores funcionales en LoyaltyRewards.
+- `program.brandColor` no tematiza el dashboard (el tenant branding es la fuente visual efectiva) y `program.logoUrl` queda como fallback practicamente inalcanzable con Wallet activo.
+- Las claves API, sus scopes, estado y ultimo uso si son funcionales; `rate_limit_per_minute` se almacena pero no se aplica por cliente. APISIX aplica actualmente un limite global de 600 solicitudes/minuto al perfil Loyalty.
+
+Decision pendiente:
+- Simplificar la pantalla a configuracion efectiva o implementar los efectos prometidos: sincronizacion explicita de la clase Google, estado operativo real, canales de comunicacion reales y rate limit por cliente. Hasta entonces no presentar esos campos como controles operativos.
+
+### 2026-07-11 - Fidepuntos: eliminacion de verdes heredados
+
+Objetivo: retirar los tonos verdes que aun aparecian en pantallas Loyalty despues del refinamiento azul del dashboard.
+
+Cambios:
+- Se eliminaron colores verdes codificados en metricas, encabezados de tabla, estados correctos, badges Wallet, diagnosticos, pasos completados, notificaciones, modales y botones SweetAlert de LoyaltyPoints.
+- El tenant activo ahora se publica como `data-tenant` en `html`; para `fidepuntos`, la escala legacy `success` de la plantilla se remapea por completo a azules y evita que `users` u otras pantallas reintroduzcan verde.
+- Los estilos de portal, correos, Wallet y defaults de `platform-core/LoyaltyRewards` tambien migraron de turquesa/verde a la paleta azul.
+- La configuracion QA vigente de `fidepuntos` se migro de `#0f766e`/`#0F6E56` a `#2B648F` en `loyalty_programs` y `loyalty_program_settings`, por lo que las previsualizaciones de marca y Google Wallet ya no muestran verde.
+
+Verificacion:
+- Auditoria estatica por familia HSV encontro 0 colores verdes en archivos de produccion del frontend Loyalty y del backend LoyaltyRewards.
+- `npm run lint`, `npm run type:check`, `npm run module:check`, `git diff --check` y sintaxis PHP pasaron; pruebas focalizadas de tenant y sidebar pasaron 22/22.
+- `./scripts/deploy.sh dashboard` y `./scripts/deploy.sh backend` pasaron; contenedores `dashboard` y `backend-http` quedaron healthy.
+- Auditoria Playwright sobre resumen, reglas, configuracion, clientes, premios, solicitudes, notificaciones y registro de compra respondio `200`, sin overflow y sin colores verdes computados.
+
+### 2026-07-11 - Fidepuntos: sistema visual azul sobrio del dashboard
+
+Objetivo: refinar de forma transversal `https://fidepuntos.tecnolts.com/dashboard/` con una paleta de azules suaves, superficies sobrias y componentes visualmente coherentes, preservando la densidad operativa existente.
+
+Cambios:
+- Se creo una capa de tokens visuales para azul principal `#2b648f`, azul profundo, azul suave, grises azulados, acento dorado apagado, superficies, bordes, radios, sombras, foco y transiciones.
+- La capa global ahora unifica tarjetas, encabezados, inputs, selects, switches, botones, badges, tablas, tabs, dropdowns, paginacion, modales, alertas, progress bars, tooltips de ApexCharts y scrollbars.
+- El shell y sidebar usan estados activos suaves con indicador lateral, controles de cabecera mas sobrios, avatar azul plano y accion de cierre de sesion menos agresiva.
+- LoyaltyPoints reemplazo la mezcla dominante turquesa/verde por azul sereno; el dorado queda como contraste de datos y el verde se reserva para validaciones o estados exitosos reales.
+- Las graficas del resumen usan azul, dorado y grises azulados consistentes; gridlines, leyendas y tooltips se alinearon con las nuevas superficies.
+- Se agrego paridad explicita para modo oscuro, foco visible, estados hover/disabled y `prefers-reduced-motion`.
+- La marca conocida y el fallback backend de `fidepuntos` publican `#2b648f` como color primario.
+
+Decisiones:
+- Se conserva la tipografia compacta y la densidad ya validada; el refinamiento se concentra en jerarquia, contraste, estados y consistencia, no en agrandar la interfaz.
+- Las previsualizaciones configurables de Google Wallet conservan el color real guardado por el usuario aunque difiera de la paleta del dashboard.
+- Las tarjetas informativas no usan verde solo por estar correctas; el color semantico queda reservado para diagnostico, exito, advertencia y peligro.
+
+Verificacion:
+- `npm run type:check`, `npm run lint`, `npm run build` y `npm run module:check` pasaron en `dashboard`; `php -l backend/config/tenants.php` y `git diff --check` pasaron.
+- La prueba focalizada de `side-nav` paso 18/18. La suite global quedo en 750/757: conserva 7 fallos preexistentes en contratos/API y componentes legacy ajenos a los archivos modificados; `arch:check` conserva 23 deudas ya existentes.
+- Contrastes principales medidos entre 4.62:1 y 14.63:1 en claro, y entre 6.87:1 y 13.99:1 en oscuro.
+- `./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard` pasaron; `backend-http` y `dashboard` quedaron healthy.
+- APISIX respondio `200` para `/dashboard/`, `/dashboard/loyalty-points`, `/dashboard/loyalty-points/rules` y `/dashboard/loyalty-points/settings` en `fidepuntos.tecnolts.com`.
+- Inspeccion Playwright a 1440 px confirmo las tres pantallas Loyalty publicadas sin overflow horizontal y con el nuevo sistema visual.
+
 ### 2026-07-11 - Fidepuntos: UX/UI de configuracion general
 
 Objetivo: mejorar `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/settings` para que la configuracion general sea clara, densa y no duplique reglas comerciales ya gestionadas en `/loyalty-points/rules`.
