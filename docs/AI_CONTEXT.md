@@ -271,6 +271,152 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-11 - Fidepuntos: UX/UI de configuracion general
+
+Objetivo: mejorar `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/settings` para que la configuracion general sea clara, densa y no duplique reglas comerciales ya gestionadas en `/loyalty-points/rules`.
+
+Cambios:
+- La pantalla de configuracion ahora separa identidad del programa, soporte, Google Wallet, comunicacion y accesos API externos.
+- Se eliminaron de `settings` los controles editables de acumulacion, limites de canje e idempotencia que ya pertenecen a `Reglas del programa`.
+- Se agrego una cabecera compacta con metricas de programa, contacto, Wallet y API externa, mas alerta de pendientes antes de guardar.
+- La configuracion de Google Wallet muestra preview de tarjeta, validacion de sufijo, logo HTTPS, color hex y origins HTTPS.
+- Las reglas comerciales quedan como resumen de solo lectura con enlace directo a `/dashboard/loyalty-points/rules`.
+- El alta de claves API externas conserva tabla y formulario compacto con labels visibles, sin tarjetas decorativas.
+- Ajuste posterior: se elimino el hueco visual bajo reglas reacomodando `settings` en filas equilibradas; reglas ocupa ancho completo y diagnostico muestra resumen compacto con chips OK en lugar de una tarjeta por cada validacion correcta.
+
+Decisiones:
+- `settings` queda reservado para configuracion transversal y tecnica; `rules` es la unica pantalla para acumulacion, niveles, vencimiento, canje y antifraude.
+- El frontend bloquea guardado solo ante errores de configuracion general o Wallet; advertencias como Wallet inactivo o falta de claves API no bloquean.
+
+Verificacion:
+- `npm run type:check` y `npm run lint` en `dashboard`.
+- `git -C dashboard diff --check`.
+- `./scripts/deploy.sh dashboard` y `./scripts/deploy.sh gateway` pasaron; `dashboard` y `apisix-gateway` quedaron healthy.
+- APISIX QA local respondio `200` para `/dashboard/loyalty-points/settings` usando `--resolve fidepuntos.tecnolts.com:443:192.168.100.229`.
+- El chunk lazy publicado `chunk-nkNdiMOn.js` contiene `Configuracion general`, `Reglas comerciales` y `Guardar configuracion`.
+
+### 2026-07-11 - Fidepuntos: UX/UI y reglas funcionales del programa
+
+Objetivo: mejorar `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/rules` para que la configuracion de acumulacion, niveles, canje, expiracion y antifraude sea clara, densa y coherente con reglas reales del backend.
+
+Cambios:
+- La pantalla de reglas ahora usa una consola compacta con metricas operativas, acciones de actualizar/guardar, alerta de errores y diagnostico de coherencia antes de persistir.
+- La formula de acumulacion muestra controles para puntos base, monto, minimo de compra, redondeo, maximo por compra y maximo diario; agrega una tabla de simulacion por monto y nivel.
+- La seccion de niveles se convirtio en tabla editable con diagnostico por fila para detectar nombres vacios, duplicados, rangos negativos, solapes, huecos y falta de nivel final sin limite.
+- La seccion lateral agrupa condiciones de canje, expiracion y antifraude sin desperdiciar espacio; se agrego configuracion visible de `manualApprovalThresholdPoints`, expiracion de puntos e idempotencia externa.
+- El frontend bloquea el guardado cuando hay errores de coherencia y muestra advertencias operativas sin depender solo del error del backend.
+- `LoyaltyRepository::updateRules()` normaliza niveles por rango y rechaza configuraciones no continuas antes de borrar/reinsertar `loyalty_tier_rules`.
+- `validateSettings()` valida limites de acumulacion, canje, expiracion, retencion de auditoria y umbral antifraude.
+- El umbral de aprobacion manual ahora afecta reclamos del portal: si el costo del premio alcanza el umbral, el reclamo queda `pending_review` aunque sea de codigo en local.
+- `idempotencyRequiredForExternalApi` ahora controla realmente si las mutaciones externas requieren `Idempotency-Key`.
+- `riskBlockThreshold` ahora bloquea automaticamente socios con eventos abiertos de riesgo alto/critico al alcanzar el umbral configurado.
+- Ajuste posterior: se elimino la columna lateral fija que dejaba vacio en desktop; niveles ahora ocupa el ancho completo, beneficios usa campo multilínea, diagnostico y textos envuelven sin recorte, y canje/expiracion/antifraude/revision se distribuyen en una grilla inferior compacta.
+
+Decisiones:
+- La UI evita tarjetas decorativas y usa tabla/formularios porque la pagina es de configuracion operativa, no de marketing.
+- Los niveles deben cubrir todos los puntos desde 0 hasta sin limite, sin huecos ni solapes; esto evita asignaciones ambiguas al recalcular socios.
+- El bloqueo antifraude automatico solo cuenta eventos abiertos de severidad `high` o `critical`; eventos medios siguen auditandose sin bloquear por umbral.
+
+Verificacion:
+- `php -l` en `LoyaltyRepository.php` y `LoyaltyController.php`.
+- `npm run type:check`, `npm run lint`, `node tools/check-dashboard-api-contracts.mjs` y `node tools/check-module-manifests.mjs` en `dashboard`.
+- `php backend/scripts/check_modular_routes.php`.
+- `git -C backend diff --check`, `git -C dashboard diff --check` y `git -C webparamascotas diff --check`.
+- `RUN_DB_SETUP=1 ./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard` pasaron; contenedores `backend-http` y `dashboard` quedaron healthy.
+- APISIX respondio `200 text/html; charset=utf-8` para `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/rules`.
+- Prueba runtime en `backend-api` confirmo que `updateRules()` rechaza niveles con hueco y conserva la cantidad de niveles existente.
+
+### 2026-07-10 - Fidepuntos: tabla operativa de solicitudes de premios
+
+Objetivo: mejorar `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/redemptions` para que la cola de solicitudes de premios funcione como una consola escalable, con tabla, filtros y busqueda aptos para volumen alto.
+
+Cambios:
+- La pantalla de solicitudes reemplaza la cola basada en tarjetas por una mesa operativa compacta con resumen de estados, filtros, tabla, acciones por fila y paginacion.
+- Se agregaron filtros de busqueda, estado, tipo de entrega, modo de reclamo, rango de fechas, ordenamiento y tamano de pagina; el boton Limpiar restaura una vista operativa sin perder densidad.
+- Las acciones de aprobar, entregar y cancelar se conservan por fila, con etiquetas mas claras para `Codigo en local`, `Retiro coordinado`, `Entrega coordinada` y `Solicitud con coordinacion`.
+- El dashboard envia filtros al backend usando parametros tipados desde `listRedemptionClaims()`, evitando filtrar listas grandes solo en cliente.
+- `LoyaltyRepository::redemptionClaims()` aplica busqueda, filtros, ordenamiento y paginacion en SQL, con conteo total y resumen de estados coherentes con la consulta.
+- `LoyaltySchema` agrega indices de apoyo para solicitudes de premios por fecha, tipo de entrega y busqueda trigram en nombres de premios.
+
+Decisiones:
+- La pagina queda orientada a registros masivos: tabla y filtros server-side primero; las metricas visuales quedan reducidas a una franja de resumen, no a tarjetas de navegacion.
+- El orden por defecto es `priority`, priorizando solicitudes pendientes/operativas antes que historicos cerrados.
+
+Verificacion:
+- `php -l` en `LoyaltyController.php`, `LoyaltyRepository.php` y `LoyaltySchema.php`.
+- `npm run type:check`, `npm run lint`, `node tools/check-dashboard-api-contracts.mjs` y `node tools/check-module-manifests.mjs` en `dashboard`.
+- `php backend/scripts/check_modular_routes.php`.
+- `git -C backend diff --check` y `git -C dashboard diff --check`.
+- `RUN_DB_SETUP=1 ./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard` pasaron.
+- APISIX respondio `200 text/html; charset=utf-8` para `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/redemptions`.
+- Pruebas runtime de `redemptionClaims()` en tenant `fidepuntos` confirmaron filtros por busqueda, estado, tipo de entrega, modo de reclamo y paginacion.
+
+### 2026-07-10 - Fidepuntos: imagenes WebP en catalogo de premios
+
+Objetivo: mejorar el modal de premios en `/dashboard/loyalty-points/rewards` para aceptar imagenes, convertirlas a WebP y guardarlas de forma segura con permisos controlados.
+
+Cambios:
+- El modal de crear/editar premio agrega cargador de imagen con preview, estado de carga, mensaje de error, opcion de reemplazar/quitar y guardia para no enviar mientras la imagen se procesa.
+- El dashboard sube imagenes por `POST /dashboard/api/admin/loyalty/rewards/image` usando `multipart/form-data`; acepta JPG, PNG y WebP hasta 5 MB y muestra miniaturas en el inventario.
+- El backend valida MIME real, errores de upload, dimensiones, pixeles maximos y nombre seguro; convierte la imagen a WebP optimizado, limita el lado mayor a 1200 px y guarda en `public/uploads/loyalty/rewards/{tenant}`.
+- Los directorios de uploads se preparan en build y arranque de `backend-api`; quedan con propietario `www-data`, directorios `755` y archivos WebP `644`.
+- Se agrego lectura publica segura `GET/HEAD /api/l/reward-images/{tenantId}/{fileName}` con `nosniff`, cache immutable y validacion estricta de nombre de archivo.
+- El proxy del dashboard prioriza `/api/` sobre assets estaticos para que imagenes `.webp` del portal Wallet lleguen al backend.
+
+Verificacion:
+- `php -l` en `backend/public/index.php`, `RewardImageStorage.php`, `LoyaltyController.php`, `LoyaltyRepository.php` y `LoyaltySchema.php`.
+- `php backend/scripts/check_modular_routes.php`.
+- `node tools/check-dashboard-api-contracts.mjs`.
+- `npm run type:check` y `npm run lint` en `dashboard`.
+- `./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard` pasaron; health local del dashboard OK.
+- Runtime confirmo `gd=yes`, `imagewebp=yes` y carpeta `/var/www/html/public/uploads/loyalty/rewards` con `drwxr-xr-x www-data:www-data`.
+- APISIX respondio `200 text/html; charset=utf-8` para `/dashboard/loyalty-points/rewards` y `404 application/json` para imagen WebP inexistente en `/api/l/reward-images/...`, confirmando que la ruta entra al backend.
+
+### 2026-07-10 - Fidepuntos: UX/UI del catalogo de premios
+
+Objetivo: mejorar `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/rewards` para que la gestion de premios se vea como una consola operativa clara, con mejor distribucion, estados y acciones.
+
+Cambios:
+- Se agrego cabecera operativa para el catalogo con siguiente accion, capacidades del flujo y metricas clave de premios activos, stock y costo minimo.
+- La pantalla de catalogo organiza buscador, estado, stock y forma de canje en una barra compacta de filtros con selectores, evitando crecer por tarjetas cuando aumenten las opciones.
+- Las tarjetas de premio se redisenaron como inventario accionable con icono, descripcion, disponibilidad, modo de reclamo, canjes, costo, stock y acciones agrupadas.
+- Se agregaron helpers de disponibilidad, accion siguiente y resumen de catalogo sin llamadas nuevas al backend.
+- Se ajusto responsive para cabecera, filtros, metricas y acciones sin scroll horizontal.
+- Ajuste posterior: los tipos de reclamo se renombraron a `Canje por personal`, `Codigo en local` y `Solicitud con coordinacion`; el filtro quedo como selector compacto dentro de la barra principal y aplica sobre el inventario visible sin ocupar una seccion completa.
+
+Verificacion:
+- `git -C dashboard diff --check`.
+- `npm run type:check` en `dashboard`.
+- `npm run lint` en `dashboard`.
+- `node tools/check-module-manifests.mjs`.
+- `./scripts/deploy.sh dashboard` paso; health local del dashboard OK.
+- APISIX respondio `200 text/html; charset=utf-8` para `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/rewards`.
+
+### 2026-07-10 - Fidepuntos: UX/UI de emision de tarjeta digital
+
+Objetivo: mejorar `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/customer-card` para que la emision y administracion de tarjetas digitales se vea como una consola operativa clara, no como una pantalla basica.
+
+Cambios:
+- La cabecera ahora muestra contexto operativo, siguiente accion y pasos de emision con estado.
+- Los KPIs de tarjetas digitales vuelven a representar la consulta visible, no solo el socio seleccionado.
+- La seleccion de socio muestra identidad, estado, canal Wallet, saldo, nivel, contacto y acceso a historial en una ficha mas escaneable.
+- El panel de estado agrega accion principal, checklist de emision, boton directo para QR, reenvio Android, marcado iPhone y retiro de tarjeta.
+- La vista previa del pase agrega estado de QR/enlace y la cola de trabajo conserva la consulta completa con el socio seleccionado arriba.
+- Se agregaron estilos responsive para los nuevos bloques, badges de plataforma y resumen de cola.
+- Ajuste posterior: se elimino el espacio vacio entre la ficha de socio y la vista previa reorganizando `customer-card` en dos columnas apiladas: izquierda con socio + preview, derecha con estado + cola de trabajo.
+- Ajuste posterior: el QR de Google Wallet vuelve a la vista previa del pase y se retiro del panel superior de estado; queda un unico QR junto a datos distribuidos de socio, cuenta, saldo, tarjeta, canal y contacto.
+- Ajuste posterior: se redujo el vacio visual alrededor del QR manteniendo su tamano; los datos del pase se agruparon en superficies internas para equilibrar la tarjeta y mejorar escaneo visual.
+
+Verificacion:
+- `npm run type:check` en `dashboard`.
+- `npm test -- --watch=false --include=src/app/features/loyalty-points/pages/loyalty-points-register-card/loyalty-points-register-card.component.spec.ts` paso 2 tests.
+- `npm run lint` en `dashboard`.
+- `node tools/check-module-manifests.mjs`.
+- APISIX respondio `200 text/html; charset=utf-8` para `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/customer-card`.
+- `./scripts/deploy.sh dashboard` paso; health local del dashboard OK.
+- APISIX confirmo `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/customer-card` con HTTP 200.
+- Playwright headless confirmo carga del bundle y redireccion esperada a `/dashboard/sign-in` sin sesion; los 401 observados son endpoints protegidos por autenticacion.
+
 ### 2026-07-10 - Fidepuntos: diagnostico real de push Google Wallet
 
 Objetivo: corregir el caso en que `/dashboard/loyalty-points/notifications` marcaba notificaciones Android como enviadas aunque Google Wallet no hubiera confirmado una notificacion push visible.
@@ -278,6 +424,7 @@ Objetivo: corregir el caso en que `/dashboard/loyalty-points/notifications` marc
 Cambios:
 - `GoogleWalletService::addMessage()` ahora valida primero que el `LoyaltyObject` exista y tenga `hasUsers=true`; si el objeto no esta guardado en ningun telefono, falla antes de agregar mensaje.
 - El envio valida el `messageType` devuelto por Google despues de `addMessage`; solo cuenta como enviado si queda `textAndNotify`. Si Google lo degrada a `text` por cuota/throttling, el destinatario queda `skipped`.
+- Cada mensaje push nuevo incluye `displayInterval` con vencimiento por defecto de 24 horas y, tras enviarlo, el backend compacta el pase para dejar visible solo el mensaje mas reciente; `LOYALTY_WALLET_VISIBLE_MESSAGE_LIMIT` y `LOYALTY_WALLET_MESSAGE_TTL_HOURS` permiten ajustar esos limites.
 - `WalletNotificationProcessor` usa el `external_object_id` guardado en `loyalty_wallet_passes` cuando existe, para no recalcular un objeto distinto desde `account_id`.
 - El endpoint legacy `googleWalletNotify()` usa el mismo objeto persistido y registra `messageType` en auditoria.
 - La pantalla de dashboard cambio el copy de confirmacion para hablar de intento de envio y no prometer entrega garantizada.
@@ -290,6 +437,8 @@ Verificacion:
 - Google Wallet API confirmo para QA que `CLI-00849` tiene `hasUsers=true` y mensajes recientes degradados a `text`; `CLI-00848` existe con `hasUsers=false`; `FID-1012` no existe en Google.
 - Prueba transaccional con doble `WalletMessenger` verifico que un push no confirmado queda `skipped`, no `sent`, usando `external_object_id`.
 - Pruebas no invasivas reales confirmaron que objetos sin usuarios o inexistentes se rechazan antes de agregar mensaje.
+- Se envio una prueba real a `CLI-00849`; Google confirmo `messageType=textAndNotify` y la notificacion llego al Wallet del usuario.
+- Se compacto el objeto `3388000000023170202.fidepuntos_CLI-00849` de 20 mensajes a 1 mensaje visible, con `displayInterval.end` configurado.
 - Pasaron `php -l` en archivos backend modificados, `npm run type:check` en `dashboard`, y los specs puntuales de notificaciones (`5 tests`).
 - Se desplego `./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard`.
 - APISIX confirmo `https://fidepuntos.tecnolts.com/dashboard/loyalty-points/notifications` con HTTP 200.
