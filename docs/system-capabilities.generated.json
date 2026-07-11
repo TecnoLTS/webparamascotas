@@ -1694,10 +1694,26 @@
       },
       "backendRoutes": [
         {
+          "id": "backend:GET:/api/admin/loyalty/navigation/catalog",
+          "method": "GET",
+          "path": "/api/admin/loyalty/navigation/catalog",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyNavigationController@catalog",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:GET:/api/admin/loyalty/dashboard",
           "method": "GET",
           "path": "/api/admin/loyalty/dashboard",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@dashboard",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/dashboard/customers",
+          "method": "GET",
+          "path": "/api/admin/loyalty/dashboard/customers",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@dashboardCustomers",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
         },
@@ -1750,6 +1766,14 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:POST:/api/admin/loyalty/rewards/image",
+          "method": "POST",
+          "path": "/api/admin/loyalty/rewards/image",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@uploadRewardImage",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:GET:/api/admin/loyalty/rewards/{rewardId}",
           "method": "GET",
           "path": "/api/admin/loyalty/rewards/{rewardId}",
@@ -1778,6 +1802,14 @@
           "method": "POST",
           "path": "/api/admin/loyalty/redemptions",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redeemReward",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/redemptions/context",
+          "method": "GET",
+          "path": "/api/admin/loyalty/redemptions/context",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redemptionContext",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
         },
@@ -1826,6 +1858,14 @@
           "method": "POST",
           "path": "/api/admin/loyalty/purchases",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@registerPurchase",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/purchases/context",
+          "method": "GET",
+          "path": "/api/admin/loyalty/purchases/context",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@purchaseContext",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
         },
@@ -1890,6 +1930,14 @@
           "method": "GET",
           "path": "/api/admin/loyalty/reports/{reportKey}",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@report",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/reports/{reportKey}/catalog",
+          "method": "GET",
+          "path": "/api/admin/loyalty/reports/{reportKey}/catalog",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@reportCatalog",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
         },
@@ -1966,6 +2014,14 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:GET:/api/admin/loyalty/notifications/context",
+          "method": "GET",
+          "path": "/api/admin/loyalty/notifications/context",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notificationContext",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:POST:/api/admin/loyalty/notifications",
           "method": "POST",
           "path": "/api/admin/loyalty/notifications",
@@ -2002,6 +2058,14 @@
           "method": "GET",
           "path": "/api/admin/loyalty/members/{memberId}/pass-preview",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@passPreview",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/loyalty/wallet/context",
+          "method": "GET",
+          "path": "/api/admin/loyalty/wallet/context",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@walletContext",
           "capabilityId": "loyalty.admin",
           "source": "backend/config/routes.php"
         },
@@ -2051,6 +2115,22 @@
       },
       "backendRoutes": [
         {
+          "id": "backend:GET:/api/l/reward-images/{tenantId}/{fileName}",
+          "method": "GET",
+          "path": "/api/l/reward-images/{tenantId}/{fileName}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rewardImage",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:HEAD:/api/l/reward-images/{tenantId}/{fileName}",
+          "method": "HEAD",
+          "path": "/api/l/reward-images/{tenantId}/{fileName}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rewardImage",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:GET:/api/loyalty/v1/health",
           "method": "GET",
           "path": "/api/loyalty/v1/health",
@@ -2071,6 +2151,54 @@
           "method": "HEAD",
           "path": "/api/l/w/{token}",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/l/access",
+          "method": "GET",
+          "path": "/api/l/access",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccess",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:HEAD:/api/l/access",
+          "method": "HEAD",
+          "path": "/api/l/access",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccess",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/l/access/request",
+          "method": "POST",
+          "path": "/api/l/access/request",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccessRequest",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/l/access/verify",
+          "method": "POST",
+          "path": "/api/l/access/verify",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccessVerify",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/l/c/{token}",
+          "method": "GET",
+          "path": "/api/l/c/{token}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicCatalog",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:HEAD:/api/l/c/{token}",
+          "method": "HEAD",
+          "path": "/api/l/c/{token}",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicCatalog",
           "capabilityId": "loyalty.public",
           "source": "backend/config/routes.php"
         },
@@ -2679,6 +2807,46 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:PUT:/api/users/{id}/roles",
+          "method": "PUT",
+          "path": "/api/users/{id}/roles",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateRoles",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PATCH:/api/users/{id}/status",
+          "method": "PATCH",
+          "path": "/api/users/{id}/status",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateStatus",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/users/{id}/invitation",
+          "method": "POST",
+          "path": "/api/users/{id}/invitation",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@invitation",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/users/{id}/password-reset",
+          "method": "POST",
+          "path": "/api/users/{id}/password-reset",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@passwordReset",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/users/{id}/sessions/revoke",
+          "method": "POST",
+          "path": "/api/users/{id}/sessions/revoke",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@revokeSessions",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:GET:/api/roles",
           "method": "GET",
           "path": "/api/roles",
@@ -2715,6 +2883,30 @@
           "method": "DELETE",
           "path": "/api/roles/{roleId}",
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@destroy",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/roles/{roleId}/navigation-grants",
+          "method": "PUT",
+          "path": "/api/roles/{roleId}/navigation-grants",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@updateNavigationGrants",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/roles/{roleId}/users",
+          "method": "GET",
+          "path": "/api/roles/{roleId}/users",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@users",
+          "capabilityId": "users.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/access/audit",
+          "method": "GET",
+          "path": "/api/access/audit",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@accessAudit",
           "capabilityId": "users.admin",
           "source": "backend/config/routes.php"
         }
@@ -2981,6 +3173,22 @@
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updatePassword",
           "capabilityId": "users.profile",
           "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/user/sessions",
+          "method": "GET",
+          "path": "/api/user/sessions",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@ownSessions",
+          "capabilityId": "users.profile",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/user/sessions/revoke",
+          "method": "POST",
+          "path": "/api/user/sessions/revoke",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@revokeOwnSessions",
+          "capabilityId": "users.profile",
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
@@ -3037,6 +3245,46 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:PUT:/api/users/{id}/roles",
+        "method": "PUT",
+        "path": "/api/users/{id}/roles",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateRoles",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:PATCH:/api/users/{id}/status",
+        "method": "PATCH",
+        "path": "/api/users/{id}/status",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updateStatus",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/users/{id}/invitation",
+        "method": "POST",
+        "path": "/api/users/{id}/invitation",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@invitation",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/users/{id}/password-reset",
+        "method": "POST",
+        "path": "/api/users/{id}/password-reset",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@passwordReset",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/users/{id}/sessions/revoke",
+        "method": "POST",
+        "path": "/api/users/{id}/sessions/revoke",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@revokeSessions",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/roles",
         "method": "GET",
         "path": "/api/roles",
@@ -3077,6 +3325,30 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:PUT:/api/roles/{roleId}/navigation-grants",
+        "method": "PUT",
+        "path": "/api/roles/{roleId}/navigation-grants",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@updateNavigationGrants",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/roles/{roleId}/users",
+        "method": "GET",
+        "path": "/api/roles/{roleId}/users",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\RoleController@users",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/access/audit",
+        "method": "GET",
+        "path": "/api/access/audit",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@accessAudit",
+        "capabilityId": "users.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/user/addresses",
         "method": "GET",
         "path": "/api/user/addresses",
@@ -3113,6 +3385,22 @@
         "method": "PUT",
         "path": "/api/user/password",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@updatePassword",
+        "capabilityId": "users.profile",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/user/sessions",
+        "method": "GET",
+        "path": "/api/user/sessions",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@ownSessions",
+        "capabilityId": "users.profile",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/user/sessions/revoke",
+        "method": "POST",
+        "path": "/api/user/sessions/revoke",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\UserController@revokeOwnSessions",
         "capabilityId": "users.profile",
         "source": "backend/config/routes.php"
       },
@@ -4277,10 +4565,26 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:GET:/api/admin/loyalty/navigation/catalog",
+        "method": "GET",
+        "path": "/api/admin/loyalty/navigation/catalog",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyNavigationController@catalog",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/admin/loyalty/dashboard",
         "method": "GET",
         "path": "/api/admin/loyalty/dashboard",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@dashboard",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/dashboard/customers",
+        "method": "GET",
+        "path": "/api/admin/loyalty/dashboard/customers",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@dashboardCustomers",
         "capabilityId": "loyalty.admin",
         "source": "backend/config/routes.php"
       },
@@ -4333,6 +4637,30 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:POST:/api/admin/loyalty/rewards/image",
+        "method": "POST",
+        "path": "/api/admin/loyalty/rewards/image",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@uploadRewardImage",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/l/reward-images/{tenantId}/{fileName}",
+        "method": "GET",
+        "path": "/api/l/reward-images/{tenantId}/{fileName}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rewardImage",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:HEAD:/api/l/reward-images/{tenantId}/{fileName}",
+        "method": "HEAD",
+        "path": "/api/l/reward-images/{tenantId}/{fileName}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rewardImage",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/admin/loyalty/rewards/{rewardId}",
         "method": "GET",
         "path": "/api/admin/loyalty/rewards/{rewardId}",
@@ -4361,6 +4689,14 @@
         "method": "POST",
         "path": "/api/admin/loyalty/redemptions",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redeemReward",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/redemptions/context",
+        "method": "GET",
+        "path": "/api/admin/loyalty/redemptions/context",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@redemptionContext",
         "capabilityId": "loyalty.admin",
         "source": "backend/config/routes.php"
       },
@@ -4409,6 +4745,14 @@
         "method": "POST",
         "path": "/api/admin/loyalty/purchases",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@registerPurchase",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/purchases/context",
+        "method": "GET",
+        "path": "/api/admin/loyalty/purchases/context",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@purchaseContext",
         "capabilityId": "loyalty.admin",
         "source": "backend/config/routes.php"
       },
@@ -4473,6 +4817,14 @@
         "method": "GET",
         "path": "/api/admin/loyalty/reports/{reportKey}",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@report",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/loyalty/reports/{reportKey}/catalog",
+        "method": "GET",
+        "path": "/api/admin/loyalty/reports/{reportKey}/catalog",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@reportCatalog",
         "capabilityId": "loyalty.admin",
         "source": "backend/config/routes.php"
       },
@@ -4549,6 +4901,14 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:GET:/api/admin/loyalty/notifications/context",
+        "method": "GET",
+        "path": "/api/admin/loyalty/notifications/context",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@notificationContext",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:POST:/api/admin/loyalty/notifications",
         "method": "POST",
         "path": "/api/admin/loyalty/notifications",
@@ -4589,6 +4949,14 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:GET:/api/admin/loyalty/wallet/context",
+        "method": "GET",
+        "path": "/api/admin/loyalty/wallet/context",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@walletContext",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:POST:/api/admin/loyalty/wallet/google-link",
         "method": "POST",
         "path": "/api/admin/loyalty/wallet/google-link",
@@ -4625,6 +4993,54 @@
         "method": "HEAD",
         "path": "/api/l/w/{token}",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicGoogleWalletLanding",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/l/access",
+        "method": "GET",
+        "path": "/api/l/access",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccess",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:HEAD:/api/l/access",
+        "method": "HEAD",
+        "path": "/api/l/access",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccess",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/l/access/request",
+        "method": "POST",
+        "path": "/api/l/access/request",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccessRequest",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/l/access/verify",
+        "method": "POST",
+        "path": "/api/l/access/verify",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsAccessVerify",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/l/c/{token}",
+        "method": "GET",
+        "path": "/api/l/c/{token}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicCatalog",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:HEAD:/api/l/c/{token}",
+        "method": "HEAD",
+        "path": "/api/l/c/{token}",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicCatalog",
         "capabilityId": "loyalty.public",
         "source": "backend/config/routes.php"
       },

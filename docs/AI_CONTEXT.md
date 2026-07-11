@@ -110,10 +110,11 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
 - Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
 - LoyaltyRewards guarda programas, socios, cuentas, ledger, recompensas, canjes y pases wallet en `loyalty.loyalty_*`; no debe crear foreign keys hacia ecommerce/dashboard. Las relaciones con clientes/facturas usan IDs estables, snapshots o contratos API.
+- Para `fidepuntos`, Loyalty tambien es owner del catalogo versionado `fidepuntos-rbac-v1` en `loyalty_navigation_items` y `loyalty_navigation_item_actions` (32 opciones, 62 acciones y profundidad maxima 3). IdentityPlatform combina ese catalogo con grants centrales; el dashboard valida `route_key` contra su registro compilado, poda padres vacios y falla cerrado sin volver al menu estatico completo.
 - Portal Wallet de LoyaltyRewards: los premios tienen `claim_mode` (`staff_only`, `in_store`, `managed`). `staff_only` queda oculto al cliente y se usa para canje inmediato de mostrador; `in_store` genera codigo temporal de 15 minutos para validar en local; `managed` crea solicitud `pending_review` para que el gestor coordine retiro o entrega. Google Wallet no debe llevar tokens de cliente: `linksModuleData` usa el acceso por cuenta no secreto `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/access?account={account_id}`; el cliente no escribe su ID y confirma OTP por correo. Solo despues el backend redirige a un portal temporal `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}`. En hosts tenantizados del dashboard, `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/*` debe ir al backend antes del comodin dashboard. Toda solicitud de cliente reserva puntos y stock; al expirar o cancelar se devuelven ambos. La cola operativa vive en dashboard `/loyalty-points/redemptions`; `/loyalty-points/rewards/redeem` sigue siendo canje inmediato de mostrador.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - Excepcion demo TECNOLTS: un correo `@tecnolts.com` puede operar como admin de un tenant si su perfil declara explicitamente `identityType=tenant_staff`; ejemplo vigente `dev@tecnolts.com` en `tenant_id=fidepuntos` con rol `fidepuntos_admin` y alias de login `demo@tecnolts.com`. Esa identidad no debe recibir `platform-admin`.
-- El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles` y `tenant_user_roles`.
+- El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles`, `tenant_user_roles`, `tenant_role_navigation_grants`, `tenant_user_sessions` y `tenant_access_audit_events`. Para `fidepuntos`, `Setting.dashboard_roles`, `User.profile.roleIds` y `User.role` son solo rollback legacy y no participan en lecturas ni doble escritura efectivas.
 - Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
 - Tipos de identidad vigentes: `platform` para superadmins/recovery TECNOLTS, `tenant_staff` para admins/equipo operativo del tenant, `customer` para compradores ecommerce y `service` para integraciones internas.
 - `/api/users` debe listar solo usuarios operativos de `dashboard`; compradores ecommerce (`customer`) no aparecen como usuarios operativos. `/api/admin/ecommerce-users` lista y administra clientes desde `ecommerce."Customer"`.
@@ -270,6 +271,34 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
 ## Historial de trabajo IA
+
+### 2026-07-11 - Fidepuntos: RBAC relacional y menu dinamico desde Loyalty
+
+Objetivo: convertir usuarios, roles, sesiones y navegacion de Fidepuntos en un contrato RBAC real, con catalogo Loyalty versionado, autorizacion por pantalla/accion y pantallas administrativas nuevas.
+
+Cambios:
+- `loyalty` publica `fidepuntos-rbac-v1` en `loyalty_navigation_items` y `loyalty_navigation_item_actions`: 32 opciones, 62 acciones, nueve reportes independientes y jerarquia maxima de tres niveles.
+- `dashboard` consolida memberships, roles, asignaciones, grants, auditoria y sesiones JTI en tablas relacionales. Roles multiples suman permisos; acciones distintas de `view` implican lectura y no existen denegaciones explicitas.
+- `GET /api/tenant/context` entrega navegacion efectiva, `accessVersion` y permisos. Se formalizaron catalogo, CRUD de roles/usuarios, asignacion de roles/grants, estados, desbloqueo, invitacion, reset, revocacion de sesiones y auditoria con autorizacion server-side exacta.
+- Invitaciones y resets usan enlaces expirables de un solo uso, guardan solo hashes e invalidan enlaces anteriores. Cambiar password, estado o roles revoca sesiones; `accountStatus` y `securityLock` permanecen separados.
+- Dashboard incorpora `/access/users`, `/access/users/new`, `/access/users/:userId`, `/access/roles`, `/access/roles/new`, `/access/roles/:roleId` y `/account/security`, con redirecciones legacy, menu fail-closed, dark mode, responsive, foco visible y targets interactivos de al menos 44 px.
+- El emisor de sesiones QA conserva el argumento solicitado en `$requestedTenantId`; cargar `config/tenants.php` ya no puede sustituir `fidepuntos` por el tenant por defecto.
+- El preflight de secretos reconoce `DASHBOARD_TENANT_HOSTS` como parte valida de `CERTBOT_DOMAINS`; el registro generado de capacidades quedo actualizado a 32 capacidades, 231 rutas tenantizadas y 13 rutas Billing publicas.
+
+Migracion QA:
+- Respaldo canonico previo: `basesdedatos/backups/backup-selected-20260711T183603Z.sql.enc`, con manifest para `dashboard,loyalty` y checksum.
+- `RUN_DB_SETUP=1 ./scripts/deploy.sh backend` creo el contrato; `migrate_fidepuntos_rbac.php --apply` conservo la identidad real, asigno `fidepuntos_admin`, creo `fidepuntos_reader` y retiro 18 memberships/asignaciones huerfanas sin crear usuarios sinteticos.
+- La FK local de roles quedo validada; la segunda aplicacion y el dry-run final reportan `legacyImportAlreadyApplied=true`, una identidad valida y cero huerfanos.
+
+Verificacion y despliegue:
+- PostgreSQL real paso catalogo, aislamiento, union de roles, sesiones multiples, invitacion/reset/expiracion/consumo unico, cambio propio, revocacion y protecciones de ultimo administrador, siempre con rollback y cero fixtures.
+- Dashboard paso 222 archivos y 773 unitarias; `npm run verify`, typecheck, lint, manifests, contratos y diff-check pasaron.
+- `scripts/check-fidepuntos-rbac-qa.sh` paso 32/32 por APISIX. Playwright cubrio cinco pantallas nuevas en 375/768/1024/1440 px, dark mode, teclado, foco, targets de 44 px y ausencia de overflow; tambien valido menu podado, URL denegada y 403 por reporte/accion.
+- `scripts/check-paramascotas.sh` y `scripts/e2e-qa.sh` pasaron; el E2E global verifico conectividad, SEO y capacidades. Backend, dashboard y gateway se desplegaron con scripts canonicos y quedaron healthy en `https://fidepuntos.tecnolts.com`.
+
+Decisiones:
+- El alcance inicial sigue limitado a `fidepuntos`; Loyalty es owner solo del catalogo de menu y nunca de identidades o hashes de password.
+- `fidepuntos_admin` es inmutable; no se permite auto-bloqueo, auto-degradacion, perder el ultimo administrador ni eliminar un rol asignado. No existe borrado fisico de usuarios.
 
 ### 2026-07-11 - Fidepuntos: puntos de guia integrados a las etiquetas
 

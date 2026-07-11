@@ -38,6 +38,36 @@ export const backendApiRoutes = [
     "capabilityId": "users.admin"
   },
   {
+    "id": "backend:PUT:/api/users/{id}/roles",
+    "method": "PUT",
+    "path": "/api/users/{id}/roles",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:PATCH:/api/users/{id}/status",
+    "method": "PATCH",
+    "path": "/api/users/{id}/status",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:POST:/api/users/{id}/invitation",
+    "method": "POST",
+    "path": "/api/users/{id}/invitation",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:POST:/api/users/{id}/password-reset",
+    "method": "POST",
+    "path": "/api/users/{id}/password-reset",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:POST:/api/users/{id}/sessions/revoke",
+    "method": "POST",
+    "path": "/api/users/{id}/sessions/revoke",
+    "capabilityId": "users.admin"
+  },
+  {
     "id": "backend:GET:/api/roles",
     "method": "GET",
     "path": "/api/roles",
@@ -68,6 +98,24 @@ export const backendApiRoutes = [
     "capabilityId": "users.admin"
   },
   {
+    "id": "backend:PUT:/api/roles/{roleId}/navigation-grants",
+    "method": "PUT",
+    "path": "/api/roles/{roleId}/navigation-grants",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:GET:/api/roles/{roleId}/users",
+    "method": "GET",
+    "path": "/api/roles/{roleId}/users",
+    "capabilityId": "users.admin"
+  },
+  {
+    "id": "backend:GET:/api/access/audit",
+    "method": "GET",
+    "path": "/api/access/audit",
+    "capabilityId": "users.admin"
+  },
+  {
     "id": "backend:GET:/api/user/addresses",
     "method": "GET",
     "path": "/api/user/addresses",
@@ -95,6 +143,18 @@ export const backendApiRoutes = [
     "id": "backend:PUT:/api/user/password",
     "method": "PUT",
     "path": "/api/user/password",
+    "capabilityId": "users.profile"
+  },
+  {
+    "id": "backend:GET:/api/user/sessions",
+    "method": "GET",
+    "path": "/api/user/sessions",
+    "capabilityId": "users.profile"
+  },
+  {
+    "id": "backend:POST:/api/user/sessions/revoke",
+    "method": "POST",
+    "path": "/api/user/sessions/revoke",
     "capabilityId": "users.profile"
   },
   {
@@ -890,9 +950,21 @@ export const backendApiRoutes = [
     "capabilityId": "admin.reporting"
   },
   {
+    "id": "backend:GET:/api/admin/loyalty/navigation/catalog",
+    "method": "GET",
+    "path": "/api/admin/loyalty/navigation/catalog",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:GET:/api/admin/loyalty/dashboard",
     "method": "GET",
     "path": "/api/admin/loyalty/dashboard",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/dashboard/customers",
+    "method": "GET",
+    "path": "/api/admin/loyalty/dashboard/customers",
     "capabilityId": "loyalty.admin"
   },
   {
@@ -932,6 +1004,24 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:POST:/api/admin/loyalty/rewards/image",
+    "method": "POST",
+    "path": "/api/admin/loyalty/rewards/image",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/l/reward-images/{tenantId}/{fileName}",
+    "method": "GET",
+    "path": "/api/l/reward-images/{tenantId}/{fileName}",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:HEAD:/api/l/reward-images/{tenantId}/{fileName}",
+    "method": "HEAD",
+    "path": "/api/l/reward-images/{tenantId}/{fileName}",
+    "capabilityId": "loyalty.public"
+  },
+  {
     "id": "backend:GET:/api/admin/loyalty/rewards/{rewardId}",
     "method": "GET",
     "path": "/api/admin/loyalty/rewards/{rewardId}",
@@ -953,6 +1043,12 @@ export const backendApiRoutes = [
     "id": "backend:POST:/api/admin/loyalty/redemptions",
     "method": "POST",
     "path": "/api/admin/loyalty/redemptions",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/redemptions/context",
+    "method": "GET",
+    "path": "/api/admin/loyalty/redemptions/context",
     "capabilityId": "loyalty.admin"
   },
   {
@@ -989,6 +1085,12 @@ export const backendApiRoutes = [
     "id": "backend:POST:/api/admin/loyalty/purchases",
     "method": "POST",
     "path": "/api/admin/loyalty/purchases",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/purchases/context",
+    "method": "GET",
+    "path": "/api/admin/loyalty/purchases/context",
     "capabilityId": "loyalty.admin"
   },
   {
@@ -1037,6 +1139,12 @@ export const backendApiRoutes = [
     "id": "backend:GET:/api/admin/loyalty/reports/{reportKey}",
     "method": "GET",
     "path": "/api/admin/loyalty/reports/{reportKey}",
+    "capabilityId": "loyalty.admin"
+  },
+  {
+    "id": "backend:GET:/api/admin/loyalty/reports/{reportKey}/catalog",
+    "method": "GET",
+    "path": "/api/admin/loyalty/reports/{reportKey}/catalog",
     "capabilityId": "loyalty.admin"
   },
   {
@@ -1094,6 +1202,12 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:GET:/api/admin/loyalty/notifications/context",
+    "method": "GET",
+    "path": "/api/admin/loyalty/notifications/context",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:POST:/api/admin/loyalty/notifications",
     "method": "POST",
     "path": "/api/admin/loyalty/notifications",
@@ -1124,6 +1238,12 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:GET:/api/admin/loyalty/wallet/context",
+    "method": "GET",
+    "path": "/api/admin/loyalty/wallet/context",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:POST:/api/admin/loyalty/wallet/google-link",
     "method": "POST",
     "path": "/api/admin/loyalty/wallet/google-link",
@@ -1151,6 +1271,42 @@ export const backendApiRoutes = [
     "id": "backend:HEAD:/api/l/w/{token}",
     "method": "HEAD",
     "path": "/api/l/w/{token}",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:GET:/api/l/access",
+    "method": "GET",
+    "path": "/api/l/access",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:HEAD:/api/l/access",
+    "method": "HEAD",
+    "path": "/api/l/access",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/l/access/request",
+    "method": "POST",
+    "path": "/api/l/access/request",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/l/access/verify",
+    "method": "POST",
+    "path": "/api/l/access/verify",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:GET:/api/l/c/{token}",
+    "method": "GET",
+    "path": "/api/l/c/{token}",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:HEAD:/api/l/c/{token}",
+    "method": "HEAD",
+    "path": "/api/l/c/{token}",
     "capabilityId": "loyalty.public"
   },
   {
