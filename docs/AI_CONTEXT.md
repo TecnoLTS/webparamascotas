@@ -272,6 +272,38 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-11 - Fidepuntos: flujo integral de usuarios/roles y base operativa QA
+
+Objetivo: corregir el editor de roles que fallaba con HTTP 500, hacer escalables los listados y dejar una base operativa realista sin debilitar los roles protegidos.
+
+Cambios:
+- Se elimino el parseo `str_getcsv` incompatible con PHP 8.5; usuarios y roles asignados se agregan como JSON desde PostgreSQL. `/api/users` y `/api/roles/{roleId}/users` filtran/paginan en SQL y publican `roleAssignments` mas resumen global de estados/locks.
+- Los cambios de grants revocan sesiones por rol mediante updates masivos dentro de la misma transaccion. Crear rol + grants es atomico y exige al menos una pantalla operativa no obligatoria.
+- Roles y usuarios usan busqueda con debounce/cancelacion, filtros persistidos, nombres legibles de roles, tarjetas mobile, cargas secundarias aisladas y reintentos. El editor agrega busqueda de permisos, filtro de seleccionados, seleccion jerarquica parcial/completa y vista realmente read-only para roles base.
+- El sembrado QA explicito creo cinco roles operativos y cinco identidades ficticias `@fidepuntos.example.invalid`; no envio correo, no expuso passwords y fue idempotente (primera ejecucion 5/5, segunda 0/0). El administrador real conserva solo `fidepuntos_admin`.
+
+Verificacion:
+- Respaldo cifrado previo: `basesdedatos/backups/backup-selected-20260711T233320Z.sql.enc` (`dashboard,loyalty`); clave local protegida fuera del workspace.
+- `npm run verify` paso con 222 archivos/775 pruebas; el check DB RBAC paso con rollback y `check-fidepuntos-rbac-qa.sh` aprobo 36 verificaciones por APISIX, incluida la matriz 375/768/1024/1440, dark mode, teclado, foco, targets de 44 px y ausencia de overflow.
+- Backend y dashboard se desplegaron con scripts canonicos; `scripts/check-paramascotas.sh`, contratos, ownership modular y healthchecks quedaron OK.
+
+### 2026-07-11 - Fidepuntos: roles operativos y roles base protegidos
+
+Objetivo: rehacer la administracion/asignacion de roles de Fidepuntos para evitar que un cliente asigne roles base del sistema y para que los accesos esenciales no sean revocables desde la matriz de permisos.
+
+Cambios:
+- Las pantallas de invitacion, detalle de usuario y asignacion de roles muestran solo roles operativos asignables; los roles base del sistema quedan como informacion bloqueada/protegida.
+- La lista de roles separa roles operativos administrables de roles base protegidos. El editor de roles usa una matriz compacta por secciones/acciones con switches claros y estados fijos para opciones obligatorias.
+- El backend rechaza que APIs tenant asignen roles `system_role`, roles reservados de plataforma, inventados o de otro tenant. Al reemplazar roles de un usuario conserva automaticamente sus roles base actuales y solo cambia roles operativos.
+- Las opciones obligatorias del catalogo se fuerzan al guardar grants y no pueden apagarse desde la UI. `Salir del sistema` queda tratado como acceso esencial no revocable fuera del catalogo asignable.
+- La creacion/actualizacion de usuarios ya no rellena por defecto `fidepuntos_reader`; exige al menos un rol operativo cuando se crean usuarios tenant y preserva roles existentes cuando el patch no trae roles.
+
+Verificacion y despliegue:
+- `npm run verify` en dashboard paso completo: 222 archivos de test, 773 pruebas, build QA, build production para bundle y budgets OK. Persisten solo warnings conocidos de CommonJS por `qrcode/dijkstrajs`.
+- `php -l` paso en los archivos backend modificados y `docker exec backend-api php scripts/check_fidepuntos_rbac_database.php` paso catalogo, aislamiento, roles base protegidos, sesiones, enlaces, contrasenas y cleanup rollback-only.
+- `scripts/check-fidepuntos-rbac-qa.sh` paso 33 verificaciones por APISIX, incluido rechazo de rol base del sistema, E2E navegador con menu podado, ruta denegada, matriz 375/768/1024/1440, dark mode, foco/teclado y sin overflow.
+- Desplegado con `RUN_DB_SETUP=1 ./scripts/deploy.sh backend` y `./scripts/deploy.sh dashboard`; `https://fidepuntos.tecnolts.com/` y `/health` respondieron 200 por APISIX.
+
 ### 2026-07-11 - Fidepuntos: RBAC relacional y menu dinamico desde Loyalty
 
 Objetivo: convertir usuarios, roles, sesiones y navegacion de Fidepuntos en un contrato RBAC real, con catalogo Loyalty versionado, autorizacion por pantalla/accion y pantallas administrativas nuevas.
@@ -293,7 +325,7 @@ Migracion QA:
 Verificacion y despliegue:
 - PostgreSQL real paso catalogo, aislamiento, union de roles, sesiones multiples, invitacion/reset/expiracion/consumo unico, cambio propio, revocacion y protecciones de ultimo administrador, siempre con rollback y cero fixtures.
 - Dashboard paso 222 archivos y 773 unitarias; `npm run verify`, typecheck, lint, manifests, contratos y diff-check pasaron.
-- `scripts/check-fidepuntos-rbac-qa.sh` paso 32/32 por APISIX. Playwright cubrio cinco pantallas nuevas en 375/768/1024/1440 px, dark mode, teclado, foco, targets de 44 px y ausencia de overflow; tambien valido menu podado, URL denegada y 403 por reporte/accion.
+- `scripts/check-fidepuntos-rbac-qa.sh` paso 33/33 por APISIX. Playwright cubrio cinco pantallas nuevas en 375/768/1024/1440 px, dark mode, teclado, foco, targets de 44 px y ausencia de overflow; tambien valido menu podado, URL denegada y 403 por reporte/accion.
 - `scripts/check-paramascotas.sh` y `scripts/e2e-qa.sh` pasaron; el E2E global verifico conectividad, SEO y capacidades. Backend, dashboard y gateway se desplegaron con scripts canonicos y quedaron healthy en `https://fidepuntos.tecnolts.com`.
 
 Decisiones:
