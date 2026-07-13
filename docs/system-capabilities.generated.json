@@ -2006,6 +2006,14 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:POST:/api/admin/loyalty/api-clients/{clientId}/rotate",
+          "method": "POST",
+          "path": "/api/admin/loyalty/api-clients/{clientId}/rotate",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rotateApiClient",
+          "capabilityId": "loyalty.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:POST:/api/admin/loyalty/notifications/preview",
           "method": "POST",
           "path": "/api/admin/loyalty/notifications/preview",
@@ -2187,6 +2195,38 @@
           "source": "backend/config/routes.php"
         },
         {
+          "id": "backend:GET:/api/l/portal",
+          "method": "GET",
+          "path": "/api/l/portal",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortalSession",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:HEAD:/api/l/portal",
+          "method": "HEAD",
+          "path": "/api/l/portal",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortalSession",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/l/portal/claims",
+          "method": "POST",
+          "path": "/api/l/portal/claims",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsClaimSession",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/l/portal/claims/{redemptionId}/cancel",
+          "method": "POST",
+          "path": "/api/l/portal/claims/{redemptionId}/cancel",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsCancelSession",
+          "capabilityId": "loyalty.public",
+          "source": "backend/config/routes.php"
+        },
+        {
           "id": "backend:GET:/api/l/c/{token}",
           "method": "GET",
           "path": "/api/l/c/{token}",
@@ -2207,22 +2247,6 @@
           "method": "GET",
           "path": "/api/l/r/{token}",
           "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortal",
-          "capabilityId": "loyalty.public",
-          "source": "backend/config/routes.php"
-        },
-        {
-          "id": "backend:POST:/api/l/r/{token}/claims",
-          "method": "POST",
-          "path": "/api/l/r/{token}/claims",
-          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsClaim",
-          "capabilityId": "loyalty.public",
-          "source": "backend/config/routes.php"
-        },
-        {
-          "id": "backend:POST:/api/l/r/{token}/claims/{redemptionId}/cancel",
-          "method": "POST",
-          "path": "/api/l/r/{token}/claims/{redemptionId}/cancel",
-          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsCancel",
           "capabilityId": "loyalty.public",
           "source": "backend/config/routes.php"
         },
@@ -4893,6 +4917,14 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:POST:/api/admin/loyalty/api-clients/{clientId}/rotate",
+        "method": "POST",
+        "path": "/api/admin/loyalty/api-clients/{clientId}/rotate",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@rotateApiClient",
+        "capabilityId": "loyalty.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:POST:/api/admin/loyalty/notifications/preview",
         "method": "POST",
         "path": "/api/admin/loyalty/notifications/preview",
@@ -5029,6 +5061,38 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:GET:/api/l/portal",
+        "method": "GET",
+        "path": "/api/l/portal",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortalSession",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:HEAD:/api/l/portal",
+        "method": "HEAD",
+        "path": "/api/l/portal",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortalSession",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/l/portal/claims",
+        "method": "POST",
+        "path": "/api/l/portal/claims",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsClaimSession",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/l/portal/claims/{redemptionId}/cancel",
+        "method": "POST",
+        "path": "/api/l/portal/claims/{redemptionId}/cancel",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsCancelSession",
+        "capabilityId": "loyalty.public",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/l/c/{token}",
         "method": "GET",
         "path": "/api/l/c/{token}",
@@ -5049,22 +5113,6 @@
         "method": "GET",
         "path": "/api/l/r/{token}",
         "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsPortal",
-        "capabilityId": "loyalty.public",
-        "source": "backend/config/routes.php"
-      },
-      {
-        "id": "backend:POST:/api/l/r/{token}/claims",
-        "method": "POST",
-        "path": "/api/l/r/{token}/claims",
-        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsClaim",
-        "capabilityId": "loyalty.public",
-        "source": "backend/config/routes.php"
-      },
-      {
-        "id": "backend:POST:/api/l/r/{token}/claims/{redemptionId}/cancel",
-        "method": "POST",
-        "path": "/api/l/r/{token}/claims/{redemptionId}/cancel",
-        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@publicRewardsCancel",
         "capabilityId": "loyalty.public",
         "source": "backend/config/routes.php"
       },

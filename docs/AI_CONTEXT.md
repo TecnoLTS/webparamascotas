@@ -110,8 +110,12 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
 - Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
 - LoyaltyRewards guarda programas, socios, cuentas, ledger, recompensas, canjes y pases wallet en `loyalty.loyalty_*`; no debe crear foreign keys hacia ecommerce/dashboard. Las relaciones con clientes/facturas usan IDs estables, snapshots o contratos API.
-- Para `fidepuntos`, Loyalty tambien es owner del catalogo versionado `fidepuntos-rbac-v1` en `loyalty_navigation_items` y `loyalty_navigation_item_actions` (32 opciones, 62 acciones y profundidad maxima 3). IdentityPlatform combina ese catalogo con grants centrales; el dashboard valida `route_key` contra su registro compilado, poda padres vacios y falla cerrado sin volver al menu estatico completo.
+- Para `fidepuntos`, Loyalty tambien es owner del catalogo versionado `fidepuntos-rbac-v1` en `loyalty_navigation_items` y `loyalty_navigation_item_actions` (32 opciones, 63 acciones y profundidad maxima 3). IdentityPlatform combina ese catalogo con grants centrales; el dashboard valida `route_key` contra su registro compilado, poda padres vacios y falla cerrado sin volver al menu estatico completo.
 - Portal Wallet de LoyaltyRewards: los premios tienen `claim_mode` (`staff_only`, `in_store`, `managed`). `staff_only` queda oculto al cliente y se usa para canje inmediato de mostrador; `in_store` genera codigo temporal de 15 minutos para validar en local; `managed` crea solicitud `pending_review` para que el gestor coordine retiro o entrega. Google Wallet no debe llevar tokens de cliente: `linksModuleData` usa el acceso por cuenta no secreto `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/access?account={account_id}`; el cliente no escribe su ID y confirma OTP por correo. Solo despues el backend redirige a un portal temporal `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/r/{token}`. En hosts tenantizados del dashboard, `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/l/*` debe ir al backend antes del comodin dashboard. Toda solicitud de cliente reserva puntos y stock; al expirar o cancelar se devuelven ambos. La cola operativa vive en dashboard `/loyalty-points/redemptions`; `/loyalty-points/rewards/redeem` sigue siendo canje inmediato de mostrador.
+- Integridad financiera Loyalty: dinero se valida/calcula con `DecimalMath` + `ext-bcmath` (2 decimales), factores usan hasta 4 decimales y el redondeo siempre es explicito. Compras, ajustes, canjes y reversas pasan por comandos idempotentes; cada compra persiste centavos, moneda, version/hash de regla y formula aplicada. Las referencias normalizadas son unicas por tenant mientras la compra siga activa.
+- Reversas Loyalty: se retira siempre el total original; el saldo disponible nunca queda negativo, el faltante crea deuda, la deuda bloquea canjes y las ganancias futuras la amortizan primero. Reservas abiertas necesarias se cancelan atomicamente y restauran stock una sola vez. `loyalty.customers.adjust_points` es un permiso peligroso separado; `customers.update` nunca modifica puntos. Expiracion permanece fail-closed hasta implementar FIFO real.
+- Fuentes de compra Loyalty: ecommerce y Billing se verifican contra sus owners por tenant/cliente/referencia/moneda/total/estado, sin FKs cross-database. POS requiere cliente ligado a fuente `pos`, `Idempotency-Key`, timestamp, nonce de cinco minutos y HMAC SHA-256 sobre metodo, ruta publica, tenant, timestamp, nonce y hash del body original. Una compra manual sin fuente interna verificable no acredita puntos.
+- Reportes Loyalty v2 conservan las rutas v1 y se solicitan con `contract=v2`, `mode=day|range|as_of`, fechas inclusivas maximo 366 dias, timezone tenant, paginacion y orden server-side. Se leen en snapshot `REPEATABLE READ, READ ONLY`; exportan todas las filas por keyset hasta 100000, fallan con `LOYALTY_REPORT_EXPORT_TOO_LARGE` sin truncar y generan XLSX `Resumen`, `Graficos`, `Datos`, `Definiciones`; CSV neutraliza formulas.
 - Excepcion de plataforma: superadmins TECNOLTS son identidades globales `platform` con `tenant_id=platform`; pueden iniciar sesion desde el dominio de un tenant para administrar tenants/modulos, pero no son usuarios operativos del tenant ni deben aparecer en `/api/users` del tenant.
 - Excepcion demo TECNOLTS: un correo `@tecnolts.com` puede operar como admin de un tenant si su perfil declara explicitamente `identityType=tenant_staff`; ejemplo vigente `dev@tecnolts.com` en `tenant_id=fidepuntos` con rol `fidepuntos_admin` y alias de login `demo@tecnolts.com`. Esa identidad no debe recibir `platform-admin`.
 - El contrato central de acceso del backend vive en `TenantAccessService` y se persiste, cuando el bootstrap ya corrio, en `tenant_module_entitlements`, `tenant_memberships`, `tenant_roles`, `tenant_user_roles`, `tenant_role_navigation_grants`, `tenant_user_sessions` y `tenant_access_audit_events`. Para `fidepuntos`, `Setting.dashboard_roles`, `User.profile.roleIds` y `User.role` son solo rollback legacy y no participan en lecturas ni doble escritura efectivas.
@@ -201,12 +205,19 @@ cd gatewayapisix && ./scripts/renew-letsencrypt.sh
 scripts/check-paramascotas.sh    # capability registry + frontend lint/typecheck + backend PHP syntax + backend health
 php backend/scripts/check_modular_routes.php # handlers HTTP bajo src/Modules sin App\Controllers legacy
 docker exec backend-api php scripts/check_module_databases.php # ownership real de bases logicas
+docker exec backend-api php scripts/check_loyalty_financial_invariants.php # saldo/deuda/stock/reversas/referencias/orfandad
+docker exec backend-api php scripts/run_loyalty_policy_exercises.php # politica financiera QA
+docker exec backend-api php scripts/run_loyalty_concurrency_exercises.php # carreras financieras/OTP QA
+docker exec backend-api php scripts/run_loyalty_external_security_exercises.php # fuentes, HMAC, nonce y scopes QA
+docker exec backend-api php scripts/run_loyalty_report_exercises.php # contrato/exportaciones v2 QA
+docker exec backend-api php scripts/run_wallet_notification_exercises.php # at-most-once Wallet QA
 node dashboard/tools/check-module-manifests.mjs
 node dashboard/tools/check-dashboard-api-contracts.mjs # catalogo dashboard-api/paramascotas-api alineado a rutas backend reales
 scripts/check-env-secrets.sh all # preflight .env/secrets sin imprimir valores
 scripts/check-container-connectivity.sh qa
 scripts/check-container-connectivity.sh production
 scripts/e2e-qa.sh                # suite QA: contracts, checks, SEO, Billing y probes gatewayapisix
+gatewayapisix/scripts/check-loyalty-runtime.sh # CORS, JSON 401/404/405 y logs redactados QA
 
 cd webparamascotas/app
 npm run capabilities:check       # valida registro maestro de capacidades
@@ -272,6 +283,61 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-13 - Loyalty: integridad financiera, antifraude y reportes v2
+
+Objetivo: cerrar en QA las rutas de fraude y carreras que podian alterar puntos con valor real, implementar reportes por dia/rango/corte con exportacion completa y endurecer portal, RBAC, tenant isolation y APISIX sin romper los contratos v1.
+
+Cambios:
+- Se incorporo `DecimalMath` sobre `ext-bcmath`: dinero con dos decimales, factores con cuatro, `floor|half-up|ceil`, sin float, notacion cientifica, coerciones, no finitos, escalas u overflow. Cada compra guarda monto en centavos, moneda, version/hash y snapshot completo de formula; referencias equivalentes se normalizan y bloquean por tenant.
+- Compras, ajustes, canjes, reservas y reversas usan journal idempotente, locks de fila/advisory y revalidacion dentro de transaccion. La reversa total crea deuda por el faltante, bloquea nuevos canjes, amortiza deuda con futuras ganancias y cancela reservas abiertas restaurando saldo/stock exactamente una vez. Se agrego el permiso peligroso `loyalty.customers.adjust_points`; el catalogo queda en 32 opciones y 63 acciones.
+- `PurchaseSourceVerifier` valida ecommerce y Billing por sus contratos owner. POS exige fuente inmutable, scopes explicitos, credencial activa, idempotencia, timestamp/nonce de cinco minutos y HMAC sobre la ruta publica/body original. Rotacion crea credencial nueva, revocacion es terminal y reversiones externas quedan ligadas a fuente/linaje de cliente.
+- OTP, challenges y sesiones del portal quedaron atomicos: una sola verificacion concurrente, sesion opaca de 15 minutos guardada por hash, cookie segura, token URL de un uso y nonces de formulario para claim/cancel. CSRF reconoce `pm_auth_dashboard`, `pm_auth_ecommerce` y `pm_auth`; el proxy interno no lo omite cuando hay cookie autenticada. Riesgos fallidos se persisten despues del rollback sin secretos.
+- Campanas Wallet reclaman con `FOR UPDATE SKIP LOCKED`; un resultado ambiguo pasa a `delivery_unknown`, no se reenvia y una respuesta tardia no duplica contadores. Activar expiracion se rechaza hasta existir FIFO completo.
+- `LoyaltyReportService` publica nueve reportes v2 con `day|range|as_of`, timezone tenant, intervalo semiabierto, maximo 366 dias, snapshot read-only repetible, metricas/series/columnas tipadas y paginacion/orden server-side. CSV/XLSX recorren keyset estable en bloques, exportan el total o fallan sobre 100000; XLSX incluye cuatro hojas y CSV neutraliza formulas.
+- Dashboard separa filtros editados/aplicados, agrega presets Dia/Rango/Corte, tabs accesibles Graficos/Datos, resumen textual y tabla equivalente por grafico, descarga Blob, progreso, paginacion/orden server-side y cancelacion de respuestas obsoletas. Ajustes exigen tipo, motivo, evidencia e idempotencia; clientes API aplican least privilege. `TenantContextService` descarta generaciones/slugs atrasados y limpia branding previo. La guia UI/UX aplicada mantuvo controles de al menos 44 px, teclado, foco y los tokens existentes.
+- APISIX agrega preflight OPTIONS sin auth, CORS de origins exactos, JSON 401/404/405, bloqueos de raices incompletas/cross-tenant, ruta publica original para HMAC, redaccion de query/tokens Wallet y validacion previa de certificado/llave/SAN/vigencia. El deploy ejecuta auditoria semantica antes de quedar listo; `check-loyalty-runtime.sh` valida el comportamiento y los logs reales.
+- Se agregaron suites QA para decimal/oracle, politica, concurrencia, fuentes externas, reportes, Wallet e invariantes financieras globales. El registro generado de capacidades quedo en 32 capacidades, 234 rutas tenantizadas y 13 rutas Billing publicas.
+
+Verificacion y despliegue:
+- DecimalMath paso casos exactos y 10000 casos contra oracle. Politica financiera, compras duplicadas, canje sobre saldo/stock, ajuste repetido, OTP simultaneo y carrera cancelar/aprobar pasaron; la conciliacion global termino con cero discrepancias de saldo/deuda, negativos, referencias duplicadas, reversas incompletas o canjes huerfanos.
+- Seguridad externa paso firma valida/invalida/vencida, nonce repetido, scope insuficiente, fuente/cliente/tenant cruzados, key revocada y reversa mediante descendiente rotado. Portal paso 12 checks y el contrato de fuentes 14.
+- Los nueve reportes pasaron dia, bisiesto, 366/367, fechas futuras/invertidas, as-of y aislamiento tenant. Se exportaron completas las 245 auditorias existentes al ejecutar la suite; el ejercicio multipagina verifico 1005/1005 IDs unicos, cuatro hojas XLSX, cleanup temporal, limite 100001 y neutralizacion CSV.
+- Dashboard paso 227 archivos/809 pruebas, lint, typecheck, contratos, arquitectura, manifests, builds QA/production y budgets. El build QA final quedo en 1.43 MB inicial, 536.11 kB main y 604.91 kB lazy maximo; solo persisten warnings CommonJS conocidos de `qrcode/dijkstrajs`. RBAC paso 36 verificaciones y navegador 375/768/1024/1440.
+- Se desplegaron backend con bootstrap, dashboard y gateway exclusivamente con scripts canonicos. `scripts/check-paramascotas.sh`, `scripts/check-container-connectivity.sh qa`, `scripts/e2e-qa.sh`, ownership modular, auditoria APISIX (284 rutas/12 perfiles), runtime CORS/logs y E2E de capacidades/SEO terminaron OK. No se ejecuto deploy ni validacion de produccion.
+
+Decisiones y riesgos:
+- Veintisiete `invoice_headers` historicos de Billing no tienen tenant determinista; permanecen nulos y no verificables para Loyalty, en vez de asignarlos por defecto. Requieren conciliacion con evidencia antes de backfill.
+- Una firma POS demuestra que credencial origino el request, no que un POS autorizado diga la verdad; eliminar ese riesgo exige consultar su ledger independiente. `delivery_unknown` requiere conciliacion manual y no debe reintentarse automaticamente.
+- Fechas legacy siguen en columnas `timestamp without time zone`; reportes fallan cerrado cuando no pueden aplicar el timezone tenant. Conviene migrar gradualmente a UTC/`timestamptz` y snapshots historicos.
+- Quedan fuera: doble aprobacion para ajustes de alto valor, motor FIFO de expiracion, reconciliador/outbox para comandos externos que queden `processing` tras una caida exacta y rollout de produccion con observabilidad/alertas.
+
+### 2026-07-12 - Loyalty: integridad API, concurrencia, APISIX y aislamiento tenant
+
+Objetivo: revisar y corregir integralmente el ecosistema Loyalty desde dashboard y API hasta PostgreSQL y APISIX, preservando contratos actuales y cerrando bypasses, carreras y escrituras implicitas en runtime.
+
+Cambios:
+- `LoyaltyRepository` ya no ejecuta DDL ni siembra demo al construirse; el esquema queda en bootstrap y el seed realista exige ejecucion explicita. Se retiro el seed privado muerto y se elimino el fallback compartido al tenant `default`.
+- Compras, reversas, ajustes, canjes y reservas usan locks de fila/advisory y revalidan saldo, stock y limites dentro de transaccion. Cancelar, aprobar y entregar solicitudes queda serializado; los codigos de canje activos son unicos y se regeneran ante colision; un PATCH de premio sin `stock` no restaura snapshots obsoletos.
+- La idempotencia externa se reserva antes de ejecutar, se aisla por cliente API, atribuye uso al cliente y fue validada con dos procesos concurrentes (`fresh,replayed`, un ledger). Se agregaron rate limit atomico por cliente y agregados diarios reales para el reporte de uso API. Errores de credencial/scope/rate/idempotencia/not-found tienen codigos y estados HTTP tipados; errores SQL/inesperados responden 500 generico y se registran con tenant/request ID.
+- Las lecturas externas solo publican premios activos y buscan socios por `account_id` exacto. Las imagenes de premios validan el tenant de la ruta. Google Wallet conserva compatibilidad: el endpoint externo sigue sin exigir `Idempotency-Key` y responde 200.
+- APISIX publica Loyalty para el dominio principal y para cada `DASHBOARD_TENANT_HOSTS`, derivando el slug del primer label; `fidepuntos.tecnolts.com` usa `/fidepuntos/fidelizacion/{health|v1/*}`. API key/Bearer, rate profiles, rewrites, prioridades, rutas desconocidas y prefijos de otro tenant quedan verificados/fail-closed. Los hosts dashboard bloquean `/api/*`, `/facturador/*` y `/uploads-api/*` antes del wildcard.
+- El dashboard solo acepta `/dashboard/api/*`, queda ligado a `127.0.0.1:8081` y confia `X-Real-IP` solo con el subnet exacto de `webparamascotas-internal` + `DASHBOARD_PROXY_TOKEN`, una credencial exclusiva del salto APISIX -> dashboard y distinta del token backend. El deploy deriva ese subnet y `.env.runtime` contiene unicamente ambos tokens de proxy; el contenedor ya no hereda DB, JWT, SMTP ni Billing desde el `.env` backend. Notificaciones individuales requieren un socio seleccionado; preview/polling cancelan o serializan requests; filtros Wallet reflejan solo Google y las fechas de calendario ya no convierten primero a UTC.
+- APISIX recibe ambos tokens como variables runtime exportadas a sus workers y los inyecta en `before_proxy`; ninguna ruta los persiste como literal en `proxy-rewrite`/etcd. `backend-http` preserva hacia PHP la IP, host, protocolo y request ID ya normalizados; PHP solo los confia cuando valida `INTERNAL_PROXY_TOKEN`, manteniendo efectiva la allowlist administrativa.
+- Se elimino del working tree el snapshot APISIX versionado bajo `gatewayapisix/backups/`, se ignora `/backups/` y el preflight rompe si reaparecen backups APISIX o llaves privadas tracked. APISIX termino con keyring personalizado de una sola clave; las claves anteriores solo se admiten temporalmente durante una rotacion declarada.
+- `module.json`, topologias, atlas y guias dejaron publicado el contrato Loyalty y la persistencia vigente en cuatro bases logicas: `dashboard`, `ecommerce`, `facturacion` y `loyalty`.
+
+Verificacion y despliegue:
+- `RUN_DB_SETUP=1 ./scripts/deploy.sh backend`, `./scripts/deploy.sh dashboard` y `./scripts/deploy.sh gateway` completaron con runtimes healthy; la migracion creo indices/contadores sin duplicados previos.
+- Dashboard `npm run verify`: 223 archivos y 786 pruebas, typecheck, lint, arquitectura, manifests, build QA/production y budgets OK; persisten solo warnings conocidos CommonJS de `qrcode/dijkstrajs`.
+- `scripts/check-paramascotas.sh`, `scripts/check-container-connectivity.sh qa`, `scripts/check-fidepuntos-rbac-qa.sh` (36 verificaciones), auditoria APISIX (271 rutas/11 perfiles) y `scripts/e2e-qa.sh` pasaron.
+- Por APISIX, ambos tenants respondieron health 200; ausencia/credencial invalida devolvio 401; una clave valida solo funciono en su propio tenant; raw `/api/loyalty/*` y prefijos Loyalty de otro tenant devolvieron 404. Health Loyalty quedo alrededor de 10-12 ms estable frente a ~128 ms antes. Tres compras concurrentes terminaron `ok,ok,blocked`, saldo 40000 y dos ledgers; la idempotencia concurrente produjo una sola mutacion. Un scan binario de etcd confirmo que ninguno de los dos tokens de proxy queda persistido literalmente y el contenedor dashboard quedo sin secretos backend ajenos.
+
+Pendientes/riesgos:
+- Los artefactos sensibles eliminados siguen en la historia Git remota de `gatewayapisix` (incluidos snapshots con token/certificado y llaves historicas). Requiere ventana coordinada para rotar credenciales/certificados afectados, sanear historia y forzar actualizacion de clones; no se hizo una rotacion de produccion desde QA.
+- La base QA conserva datos demo historicos en tenants `default` y `paramascotasec`; el runtime ya no crea mas, pero su depuracion exige revision funcional antes de borrar datos.
+- Una caida exacta despues de confirmar una mutacion y antes de completar su fila idempotente puede dejar estado `processing`; falta reconciliador/outbox para recuperacion automatica sin riesgo de duplicar.
+- Catalogo de premios, historial de notificaciones y algunos listados de riesgo aun necesitan paginacion completa; la UI de clientes API tambien puede reforzar confirmacion/reentrancia en crear o revocar.
+
 ### 2026-07-11 - Fidepuntos: flujo integral de usuarios/roles y base operativa QA
 
 Objetivo: corregir el editor de roles que fallaba con HTTP 500, hacer escalables los listados y dejar una base operativa realista sin debilitar los roles protegidos.
@@ -309,7 +375,7 @@ Verificacion y despliegue:
 Objetivo: convertir usuarios, roles, sesiones y navegacion de Fidepuntos en un contrato RBAC real, con catalogo Loyalty versionado, autorizacion por pantalla/accion y pantallas administrativas nuevas.
 
 Cambios:
-- `loyalty` publica `fidepuntos-rbac-v1` en `loyalty_navigation_items` y `loyalty_navigation_item_actions`: 32 opciones, 62 acciones, nueve reportes independientes y jerarquia maxima de tres niveles.
+- `loyalty` publica `fidepuntos-rbac-v1` en `loyalty_navigation_items` y `loyalty_navigation_item_actions`: 32 opciones, 63 acciones, nueve reportes independientes y jerarquia maxima de tres niveles.
 - `dashboard` consolida memberships, roles, asignaciones, grants, auditoria y sesiones JTI en tablas relacionales. Roles multiples suman permisos; acciones distintas de `view` implican lectura y no existen denegaciones explicitas.
 - `GET /api/tenant/context` entrega navegacion efectiva, `accessVersion` y permisos. Se formalizaron catalogo, CRUD de roles/usuarios, asignacion de roles/grants, estados, desbloqueo, invitacion, reset, revocacion de sesiones y auditoria con autorizacion server-side exacta.
 - Invitaciones y resets usan enlaces expirables de un solo uso, guardan solo hashes e invalidan enlaces anteriores. Cambiar password, estado o roles revoca sesiones; `accountStatus` y `securityLock` permanecen separados.

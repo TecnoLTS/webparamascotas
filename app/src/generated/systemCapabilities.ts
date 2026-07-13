@@ -1196,6 +1196,12 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.admin"
   },
   {
+    "id": "backend:POST:/api/admin/loyalty/api-clients/{clientId}/rotate",
+    "method": "POST",
+    "path": "/api/admin/loyalty/api-clients/{clientId}/rotate",
+    "capabilityId": "loyalty.admin"
+  },
+  {
     "id": "backend:POST:/api/admin/loyalty/notifications/preview",
     "method": "POST",
     "path": "/api/admin/loyalty/notifications/preview",
@@ -1298,6 +1304,30 @@ export const backendApiRoutes = [
     "capabilityId": "loyalty.public"
   },
   {
+    "id": "backend:GET:/api/l/portal",
+    "method": "GET",
+    "path": "/api/l/portal",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:HEAD:/api/l/portal",
+    "method": "HEAD",
+    "path": "/api/l/portal",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/l/portal/claims",
+    "method": "POST",
+    "path": "/api/l/portal/claims",
+    "capabilityId": "loyalty.public"
+  },
+  {
+    "id": "backend:POST:/api/l/portal/claims/{redemptionId}/cancel",
+    "method": "POST",
+    "path": "/api/l/portal/claims/{redemptionId}/cancel",
+    "capabilityId": "loyalty.public"
+  },
+  {
     "id": "backend:GET:/api/l/c/{token}",
     "method": "GET",
     "path": "/api/l/c/{token}",
@@ -1313,18 +1343,6 @@ export const backendApiRoutes = [
     "id": "backend:GET:/api/l/r/{token}",
     "method": "GET",
     "path": "/api/l/r/{token}",
-    "capabilityId": "loyalty.public"
-  },
-  {
-    "id": "backend:POST:/api/l/r/{token}/claims",
-    "method": "POST",
-    "path": "/api/l/r/{token}/claims",
-    "capabilityId": "loyalty.public"
-  },
-  {
-    "id": "backend:POST:/api/l/r/{token}/claims/{redemptionId}/cancel",
-    "method": "POST",
-    "path": "/api/l/r/{token}/claims/{redemptionId}/cancel",
     "capabilityId": "loyalty.public"
   },
   {
