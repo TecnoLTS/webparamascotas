@@ -16,7 +16,8 @@ WORKDIR /app
 
 FROM base AS dev
 
-ENV APP_ENV=qa \
+ARG APP_ENV
+ENV APP_ENV=${APP_ENV} \
     NODE_ENV=development
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
@@ -33,7 +34,7 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 
 FROM base AS builder
 
-ARG APP_ENV=production
+ARG APP_ENV
 ARG NEXT_PUBLIC_BASE_URL=
 ARG NEXT_PUBLIC_BACKEND_URL=
 ARG NEXT_PUBLIC_SITE_DOMAIN=
@@ -68,7 +69,8 @@ RUN --mount=type=cache,target=/app/.next/cache \
 
 FROM base AS runner
 
-ENV APP_ENV=production \
+ARG APP_ENV
+ENV APP_ENV=${APP_ENV} \
     NODE_ENV=production \
     PORT=3000
 

@@ -103,11 +103,9 @@ const productionService = compose.split(/\n  runtime:/)[0]
 if (productionService.includes('./app/public/uploads:/app/public/uploads:rw')) {
   errors.push('Production frontend must not write to a host uploads volume.')
 }
-if (!compose.includes('PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:-backend-object-storage}')) {
-  errors.push('Production Compose must default to backend-object-storage.')
-}
-if (!compose.includes('PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:-local}')) {
-  errors.push('QA Compose must preserve local upload mode.')
+const requiredUploadMode = 'PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:?Define PRODUCT_IMAGE_UPLOAD_MODE en entorno/.env}'
+if (compose.split(requiredUploadMode).length - 1 !== 2) {
+  errors.push('Both Compose profiles must require PRODUCT_IMAGE_UPLOAD_MODE from entorno/.env.')
 }
 if (!backendConfiguration.includes('OBJECT_STORAGE_PUBLIC_BASE_URL')) {
   errors.push('Backend storage configuration must require the public uploads base URL.')

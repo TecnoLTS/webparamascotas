@@ -13,6 +13,7 @@ services:
       dockerfile: Dockerfile
       target: runner
       args:
+        APP_ENV: ${APP_ENV:?Define APP_ENV en entorno/.env}
         NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
         NEXT_PUBLIC_SITE_DOMAIN: ${NEXT_PUBLIC_SITE_DOMAIN:-paramascotasec.com}
@@ -38,7 +39,7 @@ services:
     environment:
       TZ: America/Guayaquil
       NODE_ENV: production
-      APP_ENV: ${APP_ENV:-production}
+      APP_ENV: ${APP_ENV:?Define APP_ENV en entorno/.env}
       NEXT_TELEMETRY_DISABLED: 1
       HOSTNAME: 0.0.0.0
       PORT: ${PORT:-3000}
@@ -57,8 +58,8 @@ services:
       NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-}
       BACKEND_URL_INTERNAL: ${BACKEND_URL_INTERNAL:-http://backend-http:8080/api}
       STOREFRONT_BACKEND_PROXY_TOKEN_FILE: /run/secrets/storefront_backend_proxy_token
-      REQUIRE_HA: ${REQUIRE_HA:-true}
-      PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:-backend-object-storage}
+      REQUIRE_HA: ${REQUIRE_HA:?Define REQUIRE_HA en entorno/.env}
+      PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:?Define PRODUCT_IMAGE_UPLOAD_MODE en entorno/.env}
       UPLOAD_BACKEND_TIMEOUT_MS: ${UPLOAD_BACKEND_TIMEOUT_MS:-30000}
       DASHBOARD_AUTH_CSRF_COOKIE_NAME: ${DASHBOARD_AUTH_CSRF_COOKIE_NAME:-pm_csrf_dashboard}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
@@ -96,7 +97,7 @@ services:
       dockerfile: Dockerfile
       target: runner
       args:
-        APP_ENV: ${APP_ENV:-qa}
+        APP_ENV: ${APP_ENV:?Define APP_ENV en entorno/.env}
         NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL}
         NEXT_PUBLIC_SITE_DOMAIN: ${NEXT_PUBLIC_SITE_DOMAIN:-paramascotasec.com}
@@ -120,8 +121,8 @@ services:
     environment:
       TZ: America/Guayaquil
       NODE_ENV: production
-      APP_ENV: ${APP_ENV:-qa}
-      NEXT_PUBLIC_APP_ENV: ${APP_ENV:-qa}
+      APP_ENV: ${APP_ENV:?Define APP_ENV en entorno/.env}
+      NEXT_PUBLIC_APP_ENV: ${APP_ENV:?Define APP_ENV en entorno/.env}
       NEXT_TELEMETRY_DISABLED: 1
       HOSTNAME: 0.0.0.0
       FRONTEND_QA_RUNTIME: ${FRONTEND_QA_RUNTIME:-stable}
@@ -142,8 +143,8 @@ services:
       NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-}
       BACKEND_URL_INTERNAL: ${BACKEND_URL_INTERNAL:-http://backend-http:8080/api}
       STOREFRONT_BACKEND_PROXY_TOKEN_FILE: /run/secrets/storefront_backend_proxy_token
-      REQUIRE_HA: ${REQUIRE_HA:-false}
-      PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:-local}
+      REQUIRE_HA: ${REQUIRE_HA:?Define REQUIRE_HA en entorno/.env}
+      PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:?Define PRODUCT_IMAGE_UPLOAD_MODE en entorno/.env}
       UPLOAD_BACKEND_TIMEOUT_MS: ${UPLOAD_BACKEND_TIMEOUT_MS:-30000}
       DASHBOARD_AUTH_CSRF_COOKIE_NAME: ${DASHBOARD_AUTH_CSRF_COOKIE_NAME:-pm_csrf_dashboard}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}

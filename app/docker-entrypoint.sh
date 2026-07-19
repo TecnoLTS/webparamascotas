@@ -26,12 +26,14 @@ lower_value() {
 }
 
 validate_upload_storage_mode() {
-  app_env="$(lower_value "${APP_ENV:-production}")"
-  require_ha="$(lower_value "${REQUIRE_HA:-false}")"
+  app_env="$(lower_value "${APP_ENV:-}")"
+  require_ha="$(lower_value "${REQUIRE_HA:-}")"
   upload_mode="$(lower_value "${PRODUCT_IMAGE_UPLOAD_MODE:-}")"
-  if [ -z "$upload_mode" ]; then
-    if [ "$app_env" = "qa" ]; then upload_mode="local"; else upload_mode="backend-object-storage"; fi
-  fi
+
+  case "$app_env" in
+    qa|production|prod) ;;
+    *) echo "APP_ENV debe ser qa o production." >&2; exit 1 ;;
+  esac
 
   case "$require_ha" in
     1|true|yes|on) ha_enabled=1 ;;

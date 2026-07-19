@@ -254,7 +254,11 @@ const parseBooleanEnvironment = (name: string, fallback: boolean) => {
 }
 
 const resolveProductImageUploadMode = (): ProductImageUploadMode => {
-  const appEnvironment = (process.env.APP_ENV || process.env.NEXT_PUBLIC_APP_ENV || 'production').trim().toLowerCase()
+  const configuredEnvironment = process.env.APP_ENV || process.env.NEXT_PUBLIC_APP_ENV
+  if (!configuredEnvironment?.trim()) {
+    throw new Error('APP_ENV es obligatorio para resolver el almacenamiento de imagenes.')
+  }
+  const appEnvironment = configuredEnvironment.trim().toLowerCase()
   const production = appEnvironment === 'production' || appEnvironment === 'prod'
   const requireHa = parseBooleanEnvironment('REQUIRE_HA', false)
   const configured = (process.env.PRODUCT_IMAGE_UPLOAD_MODE || '').trim().toLowerCase()
