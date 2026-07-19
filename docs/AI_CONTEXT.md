@@ -317,6 +317,18 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 
 ## Historial de trabajo IA
 
+### 2026-07-19 - Gate de secretos portable para despliegue production
+
+Objetivo: corregir el bloqueo productivo `[secret-transport] FAIL: falta ripgrep (rg)` sin desactivar la atestacion de aislamiento tenant.
+
+Cambios:
+- `basesdedatos/scripts/check-secret-transport.sh` usa `rg` con PCRE2 cuando esta disponible y GNU `grep -P` + `find` como fallback equivalente.
+- La salida identifica el motor usado y conserva el cierre fail-closed cuando ninguno soporta las expresiones requeridas.
+
+Evidencia:
+- El gate aprobo 87 scripts shell y 13 pruebas Dashboard tanto con `rg` como con un `PATH=/usr/bin:/bin` sin `rg`; `bash -n` y `git diff --check` aprobaron.
+- No se ejecutaron deploy ni cambios de datos production desde el host QA.
+
 ### 2026-07-19 - Recuperacion de consecutivo QA e interpretacion de errores SRI
 
 Objetivo: recuperar la factura de `ORD-20260719113346-4177EC4D`, devuelta por SRI pruebas con codigo 45 (`ERROR SECUENCIAL REGISTRADO`), sin modificar numeracion ni servicios de produccion.
