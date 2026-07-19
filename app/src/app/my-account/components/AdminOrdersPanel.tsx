@@ -136,8 +136,8 @@ export default React.memo(function AdminOrdersPanel({
                                 <tr key={order.id} className="border-b border-line last:border-0 hover:bg-surface duration-300 text-sm">
                                     <td className="py-4 font-bold">#{order.id}</td>
                                     <td className="py-4">
-                                        <div className="font-semibold text-black">{order.user_name || 'Cliente'}</div>
-                                        <div className="text-xs text-secondary">{order.user_email || 'Sin correo visible'}</div>
+                                        <div className="font-semibold text-black">{order.customer_name || order.user_name || 'Cliente'}</div>
+                                        <div className="text-xs text-secondary">{order.customer_email || order.user_email || 'Sin correo visible'}</div>
                                     </td>
                                     <td className="py-4">
                                         <div className="font-medium text-black">{formatDateTime(order.created_at)}</div>
@@ -146,7 +146,7 @@ export default React.memo(function AdminOrdersPanel({
                                         <div className="font-medium text-black">{getDeliveryMethodLabel(order)}</div>
                                         <div className="text-xs text-secondary mt-1">{getPaymentMethodLabel(order)}</div>
                                         <div className="text-xs text-secondary mt-1">
-                                            {(order.items_count ?? 0) > 0 ? `${order.items_count} ítems` : 'Sin ítems'}{String(order.order_notes || '').trim() ? ' · Con nota del cliente' : ''}
+                                            {(order.items_count ?? 0) > 0 ? `${order.items_count} líneas · ${order.units_count ?? order.items_count} unidades` : 'Sin ítems'}
                                         </div>
                                     </td>
                                     <td className="py-4 font-bold">${Number(order.total).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>

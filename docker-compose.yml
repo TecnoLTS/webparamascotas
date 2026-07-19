@@ -21,7 +21,8 @@ services:
         NEXT_PUBLIC_TENANT_SLUG: ${NEXT_PUBLIC_TENANT_SLUG:-paramascotasec}
         NEXT_PUBLIC_API_SERVICE_SEGMENT: ${NEXT_PUBLIC_API_SERVICE_SEGMENT:-api}
         NEXT_PUBLIC_API_BASE_PATH: ${NEXT_PUBLIC_API_BASE_PATH:-/paramascotasec/api}
-        NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
+        NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf_ecommerce}
+        NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     container_name: webparamascotas
     hostname: webparamascotas
@@ -39,7 +40,9 @@ services:
       NODE_ENV: production
       APP_ENV: ${APP_ENV:-production}
       NEXT_TELEMETRY_DISABLED: 1
+      HOSTNAME: 0.0.0.0
       PORT: ${PORT:-3000}
+      FRONTEND_WORKERS: ${FRONTEND_WORKERS:-4}
       API_FETCH_TIMEOUT_MS: ${API_FETCH_TIMEOUT_MS:-15000}
       NEXT_PUBLIC_CONTAINER_NAME: webparamascotas
       NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
@@ -50,14 +53,20 @@ services:
       NEXT_PUBLIC_TENANT_SLUG: ${NEXT_PUBLIC_TENANT_SLUG:-paramascotasec}
       NEXT_PUBLIC_API_SERVICE_SEGMENT: ${NEXT_PUBLIC_API_SERVICE_SEGMENT:-api}
       NEXT_PUBLIC_API_BASE_PATH: ${NEXT_PUBLIC_API_BASE_PATH:-/paramascotasec/api}
-      NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
+      NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf_ecommerce}
+      NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-}
       BACKEND_URL_INTERNAL: ${BACKEND_URL_INTERNAL:-http://backend-http:8080/api}
-      INTERNAL_PROXY_TOKEN_FILE: /run/secrets/internal_proxy_token
+      STOREFRONT_BACKEND_PROXY_TOKEN_FILE: /run/secrets/storefront_backend_proxy_token
+      REQUIRE_HA: ${REQUIRE_HA:-true}
+      PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:-backend-object-storage}
+      UPLOAD_BACKEND_TIMEOUT_MS: ${UPLOAD_BACKEND_TIMEOUT_MS:-30000}
+      DASHBOARD_AUTH_CSRF_COOKIE_NAME: ${DASHBOARD_AUTH_CSRF_COOKIE_NAME:-pm_csrf_dashboard}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
       PANEL_IP_MODE: ${PANEL_IP_MODE:-off}
       PANEL_IP_ALLOWLIST: ${PANEL_IP_ALLOWLIST:-}
     working_dir: /app
-    command: node_modules/.bin/next start --hostname 0.0.0.0 --port ${PORT:-3000}
+    command: node cluster-server.cjs
+    stop_grace_period: 20s
     healthcheck:
       test: ["CMD", "node", "-e", "const net=require('net');const socket=net.connect({host:'127.0.0.1',port:Number(process.env.PORT||3000)});socket.on('connect',()=>{socket.end();process.exit(0)});socket.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1500)"]
       interval: 30s
@@ -66,15 +75,14 @@ services:
       start_period: 20s
     expose:
       - "3000"
-    volumes:
-      - ./app/public/uploads:/app/public/uploads:rw
     tmpfs:
       - /tmp:size=128m,mode=1777
       - /app/.next/cache:size=512m,uid=10001,gid=10001,mode=1777
     secrets:
-      - source: internal_proxy_token
-        target: internal_proxy_token
-        mode: 0444
+      # Los file-backed secrets heredan owner/mode del origen; common.sh lo
+      # prepara como 10001:10001/0400 antes de crear el contenedor.
+      - source: storefront_backend_proxy_token
+        target: storefront_backend_proxy_token
     networks:
       web_internal:
         aliases:
@@ -97,7 +105,8 @@ services:
         NEXT_PUBLIC_TENANT_SLUG: ${NEXT_PUBLIC_TENANT_SLUG:-paramascotasec}
         NEXT_PUBLIC_API_SERVICE_SEGMENT: ${NEXT_PUBLIC_API_SERVICE_SEGMENT:-api}
         NEXT_PUBLIC_API_BASE_PATH: ${NEXT_PUBLIC_API_BASE_PATH:-/paramascotasec/api}
-        NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
+        NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf_ecommerce}
+        NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-}
         NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
     container_name: webparamascotas
     hostname: webparamascotas
@@ -114,9 +123,11 @@ services:
       APP_ENV: ${APP_ENV:-qa}
       NEXT_PUBLIC_APP_ENV: ${APP_ENV:-qa}
       NEXT_TELEMETRY_DISABLED: 1
+      HOSTNAME: 0.0.0.0
       FRONTEND_QA_RUNTIME: ${FRONTEND_QA_RUNTIME:-stable}
       FRONTEND_QA_BUNDLER: ${FRONTEND_QA_BUNDLER:-webpack}
       PORT: ${PORT:-3000}
+      FRONTEND_WORKERS: ${FRONTEND_WORKERS:-4}
       API_FETCH_TIMEOUT_MS: ${API_FETCH_TIMEOUT_MS:-15000}
       NEXT_PUBLIC_CONTAINER_NAME: webparamascotas
       NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
@@ -127,21 +138,27 @@ services:
       NEXT_PUBLIC_TENANT_SLUG: ${NEXT_PUBLIC_TENANT_SLUG:-paramascotasec}
       NEXT_PUBLIC_API_SERVICE_SEGMENT: ${NEXT_PUBLIC_API_SERVICE_SEGMENT:-api}
       NEXT_PUBLIC_API_BASE_PATH: ${NEXT_PUBLIC_API_BASE_PATH:-/paramascotasec/api}
-      NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf}
+      NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME: ${NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME:-pm_csrf_ecommerce}
+      NEXT_PUBLIC_UPLOADS_BASE_URL: ${NEXT_PUBLIC_UPLOADS_BASE_URL:-}
       BACKEND_URL_INTERNAL: ${BACKEND_URL_INTERNAL:-http://backend-http:8080/api}
-      INTERNAL_PROXY_TOKEN_FILE: /run/secrets/internal_proxy_token
+      STOREFRONT_BACKEND_PROXY_TOKEN_FILE: /run/secrets/storefront_backend_proxy_token
+      REQUIRE_HA: ${REQUIRE_HA:-false}
+      PRODUCT_IMAGE_UPLOAD_MODE: ${PRODUCT_IMAGE_UPLOAD_MODE:-local}
+      UPLOAD_BACKEND_TIMEOUT_MS: ${UPLOAD_BACKEND_TIMEOUT_MS:-30000}
+      DASHBOARD_AUTH_CSRF_COOKIE_NAME: ${DASHBOARD_AUTH_CSRF_COOKIE_NAME:-pm_csrf_dashboard}
       NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}
       PANEL_IP_MODE: ${PANEL_IP_MODE:-off}
       PANEL_IP_ALLOWLIST: ${PANEL_IP_ALLOWLIST:-}
     working_dir: /app
-    command: node_modules/.bin/next start --hostname 0.0.0.0 --port ${PORT:-3000}
+    command: node cluster-server.cjs
+    stop_grace_period: 20s
     volumes:
       - ./app/public/uploads:/app/public/uploads:rw
     tmpfs:
       - /tmp:size=128m,mode=1777
       - /app/.next/cache:size=512m,uid=10001,gid=10001,mode=1777
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${PORT:-3000}/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:${PORT:-3000}/readyz || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 20
@@ -149,9 +166,10 @@ services:
     expose:
       - "3000"
     secrets:
-      - source: internal_proxy_token
-        target: internal_proxy_token
-        mode: 0444
+      # Los file-backed secrets heredan owner/mode del origen; common.sh lo
+      # prepara como 10001:10001/0400 antes de crear el contenedor.
+      - source: storefront_backend_proxy_token
+        target: storefront_backend_proxy_token
     networks:
       web_internal:
         aliases:
@@ -163,5 +181,5 @@ networks:
     name: webparamascotas-internal
 
 secrets:
-  internal_proxy_token:
-    file: ./entorno/.secrets/internal_proxy_token
+  storefront_backend_proxy_token:
+    file: ./entorno/.secrets/storefront_backend_proxy_token

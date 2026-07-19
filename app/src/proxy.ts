@@ -150,6 +150,10 @@ const applySecurityHeaders = (
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self), payment=(), usb=(), bluetooth=()')
   headers.set('X-Frame-Options', 'SAMEORIGIN')
+  headers.set('Cross-Origin-Opener-Policy', 'same-origin')
+  headers.set('Cross-Origin-Resource-Policy', 'same-origin')
+  headers.set('Origin-Agent-Cluster', '?1')
+  headers.set('X-Frontend-Channel', 'ecommerce')
 
   if (getForwardedProto(req) === 'https') {
     headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload')

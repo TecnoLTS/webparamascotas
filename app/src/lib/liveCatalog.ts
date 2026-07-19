@@ -1,5 +1,5 @@
 import { findCatalogProduct, getProductVariantLabel, getProductVariants, groupCatalogProducts, resolveSelectedVariant } from '@/lib/catalog'
-import { listProducts } from '@/lib/api/products'
+import { listProductPage } from '@/lib/api/products'
 import { ProductType } from '@/type/ProductType'
 
 export interface LiveCatalogSnapshot {
@@ -7,13 +7,7 @@ export interface LiveCatalogSnapshot {
   groupedProducts: ProductType[]
 }
 
-let cachedSnapshot: LiveCatalogSnapshot | null = null
-let cachedSnapshotAt = 0
-let inFlightSnapshot: Promise<LiveCatalogSnapshot> | null = null
-
-const getSnapshotTtlMs = () => {
-  return 0
-}
+const inFlightSnapshots = new Map<string, Promise<LiveCatalogSnapshot>>()
 
 export const getLiveProductAvailableStock = (product?: ProductType | null) => {
   if (!product) return 0
@@ -43,39 +37,47 @@ export const buildLiveAvailabilityMap = (products: ProductType[]) => {
   return availabilityMap
 }
 
-export const fetchLiveCatalogSnapshot = async (): Promise<LiveCatalogSnapshot> => {
-  const now = Date.now()
-  const ttlMs = getSnapshotTtlMs()
-
-  if (cachedSnapshot && now - cachedSnapshotAt < ttlMs) {
-    return cachedSnapshot
+export const fetchLiveCatalogSnapshot = async (
+  requestedProducts: Array<ProductType | string>,
+): Promise<LiveCatalogSnapshot> => {
+  const ids = Array.from(new Set(requestedProducts.flatMap((entry) => {
+    if (typeof entry === 'string') return [entry]
+    const variants = getProductVariants(entry)
+    return variants
+      .map((variant) => variant.internalId || variant.id || variant.slug)
+      .filter((value): value is string => Boolean(value))
+  })))
+  if (ids.length > 100) {
+    throw new Error('La validación de stock admite como máximo 100 productos por operación.')
   }
-
-  if (inFlightSnapshot) {
-    return inFlightSnapshot
+  if (ids.length === 0) {
+    return { rawProducts: [], groupedProducts: [] }
   }
+  const cacheKey = ids.slice().sort().join('|')
+  const inFlight = inFlightSnapshots.get(cacheKey)
+  if (inFlight) return inFlight
 
-  inFlightSnapshot = listProducts({ cache: 'no-store' })
+  const request = listProductPage({
+    cache: 'no-store',
+    pageSize: ids.length,
+    ids,
+  })
     .then((rawProducts) => {
       const snapshot = {
-        rawProducts,
-        groupedProducts: groupCatalogProducts(rawProducts),
+        rawProducts: rawProducts.products,
+        groupedProducts: groupCatalogProducts(rawProducts.products),
       }
-      cachedSnapshot = snapshot
-      cachedSnapshotAt = Date.now()
       return snapshot
     })
     .finally(() => {
-      inFlightSnapshot = null
+      inFlightSnapshots.delete(cacheKey)
     })
-
-  return inFlightSnapshot
+  inFlightSnapshots.set(cacheKey, request)
+  return request
 }
 
 export const invalidateLiveCatalogSnapshot = () => {
-  cachedSnapshot = null
-  cachedSnapshotAt = 0
-  inFlightSnapshot = null
+  inFlightSnapshots.clear()
 }
 
 export const findLiveCatalogProduct = (products: ProductType[], requestedId?: string | number | null) => {

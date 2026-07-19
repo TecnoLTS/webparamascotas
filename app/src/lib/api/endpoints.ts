@@ -24,6 +24,30 @@ export const withQuery = (path: string, query: QueryInput = {}) => {
 
 export const apiEndpoints = {
   products: buildApiRoute('backend:GET:/api/products'),
+  productPage: (query: {
+    pageSize?: number
+    cursor?: string
+    search?: string
+    category?: string
+    productType?: string
+    gender?: 'dog' | 'cat'
+    brandSlug?: string
+    variantGroup?: string
+    ids?: string[]
+    saleOnly?: boolean
+  } = {}) =>
+    withQuery(buildApiRoute('backend:GET:/api/products'), {
+      page_size: query.pageSize,
+      cursor: query.cursor,
+      q: query.search,
+      category: query.category,
+      product_type: query.productType,
+      gender: query.gender,
+      brand_slug: query.brandSlug,
+      variant_group: query.variantGroup,
+      ids: query.ids?.join(','),
+      sale_only: query.saleOnly,
+    }),
   product: (id: string) => buildApiRoute('backend:GET:/api/products/{id}', { id }),
   adminProduct: (id: string, options: { procurementDetail?: boolean; scope?: 'admin' } = {}) =>
     withQuery(buildApiRoute('backend:GET:/api/products/{id}', { id }), {
@@ -132,6 +156,7 @@ export const apiEndpoints = {
     buildApiRoute('backend:POST:/api/admin/financial-periods/{period}/close', { period }),
   adminFinancialAdjustments: buildApiRoute('backend:POST:/api/admin/financial-adjustments'),
   adminHistoricalSales: buildApiRoute('backend:POST:/api/admin/historical-sales'),
+  adminCatalogImageUpload: buildApiRoute('backend:POST:/api/admin/catalog/images'),
   uploads: {
     images: '/api/uploads/images',
   },
@@ -185,13 +210,4 @@ export const isPublicApiPath = (pathname: string, method = 'GET') => {
   }
 
   return false
-}
-
-export const shouldDisableApiPathCache = (pathname: string) => {
-  if (pathname === apiEndpoints.products || pathname.startsWith(`${apiEndpoints.products}/`)) {
-    return true
-  }
-
-  return pathname === apiEndpoints.settings.publicProductCategories
-    || pathname === apiEndpoints.settings.publicProductCategoryReferences
 }

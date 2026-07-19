@@ -6,6 +6,7 @@ import MenuOne from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
 import { apiEndpoints } from '@/lib/api/endpoints'
+import { listBoundedOrderHistory } from '@/lib/api/orderHistory'
 import {
     Archive,
     ArrowDownLeft,
@@ -77,8 +78,27 @@ const PASSIVE_REFRESH_SAFE_TABS = new Set([
     'inventory',
 ])
 
+const CUSTOMER_PANEL_META: Record<string, { title: string; description: string }> = {
+    dashboard: {
+        title: 'Resumen de cuenta',
+        description: 'Pedidos, entregas y datos importantes en una sola vista.',
+    },
+    orders: {
+        title: 'Mis pedidos',
+        description: 'Consulta el estado, la entrega y el pago de cada compra.',
+    },
+    address: {
+        title: 'Direcciones',
+        description: 'Administra tus datos de envío y facturación.',
+    },
+    setting: {
+        title: 'Datos y seguridad',
+        description: 'Actualiza tu información personal y protege tu cuenta.',
+    },
+}
+
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchJson, requestApi } from '@/lib/apiClient'
+import { fetchJson, fetchJsonEnvelope, requestApi } from '@/lib/apiClient'
 import { clearStoredSession, setStoredSessionUser } from '@/lib/authSession'
 import { createDiscount, listDiscountAudit, listDiscounts, updateDiscount, updateDiscountStatus } from '@/lib/api/discounts'
 import type { AdminDiscountAuditRow, AdminDiscountCode, AdminDiscountPayload, AdminDiscountType } from '@/lib/api/discounts'
@@ -95,6 +115,7 @@ import {
     isProductEligibleForPublication,
     isTaxExemptProduct,
     normalizeAdminProducts,
+    resolveProductSaleTaxPolicy,
     resolveProductVariantLabel,
 } from './productFormUtils'
 import { buildProductSearchIndex, buildProductSearchText, filterProductsBySearch, getProductSearchScore, matchesProductSearch, normalizeProductSearch, sanitizeProductSearchQuery } from '@/lib/productSearch'
@@ -118,12 +139,10 @@ import {
     getOrderContact,
     getOrderItemsGrossSubtotal,
     getOrderItemsNetSubtotal,
-    isDynamicOrderItemImage,
     getOrderShipping,
     getOrderVatAmount,
     getOrderVatSubtotal,
     normalizeSavedAddresses,
-    normalizeOrderItemImage,
     normalizeAddressCandidate,
     parseAddress,
     parseJsonValue,
@@ -138,6 +157,7 @@ import {
 import AccountSidebar from './components/AccountSidebar'
 import AccountPanelHeader from './components/AccountPanelHeader'
 import AdminAccountShellStyles from './components/AdminAccountShellStyles'
+import CustomerAccountShellStyles from './components/CustomerAccountShellStyles'
 import AdminShippingSettingsPanel from './components/AdminShippingSettingsPanel'
 import BillingRidesPanel from './components/BillingRidesPanel'
 import CustomerAddressPanel from './components/CustomerAddressPanel'
@@ -145,7 +165,7 @@ import CustomerSettingsPanel from './components/CustomerSettingsPanel'
 import InventoryExpandedDetail from './components/InventoryExpandedDetail'
 import { BusinessControlMetric, ReportCompactMetric } from './components/MetricCards'
 import NotificationOverlay from './components/NotificationOverlay'
-import TaxesPanel from './components/TaxesPanel'
+import TaxesPanel, { isSupportedEcuadorSriVatRate } from './components/TaxesPanel'
 import { useAdminSidebarNavigation } from './hooks/useAdminSidebarNavigation'
 import { useAuthBootstrap } from './hooks/useAuthBootstrap'
 import { useAdminDataLoader } from './hooks/useAdminDataLoader'
@@ -1022,7 +1042,7 @@ const MyAccount = () => {
     const [adminProductsSupplierFilter, setAdminProductsSupplierFilter] = useState('all')
     const [adminProductsBrandFilter, setAdminProductsBrandFilter] = useState('all')
     const [adminProductsSpeciesFilter, setAdminProductsSpeciesFilter] = useState('all')
-    const [adminProductsTaxFilter, setAdminProductsTaxFilter] = useState<'all' | 'taxed' | 'exempt'>('all')
+    const [adminProductsTaxFilter, setAdminProductsTaxFilter] = useState<'all' | 'taxed' | 'zero-rated' | 'exempt'>('all')
     const [productPublicationPendingIds, setProductPublicationPendingIds] = useState<Record<string, boolean>>({})
     const [adminUsersList, setAdminUsersList] = useState<AdminUserSummary[]>([])
     const [adminUsersSearch, setAdminUsersSearch] = useState('')
@@ -1051,6 +1071,7 @@ const MyAccount = () => {
     const [vatRate, setVatRate] = useState<number>(0)
     const [vatCreditCurrentRate, setVatCreditCurrentRate] = useState<number>(60)
     const [vatCreditCarryforwardRate, setVatCreditCarryforwardRate] = useState<number>(40)
+    const [vatRegistryRevision, setVatRegistryRevision] = useState<number | null>(null)
     const [vatLoading, setVatLoading] = useState(false)
     const [vatSaving, setVatSaving] = useState(false)
     const [shippingRates, setShippingRates] = useState<{
@@ -1301,12 +1322,12 @@ const MyAccount = () => {
             );
             setIsOrderModalOpen(false);
             if (user?.role === 'admin') {
-                const res = await requestApi<Order[]>(apiEndpoints.orders);
-                setAdminOrdersList(res.body);
+                const orders = await listBoundedOrderHistory<Order>(apiEndpoints.orders);
+                setAdminOrdersList(orders);
                 invalidateAdminPanelData();
             } else {
-                const res = await requestApi<Order[]>(apiEndpoints.myOrders);
-                setUserOrders(res.body);
+                const orders = await listBoundedOrderHistory<Order>(apiEndpoints.myOrders);
+                setUserOrders(orders);
             }
         } catch (error: any) {
             console.error(error);
@@ -1660,7 +1681,7 @@ const MyAccount = () => {
             showNotification('Venta histórica registrada correctamente.')
             await Promise.allSettled([
                 reloadBusinessExpensesPanel(true),
-                requestApi<Order[]>(apiEndpoints.orders).then((res) => setAdminOrdersList(res.body)),
+                listBoundedOrderHistory<Order>(apiEndpoints.orders).then((orders) => setAdminOrdersList(orders)),
                 requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(
                     /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
                         ? { period: salesRankingMonth, include_report: 0 }
@@ -2118,12 +2139,22 @@ const MyAccount = () => {
         if (!user || user.role !== 'admin') return
         setVatLoading(true)
         try {
-            const res = await withTransientRetry(() => requestApi<{ rate: number; credit_current_rate?: number; credit_carryforward_rate?: number }>(apiEndpoints.settings.tax))
-            setVatRate(Number(res.body.rate ?? 0))
-            setVatCreditCurrentRate(Number(res.body.credit_current_rate ?? 60))
-            setVatCreditCarryforwardRate(Number(res.body.credit_carryforward_rate ?? 40))
+            const res = await withTransientRetry(() => fetchJsonEnvelope<{ rate: number; credit_current_rate: number; credit_carryforward_rate: number }>(apiEndpoints.settings.tax))
+            const revision = Number(res.meta.tenantRegistryRevision)
+            if (!Number.isSafeInteger(revision) || revision < 1) {
+                throw new Error('La API tributaria no entregó una revisión canónica válida.')
+            }
+            const canonicalRate = Number(res.data.rate)
+            if (!isSupportedEcuadorSriVatRate(canonicalRate)) {
+                throw new Error('La API tributaria entregó una tarifa fuera del catálogo SRI.')
+            }
+            setVatRate(canonicalRate)
+            setVatCreditCurrentRate(Number(res.data.credit_current_rate))
+            setVatCreditCarryforwardRate(Number(res.data.credit_carryforward_rate))
+            setVatRegistryRevision(revision)
         } catch (error) {
             console.error(error)
+            setVatRegistryRevision(null)
             if (error instanceof Error && error.message.includes('401')) {
                 handleLogout()
                 return
@@ -2617,12 +2648,21 @@ const MyAccount = () => {
     }
 
     const handleSaveVat = async () => {
+        if (!isSupportedEcuadorSriVatRate(vatRate)) {
+            showNotification('Selecciona una tarifa IVA publicada por el catálogo SRI.', 'error')
+            return
+        }
+        if (!Number.isSafeInteger(vatRegistryRevision) || (vatRegistryRevision ?? 0) < 1) {
+            showNotification('Recarga la configuración tributaria antes de guardar.', 'error')
+            return
+        }
         setVatSaving(true)
         try {
-            const res = await requestApi<{ rate: number; credit_current_rate?: number; credit_carryforward_rate?: number }>(apiEndpoints.settings.tax, {
+            const res = await fetchJsonEnvelope<{ rate: number; credit_current_rate: number; credit_carryforward_rate: number }>(apiEndpoints.settings.tax, {
                 method: 'PUT',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'If-Match': `"tenant-tax-${vatRegistryRevision}"`,
                 },
                 body: JSON.stringify({
                     rate: vatRate,
@@ -2630,13 +2670,24 @@ const MyAccount = () => {
                     credit_carryforward_rate: vatCreditCarryforwardRate,
                 })
             })
-            setVatRate(Number(res.body.rate ?? 0))
-            setVatCreditCurrentRate(Number(res.body.credit_current_rate ?? vatCreditCurrentRate))
-            setVatCreditCarryforwardRate(Number(res.body.credit_carryforward_rate ?? vatCreditCarryforwardRate))
+            const nextRevision = Number(res.meta.tenantRegistryRevision)
+            if (!Number.isSafeInteger(nextRevision) || nextRevision < 1) {
+                throw new Error('La API tributaria no confirmó la revisión aplicada.')
+            }
+            const canonicalRate = Number(res.data.rate)
+            if (!isSupportedEcuadorSriVatRate(canonicalRate)) {
+                throw new Error('La API tributaria confirmó una tarifa fuera del catálogo SRI.')
+            }
+            setVatRate(canonicalRate)
+            setVatCreditCurrentRate(Number(res.data.credit_current_rate))
+            setVatCreditCarryforwardRate(Number(res.data.credit_carryforward_rate))
+            setVatRegistryRevision(nextRevision)
             showNotification('Configuración tributaria actualizada correctamente.')
         } catch (error) {
             console.error(error)
-            showNotification('No se pudo guardar la configuración tributaria.', 'error')
+            setVatRegistryRevision(null)
+            await loadVatRate({ silent: true })
+            showNotification('La configuración cambió o no pudo guardarse; se recargó el estado canónico.', 'error')
         } finally {
             setVatSaving(false)
         }
@@ -4434,8 +4485,7 @@ const MyAccount = () => {
             const normalizedSupplier = String(attributes?.supplier ?? '').trim().toLowerCase()
             const normalizedBrand = String(product?.brand ?? '').trim().toLowerCase()
             const normalizedSpecies = String(attributes?.species ?? product?.gender ?? '').trim().toLowerCase()
-            const taxRate = Number(attributes?.taxRate ?? 0)
-            const taxExempt = String(attributes?.taxExempt ?? '').trim().toLowerCase() === 'true'
+            const taxTreatment = resolveProductSaleTaxPolicy(product, vatMultiplier).treatment
 
             if (adminProductsCategoryFilter !== 'all' && normalizedCategory !== adminProductsCategoryFilter) {
                 return false
@@ -4449,10 +4499,13 @@ const MyAccount = () => {
             if (adminProductsSpeciesFilter !== 'all' && normalizedSpecies !== adminProductsSpeciesFilter) {
                 return false
             }
-            if (adminProductsTaxFilter === 'taxed' && (taxExempt || taxRate <= 0)) {
+            if (adminProductsTaxFilter === 'taxed' && taxTreatment !== 'taxed') {
                 return false
             }
-            if (adminProductsTaxFilter === 'exempt' && !taxExempt && taxRate > 0) {
+            if (adminProductsTaxFilter === 'zero-rated' && taxTreatment !== 'zero-rated') {
+                return false
+            }
+            if (adminProductsTaxFilter === 'exempt' && taxTreatment !== 'exempt') {
                 return false
             }
             return true
@@ -4479,6 +4532,7 @@ const MyAccount = () => {
         normalizedAdminProductsSearch,
         productPublicationFilter,
         productsNeededForProductsPanel,
+        vatMultiplier,
     ])
     const adminProductFilterOptions = React.useMemo(() => {
         if (!productsNeededForProductsPanel) {
@@ -5107,7 +5161,7 @@ const MyAccount = () => {
             showNotification(createdOrderId ? `Venta creada desde cotización: ${createdOrderId}` : 'Cotización convertida a venta.')
             const [productsResult, ordersResult, statsResult] = await Promise.allSettled([
                 requestApi<any[]>(ADMIN_PRODUCTS_ENDPOINT),
-                requestApi<Order[]>(apiEndpoints.orders),
+                listBoundedOrderHistory<Order>(apiEndpoints.orders),
                 requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(
                     /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
                         ? { period: salesRankingMonth, include_report: 0 }
@@ -5118,7 +5172,7 @@ const MyAccount = () => {
                 setAdminProductsList(normalizeAdminProducts(productsResult.value.body))
             }
             if (ordersResult.status === 'fulfilled') {
-                setAdminOrdersList(ordersResult.value.body)
+                setAdminOrdersList(ordersResult.value)
             }
             if (statsResult.status === 'fulfilled') {
                 setDashboardStats(statsResult.value.body)
@@ -5269,7 +5323,7 @@ const MyAccount = () => {
             // No es necesario hacer una llamada adicional
             const [productsResult, ordersResult, statsResult] = await Promise.allSettled([
                 requestApi<any[]>(ADMIN_PRODUCTS_ENDPOINT),
-                requestApi<Order[]>(apiEndpoints.orders),
+                listBoundedOrderHistory<Order>(apiEndpoints.orders),
                 requestApi<DashboardStats>(apiEndpoints.adminDashboardStats(
                     /^\d{4}-(0[1-9]|1[0-2])$/.test(salesRankingMonth)
                         ? { period: salesRankingMonth, include_report: 0 }
@@ -5280,7 +5334,7 @@ const MyAccount = () => {
                 setAdminProductsList(normalizeAdminProducts(productsResult.value.body))
             }
             if (ordersResult.status === 'fulfilled') {
-                setAdminOrdersList(ordersResult.value.body)
+                setAdminOrdersList(ordersResult.value)
             }
             if (statsResult.status === 'fulfilled') {
                 setDashboardStats(statsResult.value.body)
@@ -6085,10 +6139,11 @@ const MyAccount = () => {
 
             <NotificationOverlay message={message} onClose={() => setMessage(null)} />
             <AdminAccountShellStyles />
+            <CustomerAccountShellStyles />
 
-            <div className={`profile-block bg-[#f7f8f6] ${user.role === 'admin' ? 'admin-account-shell py-2 sm:py-3 lg:py-4' : 'py-4 sm:py-5 lg:py-6'}`}>
-                <div className={user.role === 'admin' ? 'w-full max-w-none mx-auto px-3 sm:px-4 lg:px-6 2xl:px-8' : 'w-full max-w-[1200px] mx-auto px-6 md:px-10'}>
-                    <div className={user.role === 'admin' ? 'content-main grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)] gap-4 lg:gap-5 w-full min-w-0' : 'content-main grid grid-cols-1 lg:grid-cols-[260px_minmax(0,1fr)] gap-8 lg:gap-10 w-full min-w-0'}>
+            <div className={`profile-block ${user.role === 'admin' ? 'admin-account-shell bg-[#f7f8f6] py-2 sm:py-3 lg:py-4' : 'customer-account-shell py-4 sm:py-5 lg:py-6'}`}>
+                <div className={user.role === 'admin' ? 'w-full max-w-none mx-auto px-3 sm:px-4 lg:px-6 2xl:px-8' : 'mx-auto w-full max-w-[1720px] px-3 sm:px-5 lg:px-8'}>
+                    <div className={user.role === 'admin' ? 'content-main grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[300px_minmax(0,1fr)] gap-4 lg:gap-5 w-full min-w-0' : 'content-main grid w-full min-w-0 grid-cols-1 gap-4 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-5'}>
                         <div className="left w-full min-w-0">
                             <AccountSidebar
                                 user={user}
@@ -6106,6 +6161,27 @@ const MyAccount = () => {
                             />
                         </div>
                         <div className="right w-full min-w-0">
+                            {user.role !== 'admin' && (
+                                <header className="customer-page-header">
+                                    <div className="min-w-0">
+                                        <p className="customer-eyebrow text-[11px] font-bold uppercase tracking-[0.12em]">Mi cuenta</p>
+                                        <h1 className="customer-page-title">
+                                            {activeTab === 'dashboard'
+                                                ? `Hola, ${String(user.name || 'Cliente').trim().split(/\s+/)[0]}`
+                                                : (CUSTOMER_PANEL_META[activeTab || 'dashboard']?.title || 'Mi cuenta')}
+                                        </h1>
+                                        <p className="customer-page-description">
+                                            {CUSTOMER_PANEL_META[activeTab || 'dashboard']?.description || CUSTOMER_PANEL_META.dashboard.description}
+                                        </p>
+                                    </div>
+                                    {activeTab === 'dashboard' && (
+                                        <Link href="/tienda" className="customer-shopping-link inline-flex shrink-0 items-center justify-center gap-2 px-4 text-sm font-bold">
+                                            <Icon.ShoppingBag size={18} aria-hidden="true" />
+                                            Seguir comprando
+                                        </Link>
+                                    )}
+                                </header>
+                            )}
                             {user.role === 'admin' && (
                                 <>
                                     {adminDataLoading && (
@@ -8011,6 +8087,7 @@ const MyAccount = () => {
                                             vatCreditCarryforwardDisplayRate={vatCreditCarryforwardDisplayRate}
                                             vatLoading={vatLoading}
                                             vatSaving={vatSaving}
+                                            vatConfigurationReady={vatRegistryRevision !== null}
                                             setVatRate={setVatRate}
                                             setVatCreditCurrentRate={setVatCreditCurrentRate}
                                             setVatCreditCarryforwardRate={setVatCreditCarryforwardRate}
@@ -8519,14 +8596,10 @@ const MyAccount = () => {
                                             totalUserOrders={totalUserOrders}
                                             userOrdersLoading={userOrdersLoading}
                                             recentUserOrders={recentUserOrders}
-                                            onOpenOrder={(order) => {
-                                                setSelectedOrder(order)
-                                                setIsOrderModalOpen(true)
-                                            }}
+                                            onOpenOrder={(order) => handleViewOrder(order.id)}
+                                            onViewAllOrders={() => navigateToPanelTab('orders')}
                                             getStatusBadge={getStatusBadge}
                                             formatDateTime={formatDateTimeEcuador}
-                                            normalizeOrderItemImage={normalizeOrderItemImage}
-                                            isDynamicOrderItemImage={isDynamicOrderItemImage}
                                         />
                                     )}
                                     {activeTab === 'orders' && (
@@ -8535,12 +8608,8 @@ const MyAccount = () => {
                                             orders={filteredUserOrders}
                                             loading={userOrdersLoading}
                                             onFilterChange={handleActiveOrders}
-                                            onOpenOrder={(order) => {
-                                                setSelectedOrder(order)
-                                                setIsOrderModalOpen(true)
-                                            }}
+                                            onOpenOrder={(order) => handleViewOrder(order.id)}
                                             getStatusBadge={getStatusBadge}
-                                            getItemNetPrice={getItemNetPrice}
                                             formatDateTime={formatDateTimeEcuador}
                                         />
                                     )}
@@ -8592,6 +8661,7 @@ const MyAccount = () => {
                     productEditorMode={productEditorMode}
                     productEditorInitialForm={productEditorInitialForm}
                     vatMultiplier={vatMultiplier}
+                    taxConfigurationReady={vatRegistryRevision !== null}
                     normalizedMargins={normalizedMarginSettings}
                     normalizedCalc={normalizedCalcSettings}
                     productReferenceData={productReferenceData}

@@ -2,6 +2,7 @@ import { ProductType } from '@/type/ProductType'
 import { normalizeMeasurementLabel, normalizeMeasurementLabels } from '@/lib/measurementLabel'
 import { getCanonicalProductGroupId } from '@/lib/productGroupIdentity'
 import { normalizeProductCategory, normalizeProductType, resolveAudienceGenderFromSpecies } from '@/lib/productTaxonomy'
+import { isObjectStorageUploadUrl } from '@/lib/publicUploads'
 
 // Tipamos lo mínimo necesario
 type Variation = {
@@ -166,6 +167,7 @@ const normalizeImageUrl = (url: string) => {
     path.replace(/\.(jpe?g)(?=($|[?#]))/i, '.webp')
 
   if (url.startsWith('/')) return normalizeLocalAssetPath(url)
+  if (isObjectStorageUploadUrl(url)) return url
   try {
     const parsed = new URL(url)
     const path = parsed.pathname

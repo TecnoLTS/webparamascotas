@@ -5,7 +5,7 @@ import { notFound, permanentRedirect } from 'next/navigation'
 import MenuOne from '@/components/Header/Menu/MenuPet'
 import Default from '@/components/Product/Detail/Default'
 import Footer from '@/components/Footer/Footer'
-import { loadProducts } from '@/lib/products.server'
+import { loadProductFamily } from '@/lib/products.server'
 import { buildCatalogCategoryCards, getProductDetailRouteId, getProductVariants } from '@/lib/catalog'
 import {
   findCatalogProductForSeoSlug,
@@ -47,7 +47,7 @@ export async function generateMetadata(
   parent: ResolvingMetadata,
 ): Promise<Metadata> {
   const { slug } = await params
-  const { products } = await loadProducts({ fresh: true })
+  const { products } = await loadProductFamily(slug)
   const product = findCatalogProductForSeoSlug(products, slug)
 
   if (!product) {
@@ -92,7 +92,7 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
   const resolvedSearchParams = searchParams ? await searchParams : {}
   const requestedVariant = getVariantParam(resolvedSearchParams.variant)
   const [productsResult, categoriesResult] = await Promise.allSettled([
-    loadProducts({ fresh: true }),
+    loadProductFamily(slug),
     getPublicProductCategories(),
   ])
   const { products: productsWithSettings } = productsResult.status === 'fulfilled'
@@ -121,7 +121,7 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
   const productId = selectedVariant
     ? getProductDetailRouteId(selectedVariant)
     : getProductDetailRouteId(currentProduct)
-  const availableCategoryIds = buildCatalogCategoryCards(productsWithSettings, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const footerCategoryIds = availableCategoryIds
   const reviewProduct = selectedVariant ?? currentProduct
   const reviewData = await getProductReviews(reviewProduct.internalId || reviewProduct.id || reviewProduct.slug)
@@ -155,7 +155,7 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
         }}
       />
       <div id="header" className="relative w-full">
-        <MenuOne props="bg-white" searchProducts={productsWithSettings} availableCategoryIds={availableCategoryIds} />
+        <MenuOne props="bg-white" availableCategoryIds={availableCategoryIds} />
       </div>
       <Default data={productsWithSettings} productId={productId} reviews={reviewData.reviews} reviewSummary={reviewData.summary} />
       <Footer categoryIds={footerCategoryIds} />

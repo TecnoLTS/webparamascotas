@@ -1,43 +1,36 @@
 import {
-  listProducts,
+  listProductPage,
+  listAllProducts,
   getProduct,
   createProduct as createProductRequest,
   updateProduct as updateProductRequest,
   deleteProduct as deleteProductRequest,
 } from './api/products'
 import { groupCatalogProducts } from './catalog'
-import type { ProductType } from '@/type/ProductType'
 
 const isBuild = process.env.NEXT_PHASE === 'phase-production-build'
 
-const invalidateGroupedProductsCache = () => {
+export const fetchProductPage = async (options: Parameters<typeof listProductPage>[0] = {}) => {
+  if (isBuild && !process.env.DATABASE_URL) return []
+  const page = await listProductPage(options)
+  return groupCatalogProducts(page.products)
 }
 
-export const fetchProducts = async (options?: { fresh?: boolean }) => {
-  // Evita romper el build cuando no hay base de datos disponible en la etapa de compilación.
+// Explicit full traversal for documents/jobs that genuinely require every
+// public item. Interactive views should consume listProductPage instead.
+export const fetchAllProducts = async (options?: { fresh?: boolean }) => {
   if (isBuild && !process.env.DATABASE_URL) return []
-  try {
-    const products = await listProducts({ cache: 'no-store' })
-    return groupCatalogProducts(products)
-  } catch (err) {
-    if (isBuild) return []
-    throw err
-  }
+  const products = await listAllProducts(options?.fresh ? { cache: 'no-store' } : undefined)
+  return groupCatalogProducts(products)
 }
 
 export const createProduct = (...args: Parameters<typeof createProductRequest>) =>
-  createProductRequest(...args).finally(() => {
-    invalidateGroupedProductsCache()
-  })
+  createProductRequest(...args)
 
 export const updateProduct = (...args: Parameters<typeof updateProductRequest>) =>
-  updateProductRequest(...args).finally(() => {
-    invalidateGroupedProductsCache()
-  })
+  updateProductRequest(...args)
 
 export const deleteProduct = (...args: Parameters<typeof deleteProductRequest>) =>
-  deleteProductRequest(...args).finally(() => {
-    invalidateGroupedProductsCache()
-  })
+  deleteProductRequest(...args)
 
-export { listProducts, getProduct }
+export { listProductPage, listAllProducts, getProduct }

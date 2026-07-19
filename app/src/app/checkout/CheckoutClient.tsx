@@ -306,6 +306,8 @@ const Checkout = () => {
         shipping: number
         total: number
         vat_rate?: number
+        vat_subtotal_before_discount?: number
+        vat_amount_before_discount?: number
         vat_subtotal?: number
         vat_amount?: number
         discount_total?: number
@@ -591,11 +593,11 @@ const Checkout = () => {
     }, [orderNotes, couponDraft, tempAddress.state, tempAddress.city, tempAddress.zip, tempAddress.country, tempAddress.street, tempAddress.latitude, tempAddress.longitude, tempAddress.formattedAddress, tempAddress.placeId])
 
     const refreshAvailableProducts = useCallback(async () => {
-        const snapshot = await fetchLiveCatalogSnapshot()
+        const snapshot = await fetchLiveCatalogSnapshot(cartState.cartArray)
         const availabilityMap = buildLiveAvailabilityMap(snapshot.rawProducts)
         setAvailableProductsMap(availabilityMap)
         return availabilityMap
-    }, [])
+    }, [cartState.cartArray])
 
     useEffect(() => {
         let mounted = true
@@ -1159,12 +1161,14 @@ const Checkout = () => {
     const vatRateValue = Number(quote?.vat_rate ?? 0)
     const vatNetSubtotal = Number(quote?.vat_subtotal ?? 0)
     const vatAmount = Number(quote?.vat_amount ?? 0)
+    const vatNetSubtotalBeforeDiscount = Number(quote?.vat_subtotal_before_discount ?? vatNetSubtotal)
+    const vatAmountBeforeDiscount = Number(quote?.vat_amount_before_discount ?? vatAmount)
     const discountTotal = Number(quote?.discount_total ?? 0)
     const shippingDistanceKm = Number(quote?.distance_km ?? tempAddress.distanceKm ?? 0)
     const isFreeShipping = Boolean(quote?.is_free_shipping ?? tempAddress.isFreeShipping)
     const shippingRule = String(quote?.shipping_rule ?? tempAddress.shippingRule ?? '')
     const checkoutStoreAddress = String(quote?.store_address ?? shippingRates.storeAddress ?? '').trim()
-    const productsTotal = Math.max(0, vatNetSubtotal + vatAmount - discountTotal)
+    const productsTotal = Math.max(0, Number(quote?.subtotal ?? (vatNetSubtotal + vatAmount)))
     const couponRejection = quote?.discount_rejections?.[0] || null
     const couponAppliedLabel = String(
         quote?.discount_code
@@ -2280,14 +2284,12 @@ const Checkout = () => {
                                     </div>
                                     <div className="grid grid-cols-[1fr_auto] items-center gap-4 text-sm">
                                         <span className="text-[#6b7280]">Subtotal sin IVA</span>
-                                        <span className="text-[#111827] text-right tabular-nums">${vatNetSubtotal.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                        <span className="text-[#111827] text-right tabular-nums">${vatNetSubtotalBeforeDiscount.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                     </div>
-                                    {vatAmount > 0 && (
-                                        <div className="grid grid-cols-[1fr_auto] items-center gap-4 text-sm">
-                                            <span className="text-[#6b7280]">{vatLabel}</span>
-                                            <span className="text-[#111827] text-right tabular-nums">${vatAmount.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                        </div>
-                                    )}
+                                    <div className="grid grid-cols-[1fr_auto] items-center gap-4 text-sm">
+                                        <span className="text-[#6b7280]">{vatLabel}</span>
+                                        <span className="text-[#111827] text-right tabular-nums">${vatAmountBeforeDiscount.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    </div>
                                     {discountTotal > 0 && (
                                         <div className="grid grid-cols-[1fr_auto] items-center gap-4 text-sm">
                                             <span className="text-[#6b7280]">Descuento</span>
@@ -2295,7 +2297,7 @@ const Checkout = () => {
                                         </div>
                                     )}
                                     <div className="grid grid-cols-[1fr_auto] items-center gap-4 border-t border-[#eef2f7] pt-2 mt-2">
-                                        <span className="text-sm font-medium text-[#111827]">Total productos + IVA</span>
+                                        <span className="text-sm font-medium text-[#111827]">Total productos</span>
                                         <span className="text-base font-semibold text-[#111827] text-right tabular-nums">
                                             ${productsTotal.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>

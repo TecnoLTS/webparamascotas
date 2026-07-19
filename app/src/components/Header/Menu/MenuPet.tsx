@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import Image from '@/components/Common/AppImage'
 import Link from 'next/link'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
@@ -20,7 +20,6 @@ import {
     X,
 } from "@phosphor-icons/react/dist/ssr";
 import useLoginPopup from '@/store/useLoginPopup';
-import useShopDepartmentPopup from '@/store/useShopDepartmentPopup';
 import useMenuMobile from '@/store/useMenuMobile';
 import { useModalCartContext } from '@/context/ModalCartContext';
 import { useCart } from '@/context/CartContext';
@@ -32,6 +31,8 @@ import { ProductType } from '@/type/ProductType'
 import { clearStoredSession, getStoredSessionUser } from '@/lib/authSession'
 import { requestApi } from '@/lib/apiClient'
 import { apiEndpoints } from '@/lib/api/endpoints'
+import { listProductPage } from '@/lib/api/products'
+import { groupCatalogProducts } from '@/lib/catalog'
 
 type MenuPetProps = {
     props?: string;
@@ -55,22 +56,27 @@ const Icon = {
     X,
 } as const
 
-const DASHBOARD_PATH = '/dashboard/'
-const DASHBOARD_SIGN_IN_PATH = '/dashboard/sign-in'
+const STOREFRONT_LOGIN_PATH = '/login'
+const STOREFRONT_ACCOUNT_PATH = '/my-account'
+// Keep a storefront-specific query so browsers that cached the former permanent
+// redirect for the bare path do not reuse it after Dashboard became same-site.
+const DASHBOARD_SIGN_IN_PATH = '/dashboard/sign-in?entry=storefront'
 
 const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], availableCategoryIds }) => {
     const site = useSite()
     const pathname = usePathname()
     const searchParams = useSearchParams()
     const { openLoginPopup, handleLoginPopup } = useLoginPopup()
-    const { openShopDepartmentPopup, handleShopDepartmentPopup } = useShopDepartmentPopup()
     const { openMenuMobile, handleMenuMobile, closeMenuMobile } = useMenuMobile()
     const [openSubNavMobile, setOpenSubNavMobile] = useState<number | null>(null)
+    const [isMegaMenuReady, setIsMegaMenuReady] = useState(false)
     const { openModalCart } = useModalCartContext()
     const { cartState } = useCart()
 
     const [searchKeyword, setSearchKeyword] = useState('');
     const [isSearchFocused, setIsSearchFocused] = useState(false)
+    const [onDemandSearchProducts, setOnDemandSearchProducts] = useState<ProductType[]>(searchProducts)
+    const [isSearchCatalogLoading, setIsSearchCatalogLoading] = useState(false)
     const [accountDisplayName, setAccountDisplayName] = useState('Mi cuenta')
     const [isAuthenticated, setIsAuthenticated] = useState(false)
     const router = useRouter()
@@ -107,6 +113,21 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
         router.push(`/search-result?query=${encodeURIComponent(trimmedValue)}`)
         setSearchKeyword('')
     }
+
+    const loadSearchCatalog = useCallback(() => {
+        if (onDemandSearchProducts.length > 0 || isSearchCatalogLoading) return
+        setIsSearchCatalogLoading(true)
+        void listProductPage({ pageSize: 48 })
+            .then((page) => setOnDemandSearchProducts(groupCatalogProducts(page.products)))
+            .catch(() => undefined)
+            .finally(() => setIsSearchCatalogLoading(false))
+    }, [isSearchCatalogLoading, onDemandSearchProducts.length])
+
+    useEffect(() => {
+        if (searchProducts.length > 0) {
+            setOnDemandSearchProducts(searchProducts)
+        }
+    }, [searchProducts])
 
     const handleOpenSubNavMobile = (index: number) => {
         setOpenSubNavMobile(openSubNavMobile === index ? null : index)
@@ -189,6 +210,8 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
     }, [pathname, searchParamsKey, closeMenuMobile])
 
     useEffect(() => {
+        if (!isSearchFocused) return
+
         const handleClickOutside = (event: MouseEvent) => {
             if (!searchContainerRef.current?.contains(event.target as Node)) {
                 setIsSearchFocused(false)
@@ -200,7 +223,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
         return () => {
             document.removeEventListener('mousedown', handleClickOutside)
         }
-    }, [])
+    }, [isSearchFocused])
 
     const handleGenderClick = (gender: string) => {
         router.push(gender === 'cat' ? '/tienda/gatos' : '/tienda/perros');
@@ -437,27 +460,6 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
 
     const categoryBanner = site.menu.banner
 
-    const departmentLinks = useMemo(() => {
-        if (!availableCategoryIds || availableCategoryIds.length === 0) {
-            return site.menu.departmentLinks ?? []
-        }
-
-        const seen = new Set<string>()
-        return availableCategoryIds
-            .map((categoryId) => String(categoryId).trim())
-            .filter(Boolean)
-            .filter((categoryId) => !['perros', 'gatos'].includes(categoryId.toLowerCase()))
-            .filter((categoryId) => {
-                const normalized = categoryId.toLowerCase()
-                if (seen.has(normalized)) return false
-                seen.add(normalized)
-                return true
-            })
-            .map((categoryId) => ({
-                label: getCategoryLabel(categoryId),
-                href: getCategoryUrl(categoryId),
-            }))
-    }, [availableCategoryIds, site.menu.departmentLinks])
     const HomeMenuIcon = mainMenuItems[0].icon
     const ShopMenuIcon = mainMenuItems[1].icon
     const AboutMenuIcon = mainMenuItems[2].icon
@@ -469,21 +471,21 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
     const shouldShowSearchPanel =
         isSearchFocused &&
         normalizedSearchKeyword.length >= minAutocompleteQueryLength &&
-        searchProducts.length > 0
+        onDemandSearchProducts.length > 0
     const productSearchIndex = useMemo(() => {
         if (!shouldShowSearchPanel) {
             return new Map<string, string>()
         }
 
-        return buildProductSearchIndex(searchProducts)
-    }, [searchProducts, shouldShowSearchPanel])
+        return buildProductSearchIndex(onDemandSearchProducts)
+    }, [onDemandSearchProducts, shouldShowSearchPanel])
     const searchSuggestions = useMemo(() => {
         if (!shouldShowSearchPanel) {
             return []
         }
 
-        return filterProductsBySearch(searchProducts, normalizedSearchKeyword, productSearchIndex).slice(0, 6)
-    }, [normalizedSearchKeyword, productSearchIndex, searchProducts, shouldShowSearchPanel])
+        return filterProductsBySearch(onDemandSearchProducts, normalizedSearchKeyword, productSearchIndex).slice(0, 6)
+    }, [normalizedSearchKeyword, onDemandSearchProducts, productSearchIndex, shouldShowSearchPanel])
 
     const normalizeImageSrc = (src: string) => {
         if (!src) return src
@@ -515,7 +517,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
             handleLoginPopup()
         }
 
-        router.replace(DASHBOARD_SIGN_IN_PATH)
+        router.replace(STOREFRONT_LOGIN_PATH)
         router.refresh()
     }
 
@@ -561,9 +563,8 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                         suppressHydrationWarning
                                         value={searchKeyword}
                                         onFocus={() => {
-                                            if (searchProducts.length > 0) {
-                                                setIsSearchFocused(true)
-                                            }
+                                            setIsSearchFocused(true)
+                                            loadSearchCatalog()
                                         }}
                                         onChange={(e) => setSearchKeyword(e.target.value)}
                                         onKeyDown={(e) => {
@@ -668,13 +669,13 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                 <div className="user-icon relative flex items-center flex-col justify-center cursor-pointer">
                                     <Icon.User size={26} color='black' onClick={handleLoginPopup} />
                                     <div className="caption1" onClick={handleLoginPopup}>{visibleAccountDisplayName}</div>
-                                    <div
-                                        className={`login-popup absolute top-[74px] w-[320px] p-7 rounded-xl bg-white box-shadow-sm 
-                                            ${openLoginPopup ? 'open' : ''}`}
+                                    {openLoginPopup ? <div
+                                        className="login-popup open absolute top-[74px] w-[320px] p-7 rounded-xl bg-white box-shadow-sm"
                                     >
                                         {showAuthenticatedMenu ? (
                                             <>
-                                                <Link href={DASHBOARD_PATH} prefetch={false} className="button-main w-full text-center">Panel</Link>
+                                                <Link href={STOREFRONT_ACCOUNT_PATH} className="button-main w-full text-center">Mi cuenta</Link>
+                                                <Link href={DASHBOARD_SIGN_IN_PATH} prefetch={false} className="button-main mt-3 bg-white text-black border border-black w-full text-center">Panel administrativo</Link>
                                                 <button
                                                     type="button"
                                                     onClick={handleLogout}
@@ -687,16 +688,16 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                             </>
                                         ) : (
                                             <>
-                                                <Link href={DASHBOARD_SIGN_IN_PATH} prefetch={false} className="button-main w-full text-center">Iniciar sesión</Link>
+                                                <Link href={STOREFRONT_LOGIN_PATH} className="button-main w-full text-center">Iniciar sesión</Link>
                                                 <div className="text-secondary text-center mt-3 pb-4">¿No tienes una cuenta?
                                                     <Link href={'/register'} className='text-black pl-1 hover:underline'>Regístrate</Link>
                                                 </div>
-                                                <Link href={DASHBOARD_PATH} prefetch={false} className="button-main bg-white text-black border border-black w-full text-center">Panel</Link>
+                                                <Link href={DASHBOARD_SIGN_IN_PATH} prefetch={false} className="button-main bg-white text-black border border-black w-full text-center">Panel administrativo</Link>
                                                 <div className="bottom mt-4 pt-4 border-t border-line"></div>
                                                 <Link href={'/pages/contact'} className='body1 hover:underline'>Soporte</Link>
                                             </>
                                         )}
-                                    </div>
+                                    </div> : null}
                                 </div>
                                 <div className="cart-icon flex flex-col items-center relative cursor-pointer" onClick={openModalCart}>
                                     <Icon.ShoppingCartSimple size={26} color='black' />
@@ -719,27 +720,6 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                 <div className="container h-full">
                     <div className="top-nav-menu-main flex items-center justify-center h-full">
                         <div className="left flex items-center justify-center h-full w-full">
-                            <div className="menu-department-block relative h-full">
-
-                                <div
-                                    className={`sub-menu-department absolute top-[44px] left-0 right-0 h-max bg-white rounded-b-2xl ${openShopDepartmentPopup ? 'open' : ''}`}
-                                >
-                                    {departmentLinks.map((link, index) => (
-                                        <div className="item block" key={`${link.href}-${index}`}>
-                                            <Link
-                                                href={link.href}
-                                                className={`caption1 py-4 px-5 whitespace-nowrap block ${index < departmentLinks.length - 1 ? 'border-b border-line' : ''}`}
-                                                onClick={() => {
-                                                    closeMenuMobile()
-                                                    setOpenSubNavMobile(null)
-                                                }}
-                                            >
-                                                {link.label}
-                                            </Link>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
                             <div className="menu-main style-eight h-full max-lg:hidden">
                                 <ul className='flex items-center gap-8 h-full'>
                                     <li className='h-full'>
@@ -750,14 +730,18 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                                             {mainMenuItems[0].label}
                                         </Link>
                                     </li>
-                                    <li className='h-full'>
+                                    <li
+                                        className='h-full'
+                                        onMouseEnter={() => setIsMegaMenuReady(true)}
+                                        onFocusCapture={() => setIsMegaMenuReady(true)}
+                                    >
                                         <Link href={mainMenuItems[1].href} className={`text-button-uppercase duration-300 h-full flex items-center justify-center gap-1 ${mainMenuItems[1].isActive ? 'active' : ''}`}>
                                             {mainMenuItems[1].label}
                                         </Link>
-                                        {renderMegaMenu(
+                                        {isMegaMenuReady ? renderMegaMenu(
                                             visibleCategorySections,
                                             categoryBanner
-                                        )}
+                                        ) : null}
                                     </li>
                                     <li className='h-full '>
                                         <Link
@@ -785,9 +769,9 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                 </div>
             </div>
 
-            <div
+            {openMenuMobile ? <div
                 id="menu-mobile"
-                className={`${openMenuMobile ? 'open' : ''}`}
+                className="open"
                 onClick={handleMenuMobile}
             >
                 <div
@@ -931,7 +915,7 @@ const MenuPet: React.FC<MenuPetProps> = ({ props, searchProducts = [], available
                         </div>
                     </div>
                 </div>
-            </div>
+            </div> : null}
         </>
     )
 }

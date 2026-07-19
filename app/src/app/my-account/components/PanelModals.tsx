@@ -36,6 +36,7 @@ type PanelModalsProps = {
     productEditorMode: ProductEditorMode
     productEditorInitialForm: ProductFormState
     vatMultiplier: number
+    taxConfigurationReady: boolean
     normalizedMargins: PricingMargins
     normalizedCalc: PricingCalc
     productReferenceData: ProductReferenceData
@@ -89,6 +90,7 @@ export default function PanelModals({
     productEditorMode,
     productEditorInitialForm,
     vatMultiplier,
+    taxConfigurationReady,
     normalizedMargins,
     normalizedCalc,
     productReferenceData,
@@ -144,6 +146,7 @@ export default function PanelModals({
                     editorMode={productEditorMode}
                     initialForm={productEditorInitialForm}
                     vatMultiplier={vatMultiplier}
+                    taxConfigurationReady={taxConfigurationReady}
                     normalizedMargins={normalizedMargins}
                     normalizedCalc={normalizedCalc}
                     referenceData={productReferenceData}

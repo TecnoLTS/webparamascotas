@@ -1,7 +1,8 @@
 import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import CatalogSeoPage from '../CatalogSeoPage'
-import { fetchProducts } from '@/lib/products'
+import { listProductPage } from '@/lib/api/products'
+import { groupCatalogProducts } from '@/lib/catalog'
 import {
   buildDynamicCatalogPageFromProducts,
   getDirectCatalogPageBySlug,
@@ -31,12 +32,14 @@ const resolveCatalogPage = async (slug: string): Promise<SeoCatalogPage | null> 
   if (directStaticPage) return directStaticPage
 
   try {
-    const [productsResult, categoriesResult] = await Promise.allSettled([
-      fetchProducts({ fresh: true }),
-      getPublicProductCategories(),
-    ])
-    const products = productsResult.status === 'fulfilled' ? productsResult.value : []
-    const publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
+    const publicCategories = await getPublicProductCategories().catch(() => [])
+    const referencePage = buildDynamicCatalogPageFromProducts(slug, [], publicCategories)
+    if (referencePage) return referencePage
+
+    const gender = slug.endsWith('-perros') ? 'dog' : slug.endsWith('-gatos') ? 'cat' : undefined
+    const category = slug.replace(/-(perros|gatos)$/, '')
+    const samplePage = await listProductPage({ pageSize: 24, category, gender })
+    const products = groupCatalogProducts(samplePage.products)
     return buildDynamicCatalogPageFromProducts(slug, products, publicCategories) ?? getCatalogPageBySlug(slug)
   } catch (error) {
     console.error('No se pudo resolver categoria SEO dinamica:', error)

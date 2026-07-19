@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { headers } from 'next/headers'
 import '@/styles/styles.scss'
 import '@/styles/tailwind.css'
 import GlobalProvider from './GlobalProvider'
@@ -8,14 +7,15 @@ import CountdownTimeType from '@/type/CountdownType'
 import { countdownTime } from '@/store/countdownTime'
 import { getSiteConfig } from '@/lib/site'
 import { versionLocalImagePath } from '@/lib/staticAsset'
-import { generatePetStoreJsonLd, generateWebSiteJsonLd } from '@/lib/seo'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
 
 const serverTimeLeft: CountdownTimeType = countdownTime();
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
-export const fetchCache = 'force-no-store'
+// CSP usa un nonce distinto por respuesta, por lo que el shell debe seguir
+// siendo dinamico. No fuerces `no-store` en toda la jerarquia: los clientes
+// server-side aplican cache solo a GET publicos allowlisted y mantienen auth y
+// mutaciones en `no-store`.
 
 export async function generateMetadata(): Promise<Metadata> {
   const site = getSiteConfig()
@@ -69,14 +69,11 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const requestHeaders = await headers()
-  const nonce = requestHeaders.get('x-nonce') || undefined
-  const site = getSiteConfig()
   return (
     <html lang="es" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head />
@@ -86,22 +83,6 @@ export default async function RootLayout({
             {children}
           </div>
           <ClientModals serverTimeLeft={serverTimeLeft} />
-          <script
-            nonce={nonce}
-            suppressHydrationWarning
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{
-              __html: JSON.stringify(generatePetStoreJsonLd(site))
-            }}
-          />
-          <script
-            nonce={nonce}
-            suppressHydrationWarning
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{
-              __html: JSON.stringify(generateWebSiteJsonLd(site))
-            }}
-          />
         </GlobalProvider>
       </body>
     </html>

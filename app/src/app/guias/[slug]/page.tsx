@@ -5,11 +5,9 @@ import { notFound } from 'next/navigation'
 import MenuPet from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
 import { SEO_GUIDE_BY_SLUG, SEO_GUIDES } from '@/data/seoGuides'
-import { fetchProducts } from '@/lib/products'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { generateBreadcrumbJsonLd } from '@/lib/seo'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
-import type { ProductType } from '@/type/ProductType'
 import { getPublicProductCategories } from '@/lib/api/settings'
 
 type Params = {
@@ -62,21 +60,14 @@ export default async function SeoGuidePage({ params }: Props) {
     notFound()
   }
 
-  let products: ProductType[] = []
   let publicCategories: string[] = []
-  try {
-    const [productsResult, categoriesResult] = await Promise.allSettled([
-      fetchProducts({ fresh: true }),
-      getPublicProductCategories(),
-    ])
-    products = productsResult.status === 'fulfilled' ? productsResult.value : []
-    publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
-  } catch (error) {
-    console.error('No se pudieron cargar productos para guia SEO:', error)
-  }
+  publicCategories = await getPublicProductCategories().catch((error) => {
+    console.error('No se pudieron cargar categorías para guía SEO:', error)
+    return []
+  })
 
   const baseUrl = getCanonicalSiteUrl()
-  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const footerCategoryIds = availableCategoryIds
   const breadcrumbJsonLd = generateBreadcrumbJsonLd([
     { name: 'Inicio', url: baseUrl },
@@ -112,7 +103,7 @@ export default async function SeoGuidePage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }}
       />
       <header id="header" className="relative w-full style-pet">
-        <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
+        <MenuPet props="bg-transparent" availableCategoryIds={availableCategoryIds} />
       </header>
       <main className="bg-white">
         <article className="container py-12">

@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next'
-import { fetchProducts } from '@/lib/products'
+import { fetchAllProducts } from '@/lib/products'
 import {
   getProductSeoPath,
   getBrandSeoPath,
@@ -93,7 +93,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   try {
     const [productsResult, categoriesResult] = await Promise.allSettled([
-      fetchProducts({ fresh: true }),
+      fetchAllProducts(),
       getPublicProductCategories(),
     ])
     const products = (productsResult.status === 'fulfilled' ? productsResult.value : []).filter(isIndexableProduct)

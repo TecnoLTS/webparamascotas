@@ -4,12 +4,9 @@ import type { Metadata } from 'next'
 import MenuPet from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
 import { SEO_SERVICE_PAGES } from '@/data/seoServices'
-import { fetchProducts } from '@/lib/products'
-import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { toCanonicalUrl } from '@/lib/publicUrl'
 import { getPublicProductCategories } from '@/lib/api/settings'
-import type { ProductType } from '@/type/ProductType'
 
 export const dynamic = 'force-dynamic'
 
@@ -24,19 +21,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function ServiciosPage() {
-  let products: ProductType[] = []
   let publicCategories: string[] = []
 
-  const [productsResult, categoriesResult] = await Promise.allSettled([
-    fetchProducts({ fresh: true }),
-    getPublicProductCategories(),
-  ])
-
-  if (productsResult.status === 'fulfilled') {
-    products = orderProductsFoodFirst(productsResult.value)
-  } else {
-    console.error('No se pudieron cargar productos para pagina de servicios:', productsResult.reason)
-  }
+  const categoriesResult = await getPublicProductCategories()
+    .then((value) => ({ status: 'fulfilled' as const, value }))
+    .catch((reason) => ({ status: 'rejected' as const, reason }))
 
   if (categoriesResult.status === 'fulfilled') {
     publicCategories = categoriesResult.value
@@ -44,13 +33,13 @@ export default async function ServiciosPage() {
     console.error('No se pudieron cargar categorias publicas para pagina de servicios:', categoriesResult.reason)
   }
 
-  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const footerCategoryIds = availableCategoryIds
 
   return (
     <>
       <header id="header" className="relative w-full style-pet">
-        <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
+        <MenuPet props="bg-transparent" availableCategoryIds={availableCategoryIds} />
       </header>
       <main>
         <section className="bg-surface py-12">

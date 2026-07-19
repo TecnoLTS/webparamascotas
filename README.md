@@ -2,6 +2,8 @@
 
 Sitio ecommerce en Next.js.
 
+Manual integral del ecosistema: [`docs/MANUAL-TECNICO-PLATAFORMA.md`](docs/MANUAL-TECNICO-PLATAFORMA.md).
+
 ## Hot local
 
 Para cambios en caliente de UI:
@@ -47,7 +49,7 @@ Eso compila y sirve un runtime estable con `APP_ENV=qa`.
 - El archivo real es `entorno/.env`.
 - La plantilla versionada vive en `templates/entorno/.env.example`.
 - `BACKEND_URL_INTERNAL=http://backend-http:8080/api` es el upstream interno canonico.
-- `INTERNAL_PROXY_TOKEN` debe coincidir con backend/gateway cuando comparten proxy interno.
+- `STOREFRONT_BACKEND_PROXY_TOKEN` debe coincidir solamente con backend; APISIX usa una credencial distinta.
 - El contenedor no debe exponerse directamente a Internet; el acceso publico correcto entra por `apisix-gateway`.
 
 ## Migracion y orden recomendado
@@ -55,7 +57,7 @@ Eso compila y sirve un runtime estable con `APP_ENV=qa`.
 En un host nuevo, el orden del workspace es:
 
 ```text
-DB -> Backend -> Frontend -> gatewayapisix
+DB -> Backend -> Frontend -> Dashboard -> gatewayapisix
 ```
 
 Despliegue completo:

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { fetchProducts } from '@/lib/products'
+import { fetchAllProducts } from '@/lib/products'
 import { getPublicProductCategoryReferences } from '@/lib/api/settings'
 import { getCatalogPagePath, getProductSeoPath } from '@/lib/seoUrls'
 import { getCanonicalSiteUrl } from '@/lib/publicUrl'
@@ -107,7 +107,7 @@ const logRejectedResult = (label: string, result: PromiseSettledResult<unknown>)
 export async function GET() {
   const baseUrl = getCanonicalSiteUrl()
   const [productsResult, categoryReferencesResult] = await Promise.allSettled([
-    fetchProducts({ fresh: true }),
+    fetchAllProducts(),
     getPublicProductCategoryReferences(),
   ])
 

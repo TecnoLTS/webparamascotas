@@ -105,42 +105,65 @@ export default function AccountSidebar({
 }: AccountSidebarProps) {
     const [mobileNavOpen, setMobileNavOpen] = useState(false)
     const isAdmin = user.role === 'admin'
+    const customerInitials = String(user.name || user.email || 'Cliente')
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part.charAt(0).toUpperCase())
+        .join('') || 'C'
+    const customerNavClass = (isActive: boolean) =>
+        `customer-nav-item item group flex w-full items-center gap-3 px-3 py-2.5 text-left ${isActive ? 'customer-nav-item--active' : ''}`
+    const navigateCustomer = (tab: string) => {
+        onNavigateToPanelTab(tab)
+        setMobileNavOpen(false)
+    }
 
     return (
-        <div className="user-infor bg-surface lg:px-7 px-4 lg:py-10 py-5 md:rounded-[20px] rounded-xl">
+        <div className={`user-infor ${isAdmin ? 'bg-surface lg:px-7 px-4 lg:py-10 py-5 md:rounded-[20px] rounded-xl' : 'customer-account-nav p-4'}`}>
             <div className="heading flex flex-col items-center justify-center">
-                <div className="avatar">
-                    <Image
-                        src={'/images/avatar/1.png'}
-                        width={300}
-                        height={300}
-                        alt='Foto de perfil'
-                        priority
-                        loading="eager"
-                        className='md:w-[140px] w-[120px] md:h-[140px] h-[120px] rounded-full'
-                    />
+                {isAdmin ? (
+                    <div className="avatar">
+                        <Image
+                            src={'/images/avatar/1.png'}
+                            width={300}
+                            height={300}
+                            alt='Foto de perfil'
+                            priority
+                            loading="eager"
+                            className='md:w-[140px] w-[120px] md:h-[140px] h-[120px] rounded-full'
+                        />
+                    </div>
+                ) : (
+                    <div className="customer-initials flex h-12 w-12 shrink-0 items-center justify-center rounded-md text-base font-bold tracking-wide" aria-hidden="true">
+                        {customerInitials}
+                    </div>
+                )}
+                <div className={`${isAdmin ? 'name heading6 mt-4 text-center' : 'customer-profile-copy min-w-0 text-center'}`}>
+                    {!isAdmin && <span className="customer-eyebrow mb-0.5 block text-[11px] font-bold uppercase tracking-[0.12em]">Cuenta cliente</span>}
+                    <div className={isAdmin ? '' : 'customer-profile-name truncate text-sm font-bold'}>{user.name || 'Cliente'}</div>
+                    {!isAdmin && <div className="customer-muted mt-0.5 truncate text-xs font-normal normal-case" title={user.email}>{user.email}</div>}
                 </div>
-                <div className="name heading6 mt-4 text-center">{user.name}</div>
-                <div className="mail heading6 font-normal normal-case text-secondary text-center mt-1 break-all">{user.email}</div>
+                {isAdmin && <div className="mail heading6 font-normal normal-case text-secondary text-center mt-1 break-all">{user.email}</div>}
             </div>
-            {isAdmin && (
-                <button
-                    type="button"
-                    className="mt-4 flex w-full items-center justify-between rounded-xl border border-line bg-white px-4 py-3 text-left text-sm font-bold text-black lg:hidden"
-                    onClick={() => setMobileNavOpen((open) => !open)}
-                    aria-expanded={mobileNavOpen}
-                >
-                    <span className="flex items-center gap-2">
-                        <ListChecks size={18} />
-                        Menú del panel
-                    </span>
-                    <CaretDown size={16} className={`duration-300 ${mobileNavOpen ? 'rotate-180' : ''}`} />
-                </button>
-            )}
-            <div className={`menu-tab w-full max-w-none lg:mt-10 mt-4 ${isAdmin && !mobileNavOpen ? 'hidden lg:block' : ''}`}>
+            <button
+                type="button"
+                className={`mt-3 flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm font-bold lg:hidden ${isAdmin ? 'min-h-[48px] border border-line bg-white text-black' : 'customer-account-menu-toggle'}`}
+                onClick={() => setMobileNavOpen((open) => !open)}
+                aria-expanded={mobileNavOpen}
+                aria-controls="account-navigation"
+            >
+                <span className="flex items-center gap-2">
+                    <ListChecks size={18} />
+                    {isAdmin ? 'Menú del panel' : 'Menú de mi cuenta'}
+                </span>
+                <CaretDown size={16} className={`duration-300 ${mobileNavOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <div
+                id="account-navigation"
+                className={`menu-tab w-full max-w-none lg:mt-10 mt-4 ${!mobileNavOpen ? 'hidden lg:block' : ''}`}
+            >
                 {isAdmin ? (
                     <div className="space-y-3">
-
                         <div className="rounded-xl border border-line overflow-hidden bg-white">
                             <button
                                 type="button"
@@ -390,28 +413,28 @@ export default function AccountSidebar({
                         </div>
                     </div>
                 ) : (
-                    <>
-                        <PanelNavButton className="item flex items-center gap-3 w-full px-5 py-4 rounded-lg cursor-pointer duration-300 hover:bg-white" isActive={activeTab === 'dashboard'} onClick={() => onNavigateToPanelTab('dashboard')}>
+                    <div className="space-y-1.5">
+                        <PanelNavButton className={customerNavClass(activeTab === 'dashboard')} isActive={activeTab === 'dashboard'} onClick={() => navigateCustomer('dashboard')}>
                             <HouseLine size={20} />
-                            <strong className="heading6">Panel de Control</strong>
+                            <strong className="text-sm font-bold">Resumen</strong>
                         </PanelNavButton>
-                        <PanelNavButton className="item flex items-center gap-3 w-full px-5 py-4 rounded-lg cursor-pointer duration-300 hover:bg-white mt-1.5" isActive={activeTab === 'orders'} onClick={() => onNavigateToPanelTab('orders')}>
+                        <PanelNavButton className={customerNavClass(activeTab === 'orders')} isActive={activeTab === 'orders'} onClick={() => navigateCustomer('orders')}>
                             <Package size={20} />
-                            <strong className="heading6">Historial de Pedidos</strong>
+                            <strong className="text-sm font-bold">Mis pedidos</strong>
                         </PanelNavButton>
-                        <PanelNavButton className="item flex items-center gap-3 w-full px-5 py-4 rounded-lg cursor-pointer duration-300 hover:bg-white mt-1.5" isActive={activeTab === 'address'} onClick={() => onNavigateToPanelTab('address')}>
-                            <Tag size={20} />
-                            <strong className="heading6">Mis Direcciones</strong>
+                        <PanelNavButton className={customerNavClass(activeTab === 'address')} isActive={activeTab === 'address'} onClick={() => navigateCustomer('address')}>
+                            <MapPin size={20} />
+                            <strong className="text-sm font-bold">Direcciones</strong>
                         </PanelNavButton>
-                        <PanelNavButton className="item flex items-center gap-3 w-full px-5 py-4 rounded-lg cursor-pointer duration-300 hover:bg-white mt-1.5" isActive={activeTab === 'setting'} onClick={() => onNavigateToPanelTab('setting')}>
+                        <PanelNavButton className={customerNavClass(activeTab === 'setting')} isActive={activeTab === 'setting'} onClick={() => navigateCustomer('setting')}>
                             <GearSix size={20} />
-                            <strong className="heading6">Configuración</strong>
+                            <strong className="text-sm font-bold">Datos y seguridad</strong>
                         </PanelNavButton>
-                    </>
+                    </div>
                 )}
-                <button onClick={onLogout} className="item flex items-center gap-3 w-full px-5 py-4 rounded-lg cursor-pointer duration-300 hover:bg-white mt-1.5 text-left border-none bg-transparent">
+                <button onClick={onLogout} className={isAdmin ? 'item flex items-center gap-3 w-full px-5 py-4 rounded-lg cursor-pointer duration-300 hover:bg-white mt-1.5 text-left border-none bg-transparent' : 'customer-account-logout mt-3 flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors'}>
                     <SignOut size={20} />
-                    <strong className="heading6">Cerrar Sesión</strong>
+                    <strong className={isAdmin ? 'heading6' : 'text-sm font-bold'}>Cerrar sesión</strong>
                 </button>
             </div>
         </div>

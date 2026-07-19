@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { listProducts } from '@/lib/api/products'
+import { listAllProducts } from '@/lib/api/products'
 import {
   getProductCurrentPrice,
   getProductOriginalPrice,
@@ -150,7 +150,7 @@ export async function GET() {
   let products: ProductType[] = []
 
   try {
-    products = await listProducts({ cache: 'no-store' })
+    products = await listAllProducts()
   } catch (error) {
     console.error('No se pudo generar feed de Google Merchant:', error)
   }

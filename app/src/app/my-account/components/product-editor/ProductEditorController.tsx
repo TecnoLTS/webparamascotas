@@ -57,7 +57,7 @@ import {
     resolveProductVariantLabel,
 } from '../../productFormUtils'
 import { ADMIN_PRODUCTS_ENDPOINT, withTransientRetry } from '../../utils'
-import type { ProductEditorMode, ProductFormState, PurchaseInvoiceFormState } from '../../types'
+import type { ProductEditorMode, ProductFormState, ProductTaxTreatment, PurchaseInvoiceFormState } from '../../types'
 
 type ProductEditorModalProps = {
     open: boolean;
@@ -66,6 +66,7 @@ type ProductEditorModalProps = {
     editorMode: ProductEditorMode;
     initialForm: ProductFormState;
     vatMultiplier: number;
+    taxConfigurationReady: boolean;
     normalizedMargins: PricingMargins;
     normalizedCalc: PricingCalc;
     referenceData: ProductReferenceData;
@@ -457,8 +458,16 @@ const getSuggestedBasePriceForCostPreview = (
     return previewPvp > 0 ? suggestedBase : 0
 }
 
-const getEffectiveVatMultiplier = (taxExempt: boolean, vatMultiplier: number) =>
-    taxExempt ? 1 : Math.max(1, vatMultiplier)
+const getEffectiveVatMultiplier = (
+    treatment: ProductTaxTreatment,
+    taxRate: string | number,
+    vatMultiplier: number
+) => {
+    if (treatment === 'exempt' || treatment === 'zero-rated') return 1
+    const systemRate = Math.max(0, (Math.max(1, vatMultiplier) - 1) * 100)
+    const explicitRate = normalizeTaxRateInput(taxRate, systemRate)
+    return 1 + (Math.min(100, explicitRate) / 100)
+}
 
 const normalizeTaxRateInput = (value: string | number | null | undefined, fallback = 0) => {
     if (value === null || value === undefined) return fallback
@@ -688,6 +697,7 @@ export default function ProductEditorModal({
     editorMode,
     initialForm,
     vatMultiplier,
+    taxConfigurationReady,
     normalizedMargins,
     normalizedCalc,
     referenceData,
@@ -728,12 +738,12 @@ export default function ProductEditorModal({
     const isDuplicateVariantMode = editorMode === 'duplicate-variant'
     const isRestockMode = editorMode === 'restock'
     const effectiveVatMultiplier = React.useMemo(
-        () => getEffectiveVatMultiplier(Boolean(form.taxExempt), vatMultiplier),
-        [form.taxExempt, vatMultiplier]
+        () => getEffectiveVatMultiplier(form.taxTreatment, form.taxRate, vatMultiplier),
+        [form.taxRate, form.taxTreatment, vatMultiplier]
     )
     const persistedVatMultiplier = React.useMemo(
-        () => getEffectiveVatMultiplier(Boolean(initialForm.taxExempt), vatMultiplier),
-        [initialForm.taxExempt, vatMultiplier]
+        () => getEffectiveVatMultiplier(initialForm.taxTreatment, initialForm.taxRate, vatMultiplier),
+        [initialForm.taxRate, initialForm.taxTreatment, vatMultiplier]
     )
 
     React.useEffect(() => {
@@ -1915,11 +1925,13 @@ export default function ProductEditorModal({
         })
     }, [costWithVatInput, purchaseVatMultiplier])
 
-    const handleTaxExemptChange = React.useCallback((value: string) => {
-        const nextTaxExempt = value === 'exempt'
+    const handleTaxTreatmentChange = React.useCallback((value: ProductTaxTreatment) => {
         setForm((prev) => {
-            const previousMultiplier = getEffectiveVatMultiplier(Boolean(prev.taxExempt), vatMultiplier)
-            const nextMultiplier = getEffectiveVatMultiplier(nextTaxExempt, vatMultiplier)
+            const nextTaxRate = value === 'taxed'
+                ? (normalizeTaxRateInput(prev.taxRate, 0) > 0 ? prev.taxRate : systemVatRate.toFixed(2))
+                : '0'
+            const previousMultiplier = getEffectiveVatMultiplier(prev.taxTreatment, prev.taxRate, vatMultiplier)
+            const nextMultiplier = getEffectiveVatMultiplier(value, nextTaxRate, vatMultiplier)
             const currentPvp = Number(prev.pvp || 0)
             const currentBase = Number(prev.price || 0)
             const resolvedBase = Number.isFinite(currentBase) && currentBase >= 0
@@ -1929,12 +1941,14 @@ export default function ProductEditorModal({
 
             return {
                 ...prev,
-                taxExempt: nextTaxExempt,
+                taxExempt: value === 'exempt',
+                taxTreatment: value,
+                taxRate: nextTaxRate,
                 price: Number.isFinite(resolvedBase) ? resolvedBase.toFixed(BASE_PRICE_FRACTION_DIGITS) : '',
                 pvp: Number.isFinite(nextPvp) ? nextPvp.toFixed(2) : '',
             }
         })
-    }, [vatMultiplier])
+    }, [systemVatRate, vatMultiplier])
 
     const productBasePrice = parseLocalizedDecimal(deferredForm.price)
     const productCost = parseLocalizedDecimal(deferredForm.cost)
@@ -2095,9 +2109,11 @@ export default function ProductEditorModal({
     ]
     const seoScore = Math.round((seoChecks.filter((item) => item.complete).length / seoChecks.length) * 100)
     const summaryStockLabel = `${requestedProductQuantity.toLocaleString('es-EC')} uds`
-    const summaryTaxLabel = form.taxExempt
+    const summaryTaxLabel = form.taxTreatment === 'exempt'
         ? 'Exento de IVA'
-        : `Grava IVA (${((effectiveVatMultiplier - 1) * 100).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`
+        : form.taxTreatment === 'zero-rated'
+            ? 'Gravado con IVA 0%'
+            : `Grava IVA (${((effectiveVatMultiplier - 1) * 100).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`
     const summaryPurchaseTaxLabel = `Compra ${purchaseTaxRateValue.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`
     const summaryPublicationLabel = form.published && publicationEligible ? 'Publicado' : (publicationEligible ? 'Oculto' : 'Bloqueado')
     const summaryPublicationClass = form.published && publicationEligible
@@ -2646,6 +2662,10 @@ export default function ProductEditorModal({
         event.preventDefault()
         if (saving) return
         try {
+            if (!taxConfigurationReady) {
+                showNotification('La configuración tributaria canónica no está disponible; no se puede guardar el producto.', 'error')
+                return
+            }
             if (Object.values(imageUploading).some(Boolean)) {
                 showNotification('Espera a que terminen de subir las imágenes.', 'error')
                 return
@@ -2771,6 +2791,10 @@ export default function ProductEditorModal({
                 nextVariantLabel = resolveProductVariantLabel(productType, normalizedAttributes)
             }
             normalizedAttributes.taxExempt = form.taxExempt ? 'true' : 'false'
+            normalizedAttributes.taxRate = form.taxTreatment === 'taxed'
+                ? String(normalizeTaxRateInput(form.taxRate, systemVatRate))
+                : '0'
+            delete normalizedAttributes.tax_rate
             const sanitizedAdditionalCategories = serializeSanitizedAdditionalCategories(
                 parseSerializedProductCategories(normalizedAttributes.catalogCategories),
                 category
@@ -3024,7 +3048,7 @@ export default function ProductEditorModal({
         } finally {
             setSaving(false)
         }
-    }, [activeTab, editingProduct, ensureProductCatalogLinks, form, imageUploading, inventoryAdjustmentReason, isDuplicateVariantMode, isRestockMode, onClose, onProductsUpdated, onRefreshPurchaseInvoices, onSessionExpired, publicationEligible, referenceDrafts, restockUnitsInput, saving, showNotification, suggestedSearchTerms, suggestedSeoAlt, suggestedSeoDescription, suggestedSeoTitle])
+    }, [activeTab, editingProduct, ensureProductCatalogLinks, form, imageUploading, inventoryAdjustmentReason, isDuplicateVariantMode, isRestockMode, onClose, onProductsUpdated, onRefreshPurchaseInvoices, onSessionExpired, publicationEligible, referenceDrafts, restockUnitsInput, saving, showNotification, suggestedSearchTerms, suggestedSeoAlt, suggestedSeoDescription, suggestedSeoTitle, systemVatRate, taxConfigurationReady])
 
     if (!open) return null
 
@@ -3066,6 +3090,11 @@ export default function ProductEditorModal({
                 </div>
 
                 <div className="p-4 sm:p-6 overflow-y-auto flex-1">
+                    {!taxConfigurationReady && (
+                        <div role="alert" className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                            No se cargó la política fiscal canónica. El editor queda en modo solo lectura hasta recargarla.
+                        </div>
+                    )}
                     <form
                         key={formSessionKey}
                         id="product-form"
@@ -3215,7 +3244,7 @@ export default function ProductEditorModal({
                                         )}
                                     </div>
                                     <div>
-                                        <label className="text-secondary text-sm font-bold uppercase mb-2 block">{form.taxExempt ? 'Precio final de venta' : 'Precio PVP (con IVA)'}</label>
+                                        <label className="text-secondary text-sm font-bold uppercase mb-2 block">{form.taxTreatment === 'taxed' ? 'Precio PVP (con IVA)' : 'Precio final de venta'}</label>
                                         <div className="relative">
                                             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-secondary">$</span>
                                             <input
@@ -3233,9 +3262,11 @@ export default function ProductEditorModal({
                                             />
                                         </div>
                                         <p className="text-secondary text-xs mt-2">
-                                            {form.taxExempt
+                                            {form.taxTreatment === 'exempt'
                                                 ? `Producto exento: precio final actual $${productPvpPriceLabel}.`
-                                                : `PVP estimado actual: $${productPvpPriceLabel}`}
+                                                : form.taxTreatment === 'zero-rated'
+                                                    ? `Producto gravado con IVA 0%: precio final actual $${productPvpPriceLabel}.`
+                                                    : `PVP estimado actual: $${productPvpPriceLabel}`}
                                         </p>
                                     </div>
                                     <div>
@@ -3349,19 +3380,36 @@ export default function ProductEditorModal({
                                         <label className="text-secondary text-sm font-bold uppercase mb-2 block">IVA de venta</label>
                                         <select
                                             className="border border-line rounded-lg px-4 py-3 w-full outline-none transition-all bg-white focus:border-black"
-                                            value={form.taxExempt ? 'exempt' : 'taxed'}
-                                            onChange={e => handleTaxExemptChange(e.target.value)}
-                                            disabled={saving}
+                                            value={form.taxTreatment}
+                                            onChange={e => handleTaxTreatmentChange(e.target.value as ProductTaxTreatment)}
+                                            disabled={saving || !taxConfigurationReady}
                                         >
                                             <option value="taxed">Grava IVA</option>
+                                            <option value="zero-rated">Gravado IVA 0%</option>
                                             <option value="exempt">Exento de IVA</option>
                                         </select>
                                         <p className="text-secondary text-xs mt-2">
-                                            {form.taxExempt
+                                            {form.taxTreatment === 'exempt'
                                                 ? 'La venta de este producto es exenta. El IVA de compra se configura por separado.'
-                                                : 'Se aplica el IVA configurado del sistema sobre el precio base para calcular el PVP de venta.'}
+                                                : form.taxTreatment === 'zero-rated'
+                                                    ? 'La venta está gravada con tarifa 0%; no se clasifica como exenta.'
+                                                    : 'Se aplica la tarifa seleccionada sobre el precio base para calcular el PVP de venta.'}
                                         </p>
                                     </div>
+                                    {form.taxTreatment === 'taxed' && (
+                                        <div>
+                                            <label className="text-secondary text-sm font-bold uppercase mb-2 block">Tarifa IVA de venta (%)</label>
+                                            <select
+                                                className="border border-line rounded-lg px-4 py-3 w-full outline-none transition-all bg-white focus:border-black"
+                                                value={String(normalizeTaxRateInput(form.taxRate, systemVatRate))}
+                                                onChange={e => setForm((prev) => ({ ...prev, taxRate: e.target.value, taxExempt: false, taxTreatment: 'taxed' }))}
+                                                disabled={saving || !taxConfigurationReady}
+                                            >
+                                                {[5, 12, 13, 14, 15].map((rate) => <option key={rate} value={rate}>{rate}%</option>)}
+                                            </select>
+                                            <p className="text-secondary text-xs mt-2">Solo se permiten combinaciones publicadas por el catálogo SRI.</p>
+                                        </div>
+                                    )}
                                     <div className="md:col-span-2">
                                         <label className="text-secondary text-sm font-bold uppercase mb-2 block">{isRestockMode ? 'Unidades a ingresar' : 'Stock Disponible'}</label>
                                         <input
@@ -3432,9 +3480,9 @@ export default function ProductEditorModal({
                                     {hasProductCostPreview && (
                                         <div className="md:col-span-2 rounded-xl border border-line bg-surface px-4 py-3 space-y-2">
                                             <div className="text-[10px] uppercase font-bold text-secondary">Vista previa por costo</div>
-                                            <p className="text-xs text-secondary">Sugerido por costo: <span className="font-semibold text-black">${suggestedBasePriceLabel}</span> base / <span className="font-semibold text-black">${suggestedPvpPriceLabel}</span> {form.taxExempt ? 'final' : 'PVP'}</p>
+                                            <p className="text-xs text-secondary">Sugerido por costo: <span className="font-semibold text-black">${suggestedBasePriceLabel}</span> base / <span className="font-semibold text-black">${suggestedPvpPriceLabel}</span> {form.taxTreatment === 'taxed' ? 'PVP' : 'final'}</p>
                                             {costChangedForAutoPricing && (
-                                                <p className={`text-xs ${automaticPriceWillIncrease ? 'text-orange-600' : 'text-green-700'}`}>Precio aplicado al guardar: <span className="font-semibold">${automaticAppliedBasePriceLabel}</span> base / <span className="font-semibold">${automaticAppliedPvpPriceLabel}</span> {form.taxExempt ? 'final' : 'PVP'}</p>
+                                                <p className={`text-xs ${automaticPriceWillIncrease ? 'text-orange-600' : 'text-green-700'}`}>Precio aplicado al guardar: <span className="font-semibold">${automaticAppliedBasePriceLabel}</span> base / <span className="font-semibold">${automaticAppliedPvpPriceLabel}</span> {form.taxTreatment === 'taxed' ? 'PVP' : 'final'}</p>
                                             )}
                                             {costChangedForAutoPricing && automaticPriceWillIncrease && <p className="text-[11px] text-orange-700">El backend subirá el precio al guardar para no quedar por debajo del piso calculado por costo.</p>}
                                             {costChangedForAutoPricing && !automaticPriceWillIncrease && <p className="text-[11px] text-green-700">Tu precio actual ya está por encima del piso automático. El backend no lo bajará.</p>}
@@ -3463,7 +3511,7 @@ export default function ProductEditorModal({
                                         <div className="rounded-xl bg-white border border-line px-4 py-3">
                                             <div className="text-[10px] uppercase font-bold text-secondary">IVA estimado</div>
                                             <div className="text-lg font-bold">${productVatAmountLabel}</div>
-                                            <div className="text-xs text-secondary">{form.taxExempt ? 'Producto exento, sin recargo de IVA.' : 'Diferencia entre PVP y base'}</div>
+                                            <div className="text-xs text-secondary">{form.taxTreatment === 'exempt' ? 'Producto exento, sin recargo de IVA.' : form.taxTreatment === 'zero-rated' ? 'Producto gravado con tarifa 0%.' : 'Diferencia entre PVP y base'}</div>
                                         </div>
                                         <div className="rounded-xl bg-white border border-line px-4 py-3">
                                             <div className="text-[10px] uppercase font-bold text-secondary">Monto oferta</div>
@@ -4461,7 +4509,7 @@ export default function ProductEditorModal({
 
                 <div className="p-4 sm:p-6 border-t border-line flex flex-col sm:flex-row gap-3 justify-end bg-white rounded-b-2xl">
                     <button type="button" className="px-6 sm:px-8 py-3 rounded-full border border-line hover:bg-surface transition-all font-bold disabled:opacity-60" onClick={closeModal} disabled={saving}>Cancelar</button>
-                    <button type="button" className="button-main px-6 sm:px-8 py-3 rounded-full bg-black text-white hover:bg-primary transition-all font-bold disabled:opacity-60 disabled:cursor-not-allowed" disabled={saving || isUploadingProductImages} onClick={() => { if (formRef.current?.requestSubmit) { formRef.current.requestSubmit(); return } if (formRef.current) { formRef.current.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) } }}>
+                    <button type="button" className="button-main px-6 sm:px-8 py-3 rounded-full bg-black text-white hover:bg-primary transition-all font-bold disabled:opacity-60 disabled:cursor-not-allowed" disabled={saving || isUploadingProductImages || !taxConfigurationReady} onClick={() => { if (formRef.current?.requestSubmit) { formRef.current.requestSubmit(); return } if (formRef.current) { formRef.current.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) } }}>
                         {saving ? 'Guardando...' : (isUploadingProductImages ? 'Esperando imágenes...' : (isRestockMode ? 'Registrar compra' : 'Guardar cambios'))}
                     </button>
                 </div>

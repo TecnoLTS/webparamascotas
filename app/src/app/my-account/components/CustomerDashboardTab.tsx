@@ -1,15 +1,10 @@
 'use client'
 
-import { Archive, HourglassMedium, ReceiptX } from '@phosphor-icons/react/dist/ssr'
-
-import Image from '@/components/Common/AppImage'
+import { ArrowRight, Archive, HourglassMedium, Package, ReceiptX } from '@phosphor-icons/react/dist/ssr'
 
 import type { Order } from '../types'
 
-type StatusBadge = {
-    label: string
-    className: string
-}
+type StatusBadge = { label: string; className: string }
 
 type CustomerDashboardTabProps = {
     pickupUserOrders: number
@@ -18,10 +13,25 @@ type CustomerDashboardTabProps = {
     userOrdersLoading: boolean
     recentUserOrders: Order[]
     onOpenOrder: (order: Order) => void
+    onViewAllOrders: () => void
     getStatusBadge: (status: string) => StatusBadge
     formatDateTime: (value: string, options?: Intl.DateTimeFormatOptions) => string
-    normalizeOrderItemImage: (src?: string | null) => string
-    isDynamicOrderItemImage: (src?: string | null) => boolean
+}
+
+const deliveryLabel = (order: Order) => {
+    const method = String(order.delivery_method || '').trim().toLowerCase()
+    if (method === 'pickup') return 'Retiro en tienda'
+    if (method === 'delivery') return 'Envío a domicilio'
+    return 'Por confirmar'
+}
+
+const paymentLabel = (order: Order) => {
+    const raw = String(order.payment_method || '').trim()
+    const method = raw.toLowerCase()
+    if (method === 'cash' || method === 'efectivo') return 'Efectivo'
+    if (method === 'card' || method === 'tarjeta') return 'Tarjeta'
+    if (method === 'transfer' || method === 'transferencia') return 'Transferencia'
+    return raw || 'Por confirmar'
 }
 
 export default function CustomerDashboardTab({
@@ -31,158 +41,120 @@ export default function CustomerDashboardTab({
     userOrdersLoading,
     recentUserOrders,
     onOpenOrder,
+    onViewAllOrders,
     getStatusBadge,
     formatDateTime,
-    normalizeOrderItemImage,
-    isDynamicOrderItemImage,
 }: CustomerDashboardTabProps) {
-    return (
-        <div className="tab !block overflow-hidden">
-            <div className="grid gap-6 md:grid-cols-3">
-                <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-secondary">Esperando Recojo</p>
-                            <p className="mt-2 text-4xl font-semibold text-black">{pickupUserOrders}</p>
-                        </div>
-                        <div className="rounded-2xl bg-main/10 p-3 text-main">
-                            <HourglassMedium size={24} weight="duotone" />
-                        </div>
-                    </div>
-                </div>
-                <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-secondary">Pedidos Cancelados</p>
-                            <p className="mt-2 text-4xl font-semibold text-black">{canceledUserOrders}</p>
-                        </div>
-                        <div className="rounded-2xl bg-red/10 p-3 text-red">
-                            <ReceiptX size={24} weight="duotone" />
-                        </div>
-                    </div>
-                </div>
-                <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <p className="text-sm font-medium text-secondary">N&uacute;mero Total de Pedidos</p>
-                            <p className="mt-2 text-4xl font-semibold text-black">{totalUserOrders}</p>
-                        </div>
-                        <div className="rounded-2xl bg-orange/10 p-3 text-orange">
-                            <Archive size={24} weight="duotone" />
-                        </div>
-                    </div>
-                </div>
-            </div>
+    const metrics = [
+        { label: 'Por retirar', value: pickupUserOrders, icon: HourglassMedium },
+        { label: 'Cancelados', value: canceledUserOrders, icon: ReceiptX },
+        { label: 'Pedidos totales', value: totalUserOrders, icon: Archive },
+    ]
 
-            <div className="mt-8 rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
-                <div className="mb-6 flex items-center justify-between gap-4">
+    return (
+        <div className="customer-dashboard-tab tab !block">
+            <section className="customer-summary-strip" aria-label="Resumen de pedidos">
+                {metrics.map((metric) => {
+                    const MetricIcon = metric.icon
+                    return (
+                        <article key={metric.label} className="customer-summary-item">
+                            <span className="customer-summary-icon" aria-hidden="true">
+                                <MetricIcon size={21} />
+                            </span>
+                            <span>
+                                <strong className="customer-summary-value block">{metric.value}</strong>
+                                <span className="customer-summary-label block">{metric.label}</span>
+                            </span>
+                        </article>
+                    )
+                })}
+            </section>
+
+            <section className="customer-content-surface mt-4 overflow-hidden">
+                <header className="flex flex-col gap-3 border-b border-line px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
                     <div>
-                        <h3 className="text-2xl font-semibold text-main">Pedidos Recientes</h3>
-                        <p className="mt-1 text-sm text-secondary">
-                            Fecha, entrega, pago y estado de tus pedidos m&aacute;s recientes.
-                        </p>
+                        <h2 className="customer-page-title !text-xl">Pedidos recientes</h2>
+                        <p className="customer-page-description">Últimos movimientos de tu cuenta.</p>
                     </div>
-                </div>
+                    <button type="button" onClick={onViewAllOrders} className="customer-secondary-action inline-flex items-center justify-center gap-2 self-start px-3 text-sm font-bold sm:self-auto">
+                        Ver historial <ArrowRight size={16} aria-hidden="true" />
+                    </button>
+                </header>
 
                 {userOrdersLoading ? (
-                    <div className="rounded-2xl border border-dashed border-gray-300 px-6 py-12 text-center text-secondary">
-                        Cargando pedidos...
-                    </div>
+                    <div className="customer-muted px-5 py-10 text-center" aria-live="polite">Cargando pedidos...</div>
                 ) : recentUserOrders.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-gray-300 px-6 py-12 text-center text-secondary">
-                        A&uacute;n no tienes pedidos registrados.
+                    <div className="customer-muted px-5 py-10 text-center">
+                        <Package size={28} className="mx-auto mb-2" aria-hidden="true" />
+                        Aún no tienes pedidos registrados.
                     </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 text-left">
-                            <thead>
-                                <tr className="text-xs font-semibold uppercase tracking-[0.14em] text-secondary">
-                                    <th className="pb-3 pr-4">Pedido</th>
-                                    <th className="pb-3 pr-4">Productos</th>
-                                    <th className="pb-3 pr-4">Entrega / Pago</th>
-                                    <th className="pb-3 pr-4">Precio</th>
-                                    <th className="pb-3">Estado</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {recentUserOrders.map((order) => {
-                                    const badge = getStatusBadge(order.status)
-                                    const firstItem = order.items?.[0]
-                                    const itemsCount = order.items?.length ?? 0
-                                    const deliveryMethod = String(order.delivery_method || '').trim().toLowerCase()
-                                    const deliveryLabel =
-                                        deliveryMethod === 'pickup'
-                                            ? 'Retiro en tienda'
-                                            : deliveryMethod === 'delivery'
-                                              ? 'Env&iacute;o a domicilio'
-                                              : 'Por confirmar'
-                                    const paymentMethodRaw = String(order.payment_method || '').trim()
-                                    const paymentMethod = paymentMethodRaw.toLowerCase()
-                                    const paymentLabel =
-                                        paymentMethod === 'cash' || paymentMethod === 'efectivo'
-                                            ? 'Pago en efectivo'
-                                            : paymentMethod === 'card' || paymentMethod === 'tarjeta'
-                                              ? 'Tarjeta'
-                                              : paymentMethod === 'transfer' || paymentMethod === 'transferencia'
-                                                ? 'Transferencia'
-                                                : paymentMethodRaw || 'Por confirmar'
+                    <>
+                        <div className="hidden md:block">
+                            <table className="customer-data-table">
+                                <thead>
+                                    <tr>
+                                        <th className="w-[25%]">Pedido / Fecha</th>
+                                        <th className="w-[23%]">Entrega / Pago</th>
+                                        <th className="w-[14%]">Productos</th>
+                                        <th className="w-[12%]">Total</th>
+                                        <th className="w-[14%]">Estado</th>
+                                        <th className="w-[12%]"><span className="sr-only">Acción</span></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {recentUserOrders.map((order) => {
+                                        const badge = getStatusBadge(order.status)
+                                        const items = Number(order.items_count ?? 0)
+                                        const units = Number(order.units_count ?? items)
+                                        return (
+                                            <tr key={order.id}>
+                                                <td>
+                                                    <span className="customer-order-number block truncate">{order.order_number || order.id}</span>
+                                                    <span className="customer-muted mt-1 block text-xs">{formatDateTime(order.created_at)}</span>
+                                                </td>
+                                                <td>
+                                                    <span className="block text-sm font-semibold">{deliveryLabel(order)}</span>
+                                                    <span className="customer-muted mt-1 block text-xs">{paymentLabel(order)}</span>
+                                                </td>
+                                                <td className="text-sm">{items} {items === 1 ? 'línea' : 'líneas'} · {units} u.</td>
+                                                <td><span className="customer-order-total">${Number(order.total || 0).toFixed(2)}</span></td>
+                                                <td><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span></td>
+                                                <td className="text-right">
+                                                    <button type="button" onClick={() => onOpenOrder(order)} className="customer-order-detail ml-auto" aria-label={`Ver pedido ${order.order_number || order.id}`}>
+                                                        Ver <ArrowRight size={15} aria-hidden="true" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        )
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
 
-                                    return (
-                                        <tr
-                                            key={order.id}
-                                            className="cursor-pointer transition hover:bg-gray-50"
-                                            onClick={() => onOpenOrder(order)}
-                                        >
-                                            <td className="py-4 pr-4 align-top">
-                                                <div className="font-semibold text-black">{order.order_number}</div>
-                                                <div className="mt-1 text-sm text-secondary">
-                                                    {formatDateTime(order.created_at)}
-                                                </div>
-                                            </td>
-                                            <td className="py-4 pr-4 align-top">
-                                                {firstItem ? (
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="relative h-14 w-14 overflow-hidden rounded-2xl bg-gray-100">
-                                                            <Image
-                                                                src={normalizeOrderItemImage(firstItem.product_image)}
-                                                                alt={firstItem.product_name}
-                                                                fill
-                                                                sizes="56px"
-                                                                className="object-cover"
-                                                                unoptimized={isDynamicOrderItemImage(firstItem.product_image)}
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <div className="font-medium text-black">{firstItem.product_name}</div>
-                                                            <div className="text-sm text-secondary">
-                                                                {itemsCount} {itemsCount === 1 ? 'producto' : 'productos'}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ) : (
-                                                    <span className="text-sm text-secondary">Sin productos</span>
-                                                )}
-                                            </td>
-                                            <td className="py-4 pr-4 align-top">
-                                                <div className="text-sm font-medium text-black">{deliveryLabel}</div>
-                                                <div className="mt-1 text-sm text-secondary">{paymentLabel}</div>
-                                            </td>
-                                            <td className="py-4 pr-4 align-top text-base font-semibold text-black">
-                                                ${Number(order.total || 0).toFixed(2)}
-                                            </td>
-                                            <td className="py-4 align-top">
-                                                <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${badge.className}`}>
-                                                    {badge.label}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    )
-                                })}
-                            </tbody>
-                        </table>
-                    </div>
+                        <div className="space-y-2 p-3 md:hidden">
+                            {recentUserOrders.map((order) => {
+                                const badge = getStatusBadge(order.status)
+                                return (
+                                    <button key={`mobile-${order.id}`} type="button" onClick={() => onOpenOrder(order)} className="customer-order-card block min-h-[48px] w-full p-3 text-left">
+                                        <span className="flex items-start justify-between gap-3">
+                                            <span className="min-w-0">
+                                                <span className="customer-order-number block truncate text-sm">{order.order_number || order.id}</span>
+                                                <span className="customer-muted mt-1 block text-xs">{formatDateTime(order.created_at)}</span>
+                                            </span>
+                                            <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
+                                        </span>
+                                        <span className="mt-3 flex items-end justify-between gap-3 border-t border-line pt-3">
+                                            <span className="text-sm"><strong className="block">{deliveryLabel(order)}</strong><span className="customer-muted text-xs">{paymentLabel(order)}</span></span>
+                                            <span className="customer-order-total">${Number(order.total || 0).toFixed(2)}</span>
+                                        </span>
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    </>
                 )}
-            </div>
+            </section>
         </div>
     )
 }

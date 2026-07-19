@@ -4,6 +4,7 @@ import React from 'react'
 
 import { requestApi } from '@/lib/apiClient'
 import { apiEndpoints } from '@/lib/api/endpoints'
+import { listBoundedOrderHistory } from '@/lib/api/orderHistory'
 import { ADMIN_PRODUCTS_ENDPOINT, RETRYABLE_PANEL_ERROR_PATTERN, withTransientRetry } from '../utils'
 import {
   ADMIN_TABS_WITH_ORDERS,
@@ -347,9 +348,9 @@ export const useAdminDataLoader = ({
           if (!cancelled) current.setAdminOrdersList(cachedOrders)
         } else {
           tasks.push(
-            withTransientRetry(() => requestApi<Order[]>(apiEndpoints.orders, { headers })).then((res) => {
-              setCached('orders', res.body)
-              if (!cancelled) current.setAdminOrdersList(res.body)
+            withTransientRetry(() => listBoundedOrderHistory<Order>(apiEndpoints.orders, { init: { headers } })).then((orders) => {
+              setCached('orders', orders)
+              if (!cancelled) current.setAdminOrdersList(orders)
             }),
           )
         }

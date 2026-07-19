@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ProductType } from '@/type/ProductType'
-import { fetchProducts } from '@/lib/products'
+import { listProductPage } from '@/lib/api/products'
+import { groupCatalogProducts } from '@/lib/catalog'
 
 type UseProductsResult = {
   products: ProductType[]
@@ -8,24 +9,41 @@ type UseProductsResult = {
   error: string | null
 }
 
-const useProducts = (): UseProductsResult => {
+type UseProductsOptions = {
+  search?: string
+  pageSize?: number
+  enabled?: boolean
+}
+
+const useProducts = ({ search, pageSize = 16, enabled = true }: UseProductsOptions = {}): UseProductsResult => {
   const [products, setProducts] = useState<ProductType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!enabled) {
+      setLoading(false)
+      return
+    }
+    let active = true
     const load = async () => {
+      setLoading(true)
       try {
-        const data = await fetchProducts()
-        setProducts(data)
-      } catch (err: any) {
-        setError(err?.message ?? 'Error al cargar productos')
+        const page = await listProductPage({ pageSize, search })
+        if (!active) return
+        setProducts(groupCatalogProducts(page.products))
+        setError(null)
+      } catch (err: unknown) {
+        if (active) setError(err instanceof Error ? err.message : 'Error al cargar productos')
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
-    load()
-  }, [])
+    void load()
+    return () => {
+      active = false
+    }
+  }, [enabled, pageSize, search])
 
   return { products, loading, error }
 }

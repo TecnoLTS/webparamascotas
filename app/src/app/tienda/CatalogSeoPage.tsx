@@ -2,10 +2,9 @@ import React from 'react'
 import Link from 'next/link'
 import { headers } from 'next/headers'
 import MenuPet from '@/components/Header/Menu/MenuPet'
-import ShopBreadCrumb1 from '@/components/Shop/ShopBreadCrumb1'
+import CursorShopCatalog from '@/components/Shop/CursorShopCatalog'
 import Footer from '@/components/Footer/Footer'
-import { fetchProducts } from '@/lib/products'
-import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
+import { loadProducts } from '@/lib/products.server'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import {
   generateBreadcrumbJsonLd,
@@ -30,6 +29,7 @@ import {
   sanitizeProductSearchQuery,
 } from '@/lib/productSearch'
 import type { ProductType } from '@/type/ProductType'
+import type { ProductPageFilters } from '@/lib/api/products'
 
 type CatalogSeoLink = {
   label: string
@@ -230,14 +230,30 @@ export default async function CatalogSeoPage({ page = getAllCatalogPage(), searc
   const baseUrl = getCanonicalSiteUrl()
   let products: ProductType[] = []
   let publicCategories: string[] = []
+  let hasMore = false
+  let nextCursor: string | null = null
+  const effectivePage = {
+    ...page,
+    searchQuery: searchQueryOverride ?? page.searchQuery ?? undefined,
+  }
+  const saleOnly = ['descuentos', 'ofertas'].includes((effectivePage.category ?? '').toLowerCase())
+  const filters: ProductPageFilters = {
+    category: saleOnly ? undefined : effectivePage.category,
+    productType: effectivePage.productType,
+    gender: effectivePage.gender,
+    search: effectivePage.searchQuery,
+    saleOnly: saleOnly || undefined,
+  }
 
   const [productsResult, categoriesResult] = await Promise.allSettled([
-    fetchProducts({ fresh: true }),
+    loadProducts({ ...filters, pageSize: 48 }),
     getPublicProductCategories(),
   ])
 
   if (productsResult.status === 'fulfilled') {
-    products = orderProductsFoodFirst(productsResult.value)
+    products = productsResult.value.products
+    hasMore = productsResult.value.hasMore
+    nextCursor = productsResult.value.nextCursor
   } else {
     console.error('No se pudieron cargar productos para la pagina SEO de catalogo:', productsResult.reason)
   }
@@ -248,12 +264,8 @@ export default async function CatalogSeoPage({ page = getAllCatalogPage(), searc
     console.error('No se pudieron cargar categorias publicas para la tienda:', categoriesResult.reason)
   }
 
-  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const footerCategoryIds = availableCategoryIds
-  const effectivePage = {
-    ...page,
-    searchQuery: searchQueryOverride ?? page.searchQuery ?? undefined,
-  }
   const seoLinks = getCatalogSeoLinks(page)
   const seoProducts = getSeoProductsForPage(products, effectivePage)
   const currentPath = page.path ?? (page.slug === 'tienda' ? '/tienda' : getCatalogPagePath(page.slug))
@@ -294,15 +306,16 @@ export default async function CatalogSeoPage({ page = getAllCatalogPage(), searc
         />
       ) : null}
       <header id="header" className="relative w-full style-pet">
-        <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
+        <MenuPet props="bg-transparent" availableCategoryIds={availableCategoryIds} />
       </header>
       {!products.length ? (
         <div className="container py-10 text-center">No hay productos disponibles.</div>
       ) : (
-        <ShopBreadCrumb1
-          data={products}
-          productPerPage={9}
-          dataType={null}
+        <CursorShopCatalog
+          initialProducts={products}
+          initialHasMore={hasMore}
+          initialNextCursor={nextCursor}
+          filters={filters}
           gender={effectivePage.gender ?? null}
           category={effectivePage.category ?? null}
           searchQuery={effectivePage.searchQuery ?? null}

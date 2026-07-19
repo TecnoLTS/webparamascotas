@@ -14,7 +14,7 @@ type AdminProductAdvancedFilters = {
     supplier: string;
     brand: string;
     species: string;
-    tax: 'all' | 'taxed' | 'exempt';
+    tax: 'all' | 'taxed' | 'zero-rated' | 'exempt';
 }
 
 type AdminProductFilterOption = { value: string; label: string; count: number }
@@ -281,7 +281,13 @@ export default React.memo(function ProductsManagementPanel({
             chips.push({ key: 'species', label: 'Mascota', value: filterOptions.species.find((item) => item.value === advancedFilters.species)?.label ?? advancedFilters.species })
         }
         if (advancedFilters.tax !== 'all') {
-            chips.push({ key: 'tax', label: 'Impuesto', value: advancedFilters.tax === 'taxed' ? 'Con IVA' : 'IVA 0%' })
+            chips.push({
+                key: 'tax',
+                label: 'Impuesto',
+                value: advancedFilters.tax === 'taxed'
+                    ? 'Con IVA'
+                    : advancedFilters.tax === 'zero-rated' ? 'IVA 0%' : 'Exento',
+            })
         }
 
         return chips
@@ -539,7 +545,8 @@ export default React.memo(function ProductsManagementPanel({
                                 className="h-11 rounded-2xl border border-line bg-white px-4 text-sm outline-none transition-all focus:border-black"
                             >
                                 <option value="all">Todos</option>
-                                <option value="exempt">IVA 0%</option>
+                                <option value="zero-rated">IVA 0%</option>
+                                <option value="exempt">Exento</option>
                                 <option value="taxed">Con IVA</option>
                             </select>
                         </label>

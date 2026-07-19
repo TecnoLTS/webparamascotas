@@ -120,7 +120,7 @@ const ModalQuickview = () => {
 
     const refreshLiveProduct = useCallback(async () => {
         if (!selectedProduct) return null
-        const snapshot = await fetchLiveCatalogSnapshot()
+        const snapshot = await fetchLiveCatalogSnapshot(getProductVariants(selectedProduct))
         const refreshedProduct = findLiveCatalogProduct(snapshot.groupedProducts, selectedProduct.id)
         setLiveProduct(refreshedProduct)
         return refreshedProduct

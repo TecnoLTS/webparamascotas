@@ -3,6 +3,8 @@
 import dynamic from 'next/dynamic'
 import { useEffect, useRef, useState } from 'react'
 import { ProductType } from '@/type/ProductType'
+import { listProductPage } from '@/lib/api/products'
+import { groupCatalogProducts } from '@/lib/catalog'
 
 const FeatureProduct = dynamic(() => import('./FeatureProduct'), {
     ssr: false,
@@ -10,9 +12,34 @@ const FeatureProduct = dynamic(() => import('./FeatureProduct'), {
 })
 
 interface Props {
-    data: Array<ProductType>
+    data?: Array<ProductType>
     start: number
     limit: number
+}
+
+const RemoteFeatureProduct = ({ start, limit }: Omit<Props, 'data'>) => {
+    const [products, setProducts] = useState<ProductType[]>([])
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(false)
+    useEffect(() => {
+        let active = true
+        void listProductPage({ pageSize: 48 })
+            .then((page) => {
+                if (active) setProducts(groupCatalogProducts(page.products))
+            })
+            .catch(() => {
+                if (active) setError(true)
+            })
+            .finally(() => {
+                if (active) setLoading(false)
+            })
+        return () => {
+            active = false
+        }
+    }, [])
+    if (loading) return <FeatureProductPlaceholder />
+    if (error || products.length === 0) return null
+    return <FeatureProduct data={products} start={start} limit={limit} />
 }
 
 const FeatureProductPlaceholder = () => (
@@ -58,7 +85,11 @@ export default function DeferredFeatureProduct(props: Props) {
 
     return (
         <div ref={containerRef}>
-            {shouldLoad ? <FeatureProduct {...props} /> : <FeatureProductPlaceholder />}
+            {shouldLoad
+                ? props.data
+                    ? <FeatureProduct data={props.data} start={props.start} limit={props.limit} />
+                    : <RemoteFeatureProduct start={props.start} limit={props.limit} />
+                : <FeatureProductPlaceholder />}
         </div>
     )
 }

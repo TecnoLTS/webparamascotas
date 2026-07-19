@@ -13,10 +13,11 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 
 - `AGENTS.md` en la raiz del workspace es la fuente canonica.
 - La copia versionada vive en `webparamascotas/docs/AI_CONTEXT.md`; si hay conflicto, manda este archivo raiz.
+- El manual operativo y de desarrollo completo vive en `MANUAL-TECNICO-PLATAFORMA.md`; su copia versionada vive en `webparamascotas/docs/MANUAL-TECNICO-PLATAFORMA.md` y debe sincronizarse despues de cambios materiales.
 - Al cerrar trabajo importante, actualizar primero `AGENTS.md` y luego sincronizar la copia versionada.
 - Registrar avances en `Historial de trabajo IA` con fecha, objetivo, cambios, decisiones y pendientes. Consolidar entradas antiguas para evitar duplicados temporales.
 - No guardar secretos, passwords, tokens reales, certificados, llaves `.p12` ni datos sensibles de clientes.
-- La raiz `/home/admincenter/contenedores` no es repo Git; los proyectos runtime son repos separados: `webparamascotas`, `gatewayapisix`, `backend` y `basesdedatos`.
+- La raiz `/home/admincenter/contenedores` no es repo Git; los proyectos runtime son repos separados: `webparamascotas`, `dashboard`, `gatewayapisix`, `backend` y `basesdedatos`.
 
 ## Contexto operativo actual
 
@@ -24,9 +25,10 @@ El objetivo operativo es mantener un entorno desplegable por scripts, con reglas
 - IP LAN del host virtualizado en este ambiente: `192.168.100.229`.
 - Dominio funcional del QA local: `paramascotasec.com`, resolviendo hacia `192.168.100.229`.
 - Dominio demo dashboard vigente: `fidepuntos.tecnolts.com`, resolviendo hacia `192.168.100.229` por APISIX como host de dashboard tenantizado, no como alias del sitio principal.
-- Todas las verificaciones funcionales del sitio/API en este entorno deben entrar por APISIX usando el contrato publico y el dominio `paramascotasec.com`; usar puertos internos o sidecars solo para diagnostico explicito.
+- Todas las verificaciones funcionales del sitio/API en este entorno deben entrar por APISIX usando el contrato publico y el dominio correspondiente; usar puertos internos o el sidecar local solo para diagnostico explicito.
 - `gatewayapisix` QA puede exponerse por esa IP segun configuracion de `GATEWAY_BIND_IP`; usar los mismos scripts canonicos y cambiar solo `.env`.
-- Estructura canonica del workspace: `webparamascotas` (pagina web), `gatewayapisix` (APISIX), `backend` (API/core y Billing SRI nativo) y `basesdedatos` (PostgreSQL compartido). `dashboard` queda como tooling interno QA/admin; `scripts` y `reports` son soporte operativo.
+- Estructura canonica del workspace: `webparamascotas` (ecommerce Next.js), `dashboard` (canal administrativo Angular), `gatewayapisix` (APISIX), `backend` (API/core, workers y Billing SRI nativo) y `basesdedatos` (PostgreSQL compartido). `scripts`, `reports` e `infra` son soporte operativo, evidencia e IaC.
+- QA es deliberadamente single-host. Existe IaC provider-neutral para la topologia HA de produccion, pero no hay atestacion independiente de replicas, balanceador, failure domains, object storage ni failover; no declarar HA operativa hasta aprobar el control externo.
 
 ## Despliegue critico
 
@@ -70,9 +72,11 @@ Persistencia real actual verificada:
 El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda para entrada de gatewayapisix; las comunicaciones internas usan redes `internal` y los contenedores con salida externa tienen redes de egreso dedicadas.
 
 - `apisix-gateway-internal`: APISIX, etcd y webroot ACME interno.
-- `webparamascotas-internal`: APISIX gatewayapisix, Frontend y `backend-http`.
-- `basesdedatos-internal`: `backend-api`, `backend-sri-worker` y DB compartida.
-- Redes de egreso no publicadas: `backend-api` para SMTP; `backend-sri-worker` para SRI y SMTP.
+- `webparamascotas-internal`: APISIX, Next.js, Dashboard, su proxy local sin secretos y `backend-http`; las APIs de negocio Dashboard registradas van de APISIX directo al backend. La unica excepcion es el adaptador de upload de imagenes, tambien registrado por metodo/capability, que conserva la sesion Dashboard a traves de Nginx/Next.js.
+- red privada Compose `backend_internal`: `backend-http` y `backend-api`; PHP-FPM no se publica.
+- `basesdedatos-internal`: `backend-api`, `backend-sri-worker`, `backend-commerce-billing-worker`, `backend-mailer-worker`, `backend-wallet-notify-worker` y PostgreSQL.
+- Redes de egreso no publicadas: API y solo los workers que requieren SRI, SMTP, Google Wallet u object storage.
+- `dashboard-host-access` pertenece exclusivamente a `dashboard-local-proxy`: adapta el bind de gestion QA `127.0.0.1:8081` sin ampliar la superficie del contenedor Dashboard; no forma parte de la topologia HA de produccion.
 - `paramascotasec-services-internal` no pertenece al flujo orquestado actual; APISIX y backend no deben unirse a esa red.
 - Mantener el aislamiento de redes tambien en QA: no conectar contenedores internos a `bridge`/egreso temporal como solucion normal. Si una tarea exige egreso para instalar dependencias o diagnosticar, preferir los scripts/imagenes/caches previstos; cualquier excepcion debe ser explicita, temporal, documentada y revertida antes de cerrar.
 
@@ -80,6 +84,8 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 |----------|--------------|-------|
 | Backend API | `http://backend-http:8080/api` | Nginx interno delante de PHP-FPM |
 | Frontend | `http://webparamascotas:3000` | Next.js |
+| Dashboard | `http://dashboard:${TECNOLTS_NGINX_CONTAINER_PORT}` | Shell Angular; sus APIs publicas registradas no se proxyfican por esta shell |
+| Dashboard local | `http://127.0.0.1:8081` | Sidecar de gestion/diagnostico QA, no entrada publica |
 | DB compartida | `db:5432` | PostgreSQL compartido con bases logicas por servicio activo |
 
 ## Arquitectura
@@ -87,9 +93,24 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 | Componente | Tech | Contenedores |
 |------------|------|--------------|
 | Frontend | Node 24 LTS + Next.js 16 + React 19 + Tailwind CSS 4 + TypeScript 6 | `webparamascotas` |
-| Backend | PHP 8.5 MVC propio + PostgreSQL | `backend-api`, `backend-http`, `backend-sri-worker` |
+| Dashboard | Angular + Nginx sin privilegios | `dashboard`, `dashboard-local-proxy` (solo adaptador local QA) |
+| Backend | PHP 8.5 MVC propio + PostgreSQL | `backend-api`, `backend-http`, `backend-sri-worker`, `backend-commerce-billing-worker`, `backend-mailer-worker`, `backend-wallet-notify-worker` |
 | Database | PostgreSQL 18 | `basesdedatos` |
 | gatewayapisix | APISIX 3.16 + etcd 3.5 + Certbot oficial | `apisix-gateway`, `apisix-etcd`, `apisix-acme-webroot`, `certbot` |
+
+### Arquitectura endurecida vigente
+
+- APISIX es la unica entrada publica. Registra host, metodo, path, capability, perfil de seguridad y tenant antes de enviar una API al owner; las rutas API desconocidas y los prefijos legacy fallan cerrados.
+- Ecommerce y Dashboard son canales distintos por rutas, CSP, cookies, CSRF, credenciales de proxy y, cuando aplica, host tenantizado. En Paramascotas QA el Dashboard de plataforma es same-site: `https://paramascotasec.com/dashboard/` y `https://www.paramascotasec.com/dashboard/`; `admin.paramascotasec.com` no es entrada canonica ni debe requerirse en hosts cliente. `/login` y `/my-account` pertenecen al ecommerce.
+- Cada `/dashboard/api/*` permitido se registra individualmente en APISIX. Las APIs de negocio llegan directo a `backend-http`; el unico adaptador deliberado es `POST /dashboard/api/uploads/images`, que pasa por Dashboard/Next.js para validar/transformar archivos antes del backend. El wildcard Angular sirve solo la shell y nunca captura una API desconocida.
+- Los saltos de confianza usan credenciales separadas: `EDGE_BACKEND_PROXY_TOKEN` (APISIX -> backend), `STOREFRONT_BACKEND_PROXY_TOKEN` (Next.js -> backend) y `DASHBOARD_PROXY_TOKEN` (APISIX -> shell Dashboard). No reutilizar ni entregar un scope a otro contenedor.
+- Dentro de `platform-core`, los modulos se separan mediante rutas, DTO/contratos, puertos y adaptadores. No se fuerza HTTP loopback entre clases del mismo proceso; las comunicaciones entre runtimes conservan contratos HTTP/API por redes internas.
+- Commerce no emite facturas de forma sincrona: persiste una outbox tenantizada y `backend-commerce-billing-worker` entrega a Billing con credenciales por tenant, leases, idempotencia, reintentos y estados ambiguos/DLQ auditables.
+- Mailer acepta envios mediante outbox durable tenantizada. `backend-mailer-worker` reclama de forma justa, confirma entregas, aplica leases/reintentos con jitter y conserva DLQ con ACK/requeue auditables; los adjuntos no se persisten en el outbox.
+- El ciclo de vida tenant usa `ETag`/revision CAS, `Idempotency-Key`, journal y snapshots auditables para alta, cambio, suspension, reanudacion, offboarding, reconciliacion y rollback. APISIX solo marca `ready` despues de comprobar rutas/SNI; QA usa resolve local explicito y produccion exige evidencia DNS/HTTPS externa.
+- PostgreSQL mantiene cuatro bases logicas reales (`dashboard`, `ecommerce`, `facturacion`, `loyalty`), owners `NOLOGIN`, roles app/worker minimos, `tenant_id NOT NULL`, `FORCE RLS` y pruebas negativas cross-tenant. No existen FKs fisicas entre bases ni permisos FDW para runtimes.
+- Storage se consume por una abstraccion con scopes privados `artifacts` y publicables `uploads`. QA conserva driver local de un nodo; produccion/`REQUIRE_HA=true` exige S3-compatible + CDN y dispone de migrador reanudable con inventario, journal y SHA-256. La disponibilidad del proveedor no se infiere de la configuracion.
+- El scorecard evalua exactamente seis dimensiones mediante 14 subevidencias: Diseno (4), Rendimiento (3), Escalabilidad (2), Administracion (3), Canales (1) y Tenants (1). La HA fisica externa se reporta aparte y nunca se convierte en PASS por IaC local.
 
 ## Modularidad orquestada
 
@@ -105,7 +126,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Contrato minimo por modulo integrable: `GET /health`, `GET /module.json`, migraciones propias, backup/restore propio y permisos/capacidades propias.
 - En modo orquestado, `billing-sri` entra por `platform-core/Billing`; no hay runtime fiscal HTTP paralelo ni fallback Facturador.
 - El contrato publico APISIX `/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*` reescribe a `platform-core/Billing` (`/api/{test|production}/v1/*`) y queda protegido por `X-API-Key` o `Authorization: Bearer`.
-- Regla vigente de persistencia: un solo servicio PostgreSQL y una base logica por modulo/servicio; multiples tenants del mismo modulo comparten esa base logica bajo aislamiento por `tenant_id` o equivalente del owner.
+- Regla vigente de persistencia: un solo servicio PostgreSQL en QA y una base logica por conjunto de dominios owner; multiples tenants comparten cada base bajo aislamiento obligatorio por `tenant_id`, contexto SQL y `FORCE RLS`.
 - Regla vigente de identidad: `dashboard` es owner de plataforma, tenants, admins/operadores (`platform`, `tenant_staff`, `service`), sesiones admin, roles, permisos y entitlements. Los usuarios finales viven en la base del modulo que los atiende.
 - Ecommerce es owner de clientes finales en `ecommerce."Customer"` junto con sus credenciales, direcciones, perfil comercial, bloqueos/login ecommerce y eventos/reset propios. El equipo operativo del tenant (`tenant_staff`) sigue en `dashboard` y accede a ecommerce por permisos.
 - Facturacion no tiene portal/login de cliente en esta fase; guarda compradores/receptores fiscales normalizados en `facturacion.billing_customers`. Admins/operadores fiscales siguen en `dashboard`.
@@ -124,7 +145,7 @@ El workspace usa redes Docker segmentadas, creadas por los scripts. `edge` queda
 - Los modulos backend pueden tener perfiles operativos propios (`sri-issuer`, `pos-cashier`, `inventory-operator`, etc.), pero esos perfiles no guardan password, sesion ni rol global; solo referencian `tenant_id` + `user_id`.
 - Tipos de identidad vigentes: `platform` para superadmins/recovery TECNOLTS, `tenant_staff` para admins/equipo operativo del tenant, `customer` para compradores ecommerce y `service` para integraciones internas.
 - `/api/users` debe listar solo usuarios operativos de `dashboard`; compradores ecommerce (`customer`) no aparecen como usuarios operativos. `/api/admin/ecommerce-users` lista y administra clientes desde `ecommerce."Customer"`.
-- `backend` sigue siendo un solo runtime `platform-core`; IdentityPlatform y Mailer resuelven en `dashboard`, CatalogInventory/Commerce/ReportingFinance resuelven en `ecommerce`, y Billing resuelve en `facturacion`.
+- `backend` sigue siendo un solo runtime HTTP `platform-core`; IdentityPlatform y Mailer resuelven en `dashboard`, CatalogInventory/Commerce/ReportingFinance en `ecommerce`, Billing en `facturacion` y LoyaltyRewards en `loyalty`.
 - Regla permanente: no crear foreign keys entre DBs de modulos; integrar por IDs estables, snapshots o contratos API. Las tablas FDW cross-domain son compatibilidad temporal para consultas existentes, no un permiso para crear acoplamientos nuevos.
 - Guia detallada: `dashboard/docs/MODULAR-ORCHESTRATION.md`.
 - En `dashboard`, `npm run verify` debe incluir `npm run module:check` para romper temprano si deriva el contrato modular publicado.
@@ -154,14 +175,14 @@ npm run test         # lint + typecheck + api:contracts:check
 - Entry point: `public/index.php`.
 - Arquitectura: MVC propio sin framework; Router custom, JWT auth, CORS, CSRF y tenant resolution.
 - Namespace PHP: `App\` -> `src/`.
-- Modularizacion backend en curso: `src/Modules/{IdentityPlatform,CatalogInventory,Commerce,Billing,ReportingFinance,Mailer}` con registries de rutas por dominio en `src/Modules/*/routes.php`.
+- Modularizacion backend: `src/Modules/{IdentityPlatform,CatalogInventory,Commerce,Billing,ReportingFinance,Mailer,LoyaltyRewards}` con registries de rutas por dominio en `src/Modules/*/routes.php` y fronteras verificadas por puertos/adaptadores.
 - `config/routes.php` ya no debe crecer como lista plana; agrega/ajusta rutas dentro del registro del modulo duenio y deja al agregador central preservar el contrato HTTP actual.
-- `src/Core/ConnectionRegistry.php` resuelve la conexion por dominio usando `config/module-databases.php`; los dominios internos se agrupan en las bases de servicio `dashboard`, `ecommerce` y `facturacion`.
+- `src/Core/ConnectionRegistry.php` resuelve la conexion por dominio usando `config/module-databases.php`; los dominios internos se agrupan en `dashboard`, `ecommerce`, `facturacion` y `loyalty`.
 - `src/Modules/Billing/Native/` contiene la logica fiscal nativa para XML, RIDE, SRI, configuracion, sucursales, certificados, mail y recuperacion.
 - `src/Modules/Mailer/` contiene la frontera tecnica de correo del Core API: contacto, outbox, auditoria de entregas y salud operativa sobre `dashboard`. La feature comercial visible `email-service` sigue planned hasta tener UI/contratos propios.
 - `src/Modules/Billing/Controllers/PublicBillingController.php` atiende el contrato fiscal publico compatible `/api/{test|production}/v1/*` dentro del backend, sin sesion dashboard y autenticado por API key fiscal.
 - `BillingGatewayFactory` usa solo `BILLING_GATEWAY_DRIVER=native`; `native_fallback` y `facturador_http` deben fallar si reaparecen en configuracion.
-- El worker fiscal del backend vive en `scripts/process_billing_recovery.php` y corre como contenedor `backend-sri-worker`; respeta minimo `3600` segundos entre reintentos.
+- Workers persistentes: `backend-sri-worker` recupera Billing/SRI; `backend-commerce-billing-worker` entrega la outbox Commerce -> Billing; `backend-mailer-worker` procesa correo durable; `backend-wallet-notify-worker` procesa notificaciones Wallet. Todos usan health por ciclo, leases/locks e idempotencia/reintentos propios del dominio.
 - `src/Modules/IdentityPlatform/Application/TenantAccessService.php` es la regla central para modulos contratados, permisos `module.action`, identidad platform/tenant/customer/service y bloqueo de rutas operativas por modulo.
 - `Auth::requireAdmin()` en el backend legacy significa "identidad gestionada de tenant o plataforma"; los permisos reales se deciden despues por `TenantAccessService`, no por el campo legacy `User.role`.
 - Bootstrap DB: `scripts/bootstrap_schema.php`, ejecutado con `RUN_DB_SETUP=1`.
@@ -186,12 +207,12 @@ npm run test         # lint + typecheck + api:contracts:check
 - Fragil para SSL, perfiles y reglas dinamicas: nunca levantar manualmente con `docker compose up`.
 - Usar `./scripts/deploy.sh gateway` desde la raiz del workspace, o `gatewayapisix/scripts/deploy.sh` desde el repo del componente.
 - APISIX se configura desde `gatewayapisix/entorno/.env`; no hardcodear dominio, tenant, base path ni upstream en rutas.
-- Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; dashboard `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/`; backend generico registrado `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; ecommerce webparamascotas `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`.
+- Contrato publico: web `https://${PRIMARY_SITE_DOMAIN}/`; Dashboard Paramascotas same-site `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/` y aliases primarios; APIs Dashboard registradas `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_DASHBOARD_SEGMENT}/api/*` y aliases primarios; backend generico `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/*`; ecommerce especializado `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_ECOMMERCE_SERVICE_SEGMENT}/*`; facturacion `https://${PRIMARY_SITE_DOMAIN}/${PUBLIC_TENANT_SLUG}/${PUBLIC_BILLING_SERVICE_SEGMENT}/${PUBLIC_BILLING_ENV_SEGMENT}/v1/*`; los hosts tenant Dashboard, como `fidepuntos.tecnolts.com`, publican los contratos equivalentes con su slug resuelto.
 - En QA local actual, probar ese contrato por `https://paramascotasec.com/` y, si el DNS/hosts del cliente no resuelve al host virtualizado, usar `--resolve paramascotasec.com:443:192.168.100.229` en `curl`.
 - Certificados QA locales: `gatewayapisix/scripts/setup-ssl-local.sh` genera una CA local `gatewayapisix/entorno/certs/local-ca.crt` y un certificado de servidor para `paramascotasec.com`; instalar solo `local-ca.crt` en PCs cliente. Nunca copiar `local-ca.key`; copiar certificados de production a QA requiere decision explicita porque implica mover `privkey.pem` de production.
-- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `DASHBOARD_TENANT_HOSTS`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, `PUBLIC_API_SERVICE_SEGMENT`, `PUBLIC_ECOMMERCE_SERVICE_SEGMENT`, `PUBLIC_DASHBOARD_SEGMENT`, `PUBLIC_BILLING_SERVICE_SEGMENT`, `PUBLIC_BILLING_ENV_SEGMENT`, `FRONTEND_UPSTREAM`, `BACKEND_UPSTREAM`, `DASHBOARD_UPSTREAM`.
+- Variables clave: `PRIMARY_SITE_DOMAIN`, `PRIMARY_SITE_ALIASES`, `DASHBOARD_TENANT_HOSTS`, `PRIMARY_SITE_PUBLIC_IP`, `PRIMARY_SITE_LOCAL_IPS`, `PUBLIC_TENANT_SLUG`, segmentos publicos, upstreams y las credenciales scoped `EDGE_BACKEND_PROXY_TOKEN`/`DASHBOARD_PROXY_TOKEN`. `DASHBOARD_ADMIN_HOST` puede existir por compatibilidad/certificados, pero no define la entrada Paramascotas QA.
 - Rutas legacy publicas `/api/*`, `/facturador/*` y `/uploads-api/*` quedan bloqueadas por APISIX.
-- `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed. Para APIs backend lee `config/routes.php` y `src/Modules/*/routes.php`; excluye `/api/{apiMode}/v1/*` porque Billing publico tiene rutas APISIX explicitas hacia `platform-core`.
+- `sync-apisix.sh` aplica upstreams/services/routes/ssl por Admin API y limpia solo objetos con marca managed. Lee los registries PHP, registra cada API de negocio Dashboard por metodo/capability directo a `backend-http` y el adaptador de upload explicito hacia Dashboard/Next.js, excluye el wildcard fiscal interno porque Billing publico tiene rutas explicitas y reconcilia el registro tenant con receipt verificable antes de marcarlo listo.
 - UI local de APISIX: `http://${APISIX_ADMIN_BIND_IP}:${APISIX_ADMIN_PORT}/ui/` (QA actual: `127.0.0.1:9180`).
 - En QA `GATEWAY_BIND_IP` debe apuntar a localhost/LAN; en produccion publica solo `80/443`.
 - `certbot` corre solo en produccion via perfil `certbot`.
@@ -206,7 +227,7 @@ cd gatewayapisix && ./scripts/renew-letsencrypt.sh
 ```bash
 scripts/check-paramascotas.sh    # capability registry + frontend lint/typecheck + backend PHP syntax + backend health
 php backend/scripts/check_modular_routes.php # handlers HTTP bajo src/Modules sin App\Controllers legacy
-docker exec backend-api php scripts/check_module_databases.php # ownership real de bases logicas
+./scripts/check-module-databases.sh # ownership/RLS desde el rol worker, nunca desde el API
 docker exec backend-api php scripts/check_loyalty_financial_invariants.php # saldo/deuda/stock/reversas/referencias/orfandad
 docker exec backend-api php scripts/run_loyalty_policy_exercises.php # politica financiera QA
 docker exec backend-api php scripts/run_loyalty_concurrency_exercises.php # carreras financieras/OTP QA
@@ -216,10 +237,13 @@ docker exec backend-api php scripts/run_wallet_notification_exercises.php # at-m
 node dashboard/tools/check-module-manifests.mjs
 node dashboard/tools/check-dashboard-api-contracts.mjs # catalogo dashboard-api/paramascotas-api alineado a rutas backend reales
 scripts/check-env-secrets.sh all # preflight .env/secrets sin imprimir valores
+basesdedatos/scripts/check-secret-transport.sh # prohíbe secretos DB/passphrases en argv/env y valida PGPASSFILE/FD efímeros
 scripts/check-container-connectivity.sh qa
 scripts/check-container-connectivity.sh production
 scripts/e2e-qa.sh                # suite QA: contracts, checks, SEO, Billing y probes gatewayapisix
 gatewayapisix/scripts/check-loyalty-runtime.sh # CORS, JSON 401/404/405 y logs redactados QA
+scripts/check-architecture-scorecard.sh --preflight
+scripts/check-architecture-scorecard.sh qa # seis dimensiones, 14 subevidencias y receipt SHA-256
 
 cd webparamascotas/app
 npm run capabilities:check       # valida registro maestro de capacidades
@@ -229,7 +253,7 @@ npm run api:contracts:check      # bloquea rutas API hardcodeadas fuera del cata
 
 `check-container-connectivity.sh` tambien valida que `/${PUBLIC_TENANT_SLUG}/${PUBLIC_API_SERVICE_SEGMENT}/products` devuelva productos publicos y que las rutas legacy `/api/*`, `/facturador/*` y `/uploads-api/*` respondan 404. Un deploy QA/production debe fallar si el catalogo publico queda vacio; en QA solo se permite sembrar datasets demo con `SEED_QA_CATALOG=1`, no por defecto. `check-container-connectivity.sh production` valida el runtime de produccion; no correrlo esperando exito mientras el workspace esta desplegado en QA. Para cambios acotados, correr tambien checks del componente afectado cuando aplique.
 
-`backend/scripts/check_module_databases.php` valida que `ConnectionRegistry` resuelva cada dominio a su base dedicada, que las tablas owner sean locales, que las tablas ajenas de compatibilidad sean foreign tables FDW y que no existan foreign keys fisicas entre dominios. `scripts/check-paramascotas.sh` y `scripts/check-container-connectivity.sh` lo ejecutan desde el contenedor backend.
+`backend/scripts/check_module_databases.php` valida que `ConnectionRegistry` resuelva cada dominio a su base dedicada, que las tablas owner sean locales, que las tablas ajenas de compatibilidad sean foreign tables FDW y que no existan foreign keys fisicas entre dominios. El lanzador canonico `scripts/check-module-databases.sh` lo ejecuta dentro de `backend-sri-worker` con el rol worker; no se deben reinyectar credenciales worker en `backend-api`. `scripts/check-paramascotas.sh` y `scripts/check-container-connectivity.sh` reutilizan ese lanzador.
 
 El registro maestro de capacidades vive en `webparamascotas/docs/capabilities/*.json`; el manifiesto generado queda en `webparamascotas/docs/system-capabilities.generated.json` y el helper frontend en `webparamascotas/app/src/generated/systemCapabilities.ts`. Toda ruta backend nueva debe registrarse en `backend/config/routes.php` o `src/Modules/*/routes.php` con `capability`. Si una pagina, route handler o uso API queda fuera del registro, `npm run capabilities:check` debe fallar.
 
@@ -246,12 +270,12 @@ El registro maestro de capacidades vive en `webparamascotas/docs/capabilities/*.
 ## Seguridad
 
 - Auth: JWT HS256 en cookie httpOnly y Bearer opcional. Payload: `sub`, `email`, `name`, `role`, `tenant_id`, `jti`.
-- Superficies de auth separadas: dashboard envia/infere `X-Auth-Surface: dashboard` y usa cookie `pm_auth_dashboard`; tienda ecommerce envia `X-Auth-Surface: ecommerce` y usa `pm_auth_ecommerce`. El backend conserva lectura legacy de `pm_auth` solo como compatibilidad.
-- CSRF: requerido para mutaciones API excepto auth/contact/health/quote. Header `X-CSRF-Token` debe coincidir con cookie `pm_csrf`.
+- Superficies de auth separadas: dashboard usa `X-Auth-Surface: dashboard`, `pm_auth_dashboard` y `pm_csrf_dashboard`; ecommerce usa `X-Auth-Surface: ecommerce`, `pm_auth_ecommerce` y `pm_csrf_ecommerce`. Son cookies host-only. La lectura legacy `pm_auth`/`pm_csrf` esta apagada por defecto y solo existe como compatibilidad explicita.
+- CSRF: requerido para mutaciones API excepto las exclusiones publicas declaradas. `X-CSRF-Token` debe coincidir con la cookie de la superficie vigente; APISIX elimina headers de confianza aportados por clientes y los reconstruye solo en saltos autenticados.
 - Rutas admin (`/api/admin/*`, `/api/reports/*`, `/api/users*`, `/api/shipments`): requieren identidad gestionada (`platform` o `tenant_staff`) y allowlist IP (`ADMIN_IP_MODE=private` por defecto en QA/produccion; usar `custom` para IP publica fija). El acceso funcional se valida despues por permisos `module.action` desde `TenantAccessService`.
 - Bloqueo de cuenta: despues de `AUTH_LOGIN_MAX_ATTEMPTS` (default 5), bloqueo por `AUTH_LOGIN_LOCK_MINUTES` (default 15).
 - MFA: OTP por email para admins (`request-otp`, `verify-otp`).
-- Proxy interno: `INTERNAL_PROXY_TOKEN` permite auth inter-contenedores sin login.
+- Confianza interna scoped: `EDGE_BACKEND_PROXY_TOKEN` autentica exclusivamente APISIX -> backend, `STOREFRONT_BACKEND_PROXY_TOKEN` Next.js -> backend y `DASHBOARD_PROXY_TOKEN` APISIX -> shell Dashboard. `INTERNAL_PROXY_TOKEN`/service tokens genericos estan deprecados y no deben reintroducirse.
 
 ## Operaciones peligrosas
 
@@ -283,7 +307,314 @@ Usar estas operaciones solo cuando el usuario las pida explicitamente o cuando e
 - Search Console, estado mayo 2026: 1 URL indexada, 98 no indexadas, sitemap no detectado.
 - Guia SEO/Google: `webparamascotas/SEO-GOOGLE-SETUP.md`.
 
+## Pendientes de hardening conocidos
+
+- `gatewayapisix/scripts/sync-apisix.sh` aun clasifica como publico cualquier `GET` cuyo path empiece con `/api/products`; no agregar subrutas administrativas bajo ese prefijo sin convertir la decision a allowlist explicita y agregar prueba negativa de perfil edge.
+- El contrato CORS Loyalty tiene una deriva: `check-loyalty-runtime.sh` exige `Access-Control-Allow-Credentials: true`, mientras el perfil generado por `sync-apisix.sh` declara `allow_credential=false`. El check QA ejecutado el 2026-07-17 falla exactamente por esa diferencia. Resolver el contrato (API key/Bearer sin cookie normalmente debe conservar `false`) y alinear implementacion/check antes de presentarlo como garantia.
+- OTP de usuario y recovery MFA aun tienen persistencia recuperable; migrar a hash/HMAC de un solo uso. Revisar tambien el minimo/default de sesion admin de 12 horas.
+- Production debe endurecer object storage a HTTPS verificado, vaciar secretos directos cuando se usen variantes `_FILE`, evolucionar el envelope de backups a AEAD/firma autenticada y retirar claves `*_PREVIOUS` al cerrar cada ventana de rotacion.
+- Estos puntos no invalidan el receipt QA de seis dimensiones ya emitido, pero son condiciones de hardening y/o production GO que no deben ocultarse.
+
 ## Historial de trabajo IA
+
+### 2026-07-19 - Recuperacion de consecutivo QA e interpretacion de errores SRI
+
+Objetivo: recuperar la factura de `ORD-20260719113346-4177EC4D`, devuelta por SRI pruebas con codigo 45 (`ERROR SECUENCIAL REGISTRADO`), sin modificar numeracion ni servicios de produccion.
+
+Cambios y decisiones:
+- La secuencia `pruebas` de la sucursal 1 se movio a un rango QA independiente: `current_value=999`; `produccion` permanecio en 179.
+- Se corrigio la proyeccion de `InvoiceRepository::findInvoiceForClient()` para incluir `raw_request` y los campos de reemplazo necesarios por `ReissueStuckInvoice`.
+- El comprobante QA `001-001-000000126` quedo `ANULADA_LOCAL` y enlazado al reemplazo `001-001-000001000`; el reemplazo fue `AUTORIZADO` en SRI pruebas y su correo fiscal fue enviado.
+- `SriErrorInterpreter` preserva los mensajes originales y agrega diagnostico operativo para codigos conocidos; los desconocidos fallan cerrados a revision manual. Los errores transitorios o en procesamiento reutilizan la misma clave, mientras los errores corregibles indican reemision controlada.
+- La reemision por API fiscal publica sincroniza la proyeccion del pedido mediante `BillingOrderAccountingPort`; la repeticion idempotente no crea un tercer comprobante.
+- En QA, ante codigo SRI 45 la reemision consume el numero rechazado y prueba el consecutivo inmediatamente siguiente, uno por uno. El cursor de `pruebas` puede rellenar huecos inferiores aunque exista el comprobante QA 1000; produccion permanece separada y no se modifica.
+- Los web services oficiales solo consultan autorizacion por clave completa y no publican una operacion para obtener el ultimo consecutivo del emisor. Por ello la alineacion externa usa como evidencia autoritativa el rechazo 45; una conciliacion exacta masiva requiere importar/exportar comprobantes desde SRI en Linea.
+
+Evidencia:
+- Aprobaron `check_sri_error_interpreter.php`, el contrato Billing/Commerce, sintaxis PHP y `git diff --check`.
+- La reemision se ejecuto por el contrato publico APISIX de QA y respondio HTTP 200; nunca se consulto ni se modifico SRI produccion.
+- Commerce refleja `reissued`, `AUTORIZADO`, clave nueva y consecutivo `001-001-000001000`; Billing conserva exactamente dos comprobantes para la referencia (original y reemplazo).
+
+### 2026-07-19 - Activacion fiscal para administradores ParamascotasEC
+
+Objetivo: habilitar el modulo Billing SRI para `paramascotasec` y permitir que los administradores `evasquez@paramascotasec.com` y `gvasquez@paramascotasec.com` consulten, emitan y configuren facturacion.
+
+Cambios operativos:
+- `tenant_module_entitlements` deja `billing-sri` activo para `paramascotasec`, con origen `user-request-2026-07-19`.
+- El rol efectivo compartido `paramascotasec_admin` incorpora `billing-sri.read`, `billing-sri.create` y `billing-sri.update`; ambas membresias siguen activas y asignadas a ese rol.
+- Se registraron eventos `tenant.module.activated` y `tenant.role.permissions.updated` en `tenant_access_audit_events` con el alcance y usuarios afectados.
+- El registro runtime canonico se actualizo mediante CAS auditado para incluir `billing-sri`; el reconciliador lo promovio de `pending_gateway` a `ready` con `businessReady=true` y APISIX publico las rutas administrativas fiscales por metodo/capability.
+
+Evidencia:
+- Aprobaron las 20 aserciones del contrato durable Commerce -> Billing y las 13 aserciones del registry de credenciales por tenant.
+- El registry runtime valido un tenant y dos hosts; la API key registrada coincide con la unica key fiscal activa de `paramascotasec`.
+- La sucursal fiscal por defecto esta activa para pruebas, tiene certificado y correo fiscal habilitado; los workers Billing, SRI y Mailer estan healthy.
+- `https://paramascotasec.com/paramascotasec/facturacion/health` respondio healthy por APISIX usando la CA QA local.
+- Tras redeploy canonico de gateway y backend, las rutas `/dashboard/api/admin/billing/health`, `/configuration` y `/rides` llegan al backend y sin sesion responden `401 AUTH_REQUIRED`, en lugar del bloqueo administrado `404` o el estado transitorio `503`.
+
+Decision:
+- No se genero un pedido artificial ni se consumio un secuencial SRI. La validacion funcional final debe hacerse con un pedido nuevo: al pasar a `completed` o `delivered`, Commerce crea la outbox atomicamente y el worker entrega la emision a Billing.
+
+### 2026-07-18 - Desglose fiscal coherente en carrito y checkout
+
+Objetivo: corregir el resumen que ocultaba IVA 0% y rotulaba el total como `Total productos + IVA`, haciendo parecer erroneo que el subtotal sin IVA y el total fueran iguales.
+
+Diagnostico y decision:
+- La cotizacion era numericamente correcta para `Avant Premium Gatos Adultos`: el catalogo y la API lo clasifican con tasa 0%, por lo que USD 8,90 de base + USD 0,00 de IVA = USD 8,90. El SRI mantiene IVA 0% para alimento balanceado nutricional de mascotas desde febrero de 2025; no se altero masivamente la clasificacion fiscal del catalogo.
+- Existia ademas un error independiente con cupones: `vat_subtotal` y `vat_amount` ya venian calculados despues del descuento, pero el frontend restaba `discount_total` otra vez al presentar el total de productos.
+
+Cambios:
+- Commerce publica tambien `vat_subtotal_before_discount` y `vat_amount_before_discount`, derivados linea por linea y compatibles con tasas mixtas.
+- Checkout presenta siempre la fila de IVA, incluso cuando es 0%, usa `subtotal` del backend como total de productos y elimina el rotulo ambiguo `+ IVA`.
+- Carrito presenta tambien `IVA (0,00%) = USD 0,00` en lugar de ocultar la fila fiscal.
+- Con descuento, la relacion visible queda `subtotal sin IVA + IVA - descuento = total productos`; envio se agrega despues y una sola vez.
+
+Evidencia:
+- Aprobaron sintaxis PHP, `npm run typecheck`, `npm run lint`, `npm run api:contracts:check` y `git diff --check`.
+- La cotizacion real por APISIX para `prod_1b9079e7dfd6d` devolvio base USD 8,90, IVA 0%, impuesto USD 0,00, envio pickup USD 0,00 y total USD 8,90.
+- Playwright contra QA local valido carrito y checkout: fila IVA 0% visible, `Total productos` sin el rotulo anterior y cero overflow horizontal. Un escenario controlado con IVA 15% y descuento comprobo USD 10,00 + USD 1,50 - USD 1,15 = USD 10,35.
+- Backend y frontend se desplegaron mediante los scripts canonicos y quedaron healthy; `/checkout` responde HTTP 200 por APISIX.
+
+### 2026-07-18 - Portal cliente plano y denso tras revision visual
+
+Objetivo: rehacer `/my-account` despues de que la primera modernizacion fuera rechazada por degradados genericos, sombras excesivas y bajo aprovechamiento del viewport.
+
+Cambios:
+- Se adopto un sistema Flat/Swiss de una sola tinta de marca: cero degradados, cero sombras decorativas, radios de 6-12 px, superficies blancas y divisores funcionales.
+- El contenedor cliente crecio a 1720 px con sidebar de 240 px; a 2048 px la grilla util mide 1656 px y el contenido principal 1396 px.
+- El resumen usa una franja unica de tres metricas y el historial completo reemplaza cards verticales gigantes por una tabla densa de ocho columnas/acciones; mobile conserva cards compactas.
+- El encabezado es contextual para Resumen, Pedidos, Direcciones y Datos/seguridad; el CTA de compra aparece solo en Resumen para no desplazar contenido operativo.
+- El menu mobile se pliega despues de navegar. Se retiro la carga de avatar placeholder/no persistida de Datos y seguridad.
+- Colores y dimensiones del canal cliente se centralizaron como tokens scoped en `CustomerAccountShellStyles`; la sesion y los permisos Dashboard no cambiaron.
+
+Evidencia:
+- Aprobaron `npm run typecheck`, `npm run lint`, `npm run channel:check`, `npm run api:contracts:check` y `git diff --check`.
+- Playwright sobre la build QA, con API/sesion cliente simuladas sin credenciales reales, valido 2048x1152, 1440x900, 768x1024, 375x812 y landscape 812x375: cero overflow, degradados, sombras y objetivos tactiles menores a 44 px.
+- En desktop se renderizaron ocho pedidos en filas dentro del primer viewport; en mobile se conservaron ocho cards y el menu quedo plegado despues de elegir la seccion.
+- Frontend se desplego por el script canonico, quedo healthy y `/my-account` responde HTTP 200 por APISIX.
+
+Decision:
+- La densidad y jerarquia se resuelven con grilla, tipografia y divisores; no con heroes, gradientes, elevacion artificial ni cajas anidadas.
+
+### 2026-07-18 - Portal cliente modernizado sin mezclarlo con Dashboard
+
+Objetivo: actualizar la experiencia de `/my-account` despues de recuperar el login cliente, alineandola visualmente con la plataforma vigente sin convertir compradores ecommerce en usuarios Dashboard.
+
+Cambios:
+- El portal cliente usa un shell moderno y responsivo con bienvenida, CTA a tienda, tarjetas de estado, actividad reciente y mayor ancho util; conserva el branding teal de Paramascotas.
+- El avatar placeholder fue reemplazado por iniciales derivadas del nombre, sin afirmar que existe una foto persistida.
+- El menu de cuenta separa Resumen, Pedidos, Direcciones y Datos/seguridad, tiene objetivos tactiles de al menos 44 px y se pliega en mobile.
+- Pedidos recientes usa tabla accesible con teclado en desktop y tarjetas nativas en mobile, evitando scroll horizontal; agrega acceso directo al historial completo.
+- Los paneles cliente secundarios reciben superficies, inputs, foco visible y espaciado coherentes mediante estilos scoped a `.customer-account-shell`; no alteran la shell administrativa.
+
+Evidencia:
+- Aprobaron `npm run typecheck`, `npm run lint`, `npm run channel:check`, `npm run api:contracts:check` y `git diff --check`.
+- Frontend se desplego por `./scripts/deploy.sh frontend`; el contenedor quedo healthy.
+- Por APISIX, `/my-account` y `/login` responden HTTP 200; el bundle publicado contiene la bienvenida y el menu cliente nuevos.
+- Playwright contra la build publicada, con sesion cliente/API simuladas sin credenciales reales, valido desktop y 390 px: cero overflow horizontal, tres metricas, pedidos como tabla/tarjetas segun viewport, menu mobile plegado, objetivo tactil de 48 px y cero imagenes placeholder en la navegacion.
+
+Decision:
+- Dashboard controla la operacion administrativa, pero `/my-account` sigue siendo el owner visual de pedidos, envios, direcciones y perfil del comprador. Se comparte lenguaje visual, no sesion, identidad, permisos ni rutas administrativas.
+
+### 2026-07-18 - Menu de cuenta storefront vuelve a login cliente
+
+Objetivo: corregir el boton `Iniciar sesion` del header ecommerce, que enviaba clientes a `/dashboard/sign-in?entry=storefront` y provocaba rechazos validos como si fueran credenciales incorrectas.
+
+Diagnostico:
+- `MenuPet.tsx` reutilizaba `DASHBOARD_SIGN_IN_PATH` para el CTA `Iniciar sesion`; la cuenta cliente llegaba por error a IdentityPlatform aunque su password ecommerce fuera correcto.
+- El mismo componente redirigia logout cliente al Dashboard y mostraba `Panel` como accion primaria para una sesion ecommerce autenticada.
+
+Cambios:
+- `Iniciar sesion` usa `/login`, `Mi cuenta` autenticada usa `/my-account` y logout vuelve a `/login`.
+- El unico acceso administrativo del menu se rotula `Panel administrativo` y conserva `/dashboard/sign-in?entry=storefront` como destino deliberado.
+- `check-channel-separation.mjs` falla si login/logout/cuenta cliente vuelven a cruzar la superficie Dashboard o si desaparece la entrada administrativa explicita.
+
+Evidencia:
+- Aprobaron `npm run channel:check`, `npm run typecheck`, `npm run lint` y `git diff --check`.
+- Frontend se desplego por `./scripts/deploy.sh frontend`; el contenedor quedo healthy y `/login` y `/dashboard/sign-in?entry=storefront` responden HTTP 200 por APISIX.
+- El bundle publicado confirma `I=/login`, `J=/dashboard/sign-in?entry=storefront`, CTA cliente con `href:I`, CTA administrativo con `href:J`, cuenta autenticada `/my-account` y logout `replace(I)`.
+
+Decision:
+- Las etiquetas de navegacion expresan el owner de identidad: cliente (`Iniciar sesion`/`Mi cuenta`) y operador (`Panel administrativo`) nunca comparten destino aunque vivan en el mismo dominio.
+
+### 2026-07-18 - Recuperacion cliente verificada y Message-ID SMTP publico
+
+Objetivo: comprobar por que la clave reportada como correcta fallaba en Dashboard y por que el correo de recuperacion no aparecia en Gmail.
+
+Diagnostico:
+- Los intentos con `edwin.eduardo.vm@gmail.com` en `/dashboard/sign-in` y `/dashboard/forgot-password` resolvieron correctamente contra IdentityPlatform como usuario inexistente; esa direccion es solo cliente ecommerce.
+- En ecommerce la cuenta esta verificada, sin bloqueo, con cero intentos fallidos y `last_login_at=2026-07-18 19:09:15`; los eventos registran tres logins exitosos y un password reset completado ese dia.
+- La prueba canonica `POST /paramascotasec/api/auth/password-reset/request` creo token cliente valido, encolo el correo y el worker lo entrego a SMTP en un intento a las `19:50:11`, sin error. El link usa `/reset-password` y no `/dashboard/reset-password`.
+- SPF autoriza el MX/IP de `mail.paramascotasec.com`, existe DKIM `default`, DMARC esta en `p=quarantine` y TLS 1.3 valida el certificado; la aceptacion SMTP no atesta llegada a bandeja Gmail.
+- PHPMailer generaba el `Message-ID` con el hostname efimero del contenedor, una senal de entregabilidad innecesariamente debil.
+
+Cambios:
+- `SmtpMailTransport` fija `PHPMailer::Hostname` al dominio publico derivado de `MAIL_FROM_ADDRESS`; `MAIL_MESSAGE_ID_DOMAIN` queda como override opcional validado.
+- El check durable Mailer agrega cobertura para impedir que reaparezca un `Message-ID` con hostname interno.
+- Backend se redesplego por el script canonico; API y todos los workers quedaron saludables. La validacion sin envio produjo `Message-ID` terminado en `@paramascotasec.com`.
+
+Evidencia:
+- `php -l` aprobo ambos archivos y `check_mailer_durable_outbox.php` paso 23 aserciones desde el workspace completo.
+- `/paramascotasec/api/readyz` responde HTTP 200 por APISIX.
+- La prueba de recovery dejo un token activo hasta `20:20:09`; no se persiste ni documenta el token plano.
+
+Decision:
+- El estado `sent` significa aceptacion del relay SMTP, no entrega final en inbox. Para faltantes posteriores se revisan spam/rebotes/trazabilidad del proveedor sin reenviar ciegamente; las recuperaciones siempre deben usar la superficie propietaria de la identidad.
+
+### 2026-07-18 - Accesos cliente y Dashboard separados tambien en autocompletado
+
+Objetivo: aclarar la migracion del panel historico y evitar que el navegador presente credenciales de cliente dentro del acceso administrativo.
+
+Diagnostico:
+- Las sesiones tecnicas no estaban mezcladas: los checks de aislamiento de `auth_surface`, cookies/CSRF y fronteras de persistencia aprobaron; los fallbacks legacy de cookie y query de superficie permanecen deshabilitados.
+- `edwin.eduardo.vm@gmail.com` es exclusivamente cliente ecommerce y no debe autenticar en Dashboard. El navegador estaba autocompletando ese correo en ambos formularios por usar los mismos hints genericos.
+- Los cuatro usuarios operativos historicos de Paramascotas ya existen en IdentityPlatform con membership `tenant_staff` activa y rol granular `paramascotasec_admin`; se comprobaron logins Dashboard recientes y no se alteraron sus hashes ni claves.
+
+Cambios:
+- `/login` se identifica como `Cuenta de cliente`, explica que atiende compras, pedidos, envios y direcciones, usa labels visibles y `autocomplete` aislado bajo `section-storefront`.
+- `/dashboard/sign-in` usa `autocomplete` aislado bajo `section-dashboard` y, en el tenant Paramascotas, muestra un aviso con enlace a la cuenta cliente para quien llego al panel equivocado.
+- Ambas superficies agregan navegacion cruzada explicita sin compartir sesion, cookies, credenciales ni owner de identidad.
+
+Evidencia:
+- Aprobaron 9 pruebas del componente de sign-in Dashboard, `npm run typecheck`, `npm run lint`, `npm run channel:check`, los checks PHP de aislamiento y el check de fronteras de secretos runtime.
+- Frontend y Dashboard se desplegaron por `./scripts/deploy.sh frontend|dashboard`; ambos contenedores quedaron healthy.
+- Por APISIX, `/login` y `/dashboard/sign-in?returnUrl=%2F` responden HTTP 200 y los bundles publicados contienen los textos y hints nuevos.
+
+Decision:
+- `/login` y `/my-account` son la superficie de clientes; `/dashboard/sign-in` es la version vigente del panel para operadores migrados. Una cuenta cliente nunca se eleva ni se duplica para abrir Dashboard.
+
+### 2026-07-18 - Recuperacion de clave distingue cliente de operador
+
+Objetivo: impedir que un cliente ecommerce interprete el formulario `/dashboard/forgot-password` como recuperacion de su cuenta de tienda.
+
+Cambios:
+- Se confirmo que `/dashboard/forgot-password` usa deliberadamente la superficie IdentityPlatform/dashboard; una cuenta presente solo en `ecommerce."Customer"` recibe respuesta generica pero no genera correo desde ese formulario.
+- La pantalla ahora se titula `Recuperar acceso administrativo`, explica que acepta cuentas de administradores/operadores y cambia el CTA inferior a `¿Necesitas acceso administrativo?`.
+- En `paramascotasec.com` y `www.paramascotasec.com` muestra un bloque accesible para clientes con enlace absoluto a `/forgot-password`, donde se recupera la cuenta usada para pedidos, envios y direcciones.
+- Se agrego cobertura del texto de separacion, aprobaron 4 pruebas del componente y Dashboard se redesplego por el script canonico.
+
+Evidencia:
+- `/dashboard/forgot-password` -> HTTP 200 con el nuevo bundle y texto `Recupera aqui tu clave de cliente`.
+- `/forgot-password`, `/dashboard/reset-password` y `/reset-password` -> HTTP 200, conservando las dos superficies separadas.
+
+Decision:
+- No se busca ni se envian resets de clientes desde Dashboard y no se duplican identidades. La UI orienta al usuario hacia el owner correcto.
+
+### 2026-07-18 - Login y recuperacion de clientes ecommerce desacoplados de memberships admin
+
+Objetivo: recuperar autenticacion, password reset y acceso al panel del cliente ecommerce sin ampliar permisos cross-domain.
+
+Cambios:
+- La cuenta cliente consultada existe en `ecommerce."Customer"`, tenant `paramascotasec`, rol `customer`, correo verificado, una direccion guardada y sin bloqueo.
+- Login y password reset devolvian HTTP 500 porque `CustomerRepository`, al heredar `UserRepository`, conservaba subconsultas a `tenant_memberships`; esa tabla pertenece a IdentityPlatform/dashboard y el rol ecommerce correctamente no tenia permiso sobre ella.
+- `UserRepository::rewriteSql()` sustituye `account_status` por `active` exclusivamente cuando `syncMemberships=false`; los usuarios Dashboard conservan la consulta central de membership y los clientes no obtienen permisos cross-domain.
+- Se agrego una asercion al check de frontera de persistencia, se redesplego backend por el script canonico y todos los workers quedaron saludables.
+
+Evidencia:
+- Password reset publico por APISIX -> HTTP 200, token activo en `CustomerPasswordResetToken` y correo en `EmailOutbox` con estado `sent`, un intento y sin error.
+- Login de cliente llega a semantica normal (`AUTH_LOGIN_INVALID` ante una clave diagnostica), no a error interno; el intento diagnostico fue revertido y la cuenta quedo con cero fallos y sin lock.
+- `backend/scripts/check_runtime_slo.sh --preflight` -> OK.
+
+Decision:
+- Ecommerce no consulta `tenant_memberships` ni recibe permisos sobre tablas IdentityPlatform. La activacion del cliente se resuelve por su fila local y `email_verified`; memberships centrales siguen siendo exclusivas de identidades administrativas.
+
+### 2026-07-18 - Catalogo recuperado tras restore con esquema legacy
+
+Objetivo: diagnosticar el catalogo ausente despues de un despliegue y evitar confundir pases de base con rotacion de llaves.
+
+Cambios:
+- Se comprobo por el contrato publico que APISIX devolvia HTTP 503 porque `backend-api` y `backend-http` estaban detenidos; los tokens scoped de gateway, storefront y backend si coincidian.
+- El primer arranque fallo cerrado por una base restaurada anterior al aislamiento tenant: 4 filas `ecommerce.Image` y 2 ajustes legacy de Billing no tenian owner tenant.
+- En QA single-site se valido `paramascotasec` como owner y se ejecuto bootstrap one-shot con `RUN_DB_SETUP=1`, `ECOMMERCE_LEGACY_TENANT_ID=paramascotasec` y `BILLING_LEGACY_TENANT_ID=paramascotasec`; ambos fallbacks quedaron fuera de `.env`.
+- Se sincronizaron bases modulares, esquema, Billing ciphertext-only y RLS; backend y workers quedaron saludables. El catalogo publico volvio a HTTP 200 con 48 productos en la primera pagina.
+- El manual ahora exige `RUN_DB_SETUP=1` en el primer deploy backend posterior a cualquier restore/pase y explica el tratamiento fail-closed de owners legacy y la diferencia entre HTTP 503 de upstream y rechazo por credenciales.
+
+Decision:
+- Los pases QA/produccion no rotan secretos automaticamente. Migraciones y owners legacy se resuelven explicitamente antes de continuar; la rotacion conserva su flujo coordinado e independiente.
+
+### 2026-07-18 - Rotacion coordinada y tolerante de credenciales gateway
+
+Objetivo: evitar cortes y desincronizaciones al rotar credenciales APISIX, backend y Dashboard.
+
+Cambios:
+- Dashboard acepta `DASHBOARD_PROXY_TOKEN_PREVIOUS` solo cuando esta configurado, manteniendo fail-closed con valor vacio; `.env.runtime` queda limitado al token actual y su predecesor temporal.
+- APISIX admite `APISIX_ADMIN_KEY_PREVIOUS` durante la ventana de rotacion y conserva el keyring previo de cifrado ya soportado.
+- `scripts/rotate-gateway-runtime-secrets.php --prepare|--finalize` coordina de forma atomica Admin API, cifrado, APISIX -> backend y APISIX -> Dashboard sin imprimir secretos; `--restore-active-data-key` recupera el keyring runtime si un marcador invalido sobrescribe el `.env`.
+- Se sincronizo `EDGE_BACKEND_PROXY_TOKEN` entre backend y gateway con el reconciliador canonico; Dashboard y gateway fueron redesplegados por scripts. APISIX termino saludable, con 743 rutas, 22 plugin configs y probes live/compression aprobados.
+
+Decision:
+- Las claves `*_PREVIOUS` son ventanas temporales, nunca estado permanente; se retiran con `--finalize` solo despues de desplegar backend, Dashboard y gateway y aprobar verificaciones.
+
+### 2026-07-18 - Dashboard Paramascotas same-site por dominio principal
+
+Objetivo: corregir el acceso al Dashboard cuando el ecommerce enviaba al usuario a `admin.paramascotasec.com/dashboard/sign-in`, host que no resuelve en el QA cliente y que no debe ser requisito operativo para Paramascotas.
+
+Cambios:
+- `gatewayapisix/scripts/sync-apisix.sh` deja de redirigir `/${PUBLIC_DASHBOARD_SEGMENT}` del dominio principal al host admin y publica la shell Dashboard same-site en `https://paramascotasec.com/dashboard/` y `https://www.paramascotasec.com/dashboard/`.
+- Las APIs Dashboard permitidas se registran en APISIX por host principal/alias, metodo, path y capability; las APIs desconocidas siguen fallando cerradas y `admin.paramascotasec.com/dashboard/sign-in` devuelve 404.
+- `backend/config/tenants.php` dejo de incluir `DASHBOARD_ADMIN_HOST` dentro de los dominios runtime del tenant Paramascotas; el registro tenant vigente publica solo `paramascotasec.com` y `www.paramascotasec.com`.
+- Se ajustaron los checks de APISIX y scorecard para validar Dashboard same-site en Paramascotas y mantener hosts tenantizados separados, como `fidepuntos.tecnolts.com`.
+- Durante la validacion se aplico bootstrap backend con fallbacks legacy explicitamente validados (`ECOMMERCE_LEGACY_TENANT_ID=paramascotasec`, `BILLING_LEGACY_TENANT_ID=paramascotasec`) para completar `Image.tenant_id`, aislamiento Billing, RLS y permisos; luego backend y gateway se redeplegaron por scripts canonicos.
+
+Evidencia:
+- `https://paramascotasec.com/dashboard/sign-in` -> HTTP 200 con shell Angular (`base href="/dashboard/"`, `app-root`).
+- `https://www.paramascotasec.com/dashboard/sign-in` -> HTTP 200 con shell Angular.
+- `https://admin.paramascotasec.com/dashboard/sign-in` -> HTTP 404 de APISIX, esperado.
+- `https://paramascotasec.com/paramascotasec/api/products` -> HTTP 200.
+- `./scripts/deploy.sh gateway` termino OK con `APISIX security audit ok`, probes live OK, 743 rutas gestionadas, 22 plugin configs, 0 consumers gestionados y tenants `paramascotasec`/`fidepuntos` en `ready`.
+
+### 2026-07-17 - Manual tecnico integral de soporte y desarrollo
+
+Objetivo: dejar una guia autosuficiente para operar, diagnosticar y ampliar el ecosistema, incluyendo creacion de modulos, APIs, pantallas, tablas/roles/RLS, tenants, cifrado, workers, restore, performance e incidentes.
+
+Cambios:
+- Se creo `MANUAL-TECNICO-PLATAFORMA.md` con 24 capitulos e indice navegable: arquitectura/servicios/comunicacion, ambientes/deploy, recetas end-to-end de API y modulo, Dashboard Angular, Next.js, PostgreSQL seguro, lifecycle tenant, auth/RBAC/CSRF, cifrado/keyrings/TLS/storage, workers/integraciones, backup/restore, observabilidad/SLO, troubleshooting, release/rollback, HA production y gobierno.
+- La copia versionada quedo en `webparamascotas/docs/MANUAL-TECNICO-PLATAFORMA.md`; `README.md`, `COMANDOS-RAPIDOS.md`, `MapaCompleto.md` y `webparamascotas/README.md` enlazan el manual y se corrigio el deploy Dashboard antiguo por `./scripts/deploy.sh dashboard`.
+- El capitulo de uso incluye la matriz QA de URLs funcionales, rutas de administracion, health endpoints y canales locales/internos; deja explicito que `/api-catalog` no publica APISIX, PostgreSQL no tiene UI/puerto host y QA aun no despliega Grafana/Prometheus/Loki/OTel.
+- Se validaron enlaces relativos, balance de fences, JSON y los 73 bloques Bash. La receta SQL de DBA se ejecuto en `BEGIN READ ONLY` usando `basesdedatos/scripts/common.sh`, con credencial por stdin/PGPASSFILE efimero y sin modificar datos.
+- El inventario de codigo identifico y documento los pendientes de hardening vigentes de clasificacion `/api/products`, CORS Loyalty, OTP/recovery, TTL admin, HTTPS object storage, secretos `_FILE`, envelope de backup y retiro de claves anteriores.
+- `check-loyalty-runtime.sh` se ejecuto y fallo por la deriva CORS documentada; no se oculto ni se trato como PASS. Los contratos modulares/OpenAPI (255 operaciones), catalogo Dashboard (131 endpoints), manifests, capabilities y uso de rutas Next.js si terminaron OK.
+
+Decision:
+- El manual enseña a operar por los scripts/contratos reales y distingue expresamente QA atestada de HA fisica externa. No recomienda acceso DB interactivo generico, edicion manual APISIX, bypass RLS ni `docker compose up`.
+
+### 2026-07-17 - Arquitectura QA atestada: seis dimensiones 10/10
+
+Objetivo: llevar a 10/10, con evidencia ejecutable y sin confundir subevidencias con evaluaciones, Diseno logico, Rendimiento, Escalabilidad, Administracion, separacion de Canales frontend y separacion de Tenants.
+
+Cambios y decisiones finales:
+- El runtime QA quedo desplegado por los scripts canonicos con APISIX como unica entrada publica, tres superficies de canal separadas (ecommerce, Dashboard administrativo y Dashboard tenantizado), contratos API registrados y `platform-core` modular con cuatro workers durables.
+- Next.js usa un cluster configurable de 1 a 16 procesos y QA corre cuatro workers. La portada difiere contenido bajo el fold; el catalogo publico elimina el agregado interno `thumbs`, conserva la miniatura canonica y aplica caches publicos tenant/query-safe con ventanas cortas.
+- Nginx entrega las cinco rutas FastCGI de aplicacion por `/run/php-fpm/app.sock`, compartido en tmpfs con permisos 0660 y backlog 4096. El status FPM conserva un endpoint TCP interno separado. Se elimino `fastcgi_keep_conn` porque fijaba procesos del pool; Kubernetes comparte el socket mediante `emptyDir` Memory entre Nginx y PHP-FPM.
+- PDO permanece expresamente no persistente. La prueba independiente demostro que handles persistentes podian compartir estado de sesion/transaccion entre modulos y comprometer el contexto RLS/capability; el flag `DB_PERSISTENT_CONNECTIONS` fue retirado y el contrato de tests rechaza su reaparicion.
+- El collector de metricas PostgreSQL usa `psql` del host dentro del network namespace del contenedor DB y un `PGPASSFILE` efimero 0600; no expone credenciales en argv/logs. Registra intentos, fallos y metodo, y limita el fallback a un unico reintento de transporte.
+- El validador del scorecard fue alineado con la huella real ponderada `host|/ruta` del harness. El preflight acepta el fixture canonico y rechaza tanto umbrales relajados como una huella incorrecta calculada sobre URLs; no se redujo ningun umbral.
+
+Evidencia QA:
+- `reports/architecture-scorecard-qa.json` version 2 termino `PASS`: 14/14 subevidencias, 0 fallas, y 10/10 en las seis dimensiones. Su bundle privado esta en `reports/architecture-scorecard-qa.evidence/20260717T033628Z-3537359/` y el receipt tiene checksum companion.
+- La carga oficial `reports/load/evidence-20260717T030708Z/manifest.json` version 4 termino elegible: 602.211 s medidos, 4226/4226 HTTP 2xx, cero errores/redirects/desajustes de IP, p95 0.450 s, p99 0.761 s y 21/21 snapshots. FPM tuvo cola/max-children/slow requests en cero; PostgreSQL tuvo locks, transacciones largas y deadlocks en cero. El bundle contiene 56 archivos; `SHA256SUMS` verifica los otros 55 y el receipt registra la huella del archivo de checksums.
+- El respaldo cifrado `basesdedatos/backups/backup-20260716T174603Z.sql.enc` conserva SHA-256 `fb74575c7663c8a91dd0e9cb1da0faabd7cd8c170b7d406d3952cd45a870c3c1`. El restore aislado `reports/backup-restore-drill-20260716T174946Z.json` version 3 termino `PASS` en 93 segundos y mantuvo los fingerprints.
+- El dibujo y la comparacion vigentes son `reports/arquitectura-actual-optimizada-paramascotasec-2026-07-17.svg` y `reports/comparacion-arquitectura-paramascotasec-2026-07-17.md`.
+
+Limite honesto:
+- La infraestructura production HA esta estructuralmente preparada y auditada en `infra/production-ha`, pero la operacion fisica multinodo no existe en este host QA. El receipt mantiene `external_ha_attestation.status=OUT_OF_SCORE` y `verified=false`; solo una atestacion externa y drills reales de failover pueden cambiar ese estado.
+
+### 2026-07-15 - Arquitectura API-first endurecida y scorecard de seis dimensiones
+
+Objetivo: corregir la arquitectura hasta hacer comprobables Diseno, Rendimiento, Escalabilidad, Administracion, separacion de Canales y separacion de Tenants, sin confundir IaC preparada con alta disponibilidad fisica activa.
+
+Cambios:
+- APISIX registra las APIs Dashboard individualmente y envia las de negocio directo al backend owner; el upload de imagenes queda como adaptador explicito Dashboard/Next.js y el wildcard Angular se limita a la shell. `/login` y `/my-account` permanecen en ecommerce y el Dashboard Paramascotas usa rutas same-site bajo `/dashboard/`; los tenants externos pueden usar host propio.
+- Se separaron cookies/CSRF y credenciales de salto en tres scopes: edge-backend, storefront-backend y APISIX-Dashboard. El sidecar `dashboard-local-proxy` conserva el bind de gestion QA en loopback sin dar secretos ni una red de host al contenedor de la shell.
+- `platform-core` formalizo puertos/adaptadores entre modulos. Commerce -> Billing y Mailer usan outboxes tenantizadas durables con workers propios, leases, idempotencia, reintentos, estados ambiguos y DLQ/operaciones auditables.
+- El registro tenant vive en PostgreSQL con revision/ETag CAS, `Idempotency-Key`, journal, lifecycle explicito, reconciliacion, rollback y snapshot firmado. APISIX produce receipts QA o production distintos; production exige evidencia externa de DNS/HTTPS/SNI.
+- Las cuatro bases reales (`dashboard`, `ecommerce`, `facturacion`, `loyalty`) aplican owners `NOLOGIN`, roles runtime de minimo privilegio, contexto tenant y `FORCE RLS`; las pruebas negativas cubren cruce tenant, capacidades worker y fronteras FDW.
+- Storage se abstrajo en `artifacts`/`uploads`, con local solo para QA y S3/CDN obligatorio para production HA. El migrador local -> S3 usa inventario, journal reanudable, GET/tamano/SHA-256 y no borra el origen.
+- `infra/production-ha` contiene IaC Kubernetes provider-neutral con replicas, HPA/PDB, topology spread, etcd/Redis, PgBouncer, CloudNativePG, S3/CDN, OTel y gates. El adaptador local Dashboard es la unica exclusion explicita de paridad porque Kubernetes usa Service/discovery.
+- El auditor `scripts/check-architecture-scorecard.sh` agrupa exactamente 14 subevidencias bajo seis dimensiones y emite receipt JSON + SHA-256. La carga elegible exige 600 segundos, concurrencia 8, al menos 3000 muestras, cobertura de metricas 100%, exito >=99.9%, p95 <=1 s, p99 <=2 s y cero redirects/errores.
+
+Decision y limite:
+- Las seis dimensiones solo se califican con el receipt del runtime recien desplegado y evidencia fresca de carga, backup y restore aislado. La HA externa queda fuera del score QA: el IaC es materializable, pero no se declara operacion multi-nodo/24x7 sin atestacion independiente del proveedor y drills de failover.
 
 ### 2026-07-13 - Recuperacion RBAC Paramascotas y aislamiento entre sesiones
 
@@ -362,8 +693,7 @@ Cambios:
 - OTP, challenges y sesiones del portal quedaron atomicos: una sola verificacion concurrente, sesion opaca de 15 minutos guardada por hash, cookie segura, token URL de un uso y nonces de formulario para claim/cancel. CSRF reconoce `pm_auth_dashboard`, `pm_auth_ecommerce` y `pm_auth`; el proxy interno no lo omite cuando hay cookie autenticada. Riesgos fallidos se persisten despues del rollback sin secretos.
 - Campanas Wallet reclaman con `FOR UPDATE SKIP LOCKED`; un resultado ambiguo pasa a `delivery_unknown`, no se reenvia y una respuesta tardia no duplica contadores. Activar expiracion se rechaza hasta existir FIFO completo.
 - `LoyaltyReportService` publica nueve reportes v2 con `day|range|as_of`, timezone tenant, intervalo semiabierto, maximo 366 dias, snapshot read-only repetible, metricas/series/columnas tipadas y paginacion/orden server-side. CSV/XLSX recorren keyset estable en bloques, exportan el total o fallan sobre 100000; XLSX incluye cuatro hojas y CSV neutraliza formulas.
-- Dashboard separa filtros editados/aplicados, agrega presets Dia/Rango/Corte, tabs accesibles Graficos/Datos, resumen textual y tabla equivalente por grafico, descarga Blob, progreso, paginacion/orden server-side y cancelacion de respuestas obsoletas. Ajustes exigen tipo, motivo, evidencia e idempotencia; clientes API aplican least privilege. `TenantContextService` descarta generaciones/slugs atrasados y limpia branding previo. La guia UI/UX aplicada mantuvo controles de al menos 44 px, teclado, foco y los tokens existentes.
-- El resumen `/loyalty-points` dejo de abreviar puntos y montos con notacion compacta (`K`/`k`): usa formateadores `Intl.NumberFormat` cacheados y explicitos `es-EC`, con enteros agrupados (`75350` -> `75.350`), dinero a dos decimales y tasas a un decimal en KPIs, listas, ejes, etiquetas y tooltips. Las etiquetas internas de donut y barras declaran blanco y un override CSS limitado a `app-loyalty-points-dashboard` evita que el token gris global de ApexCharts pise ese color; un contorno sutil conserva lectura sobre segmentos claros sin alterar ejes, leyendas ni el total central del donut.
+- Dashboard separa filtros editados/aplicados, agrega presets Dia/Rango/Corte, tabs accesibles Graficos/Datos, resumen textual y tabla equivalente por grafico, descarga Blob, progreso, paginacion/orden server-side y cancelacion de respuestas obsoletas. Ajustes exigen tipo, motivo, evidencia e idempotencia; clientes API aplican least privilege. `TenantContextService` descarta generaciones/slugs atrasados y limpia branding previo.
 - APISIX agrega preflight OPTIONS sin auth, CORS de origins exactos, JSON 401/404/405, bloqueos de raices incompletas/cross-tenant, ruta publica original para HMAC, redaccion de query/tokens Wallet y validacion previa de certificado/llave/SAN/vigencia. El deploy ejecuta auditoria semantica antes de quedar listo; `check-loyalty-runtime.sh` valida el comportamiento y los logs reales.
 - Se agregaron suites QA para decimal/oracle, politica, concurrencia, fuentes externas, reportes, Wallet e invariantes financieras globales. El registro generado de capacidades quedo en 32 capacidades, 234 rutas tenantizadas y 13 rutas Billing publicas.
 
@@ -371,16 +701,14 @@ Verificacion y despliegue:
 - DecimalMath paso casos exactos y 10000 casos contra oracle. Politica financiera, compras duplicadas, canje sobre saldo/stock, ajuste repetido, OTP simultaneo y carrera cancelar/aprobar pasaron; la conciliacion global termino con cero discrepancias de saldo/deuda, negativos, referencias duplicadas, reversas incompletas o canjes huerfanos.
 - Seguridad externa paso firma valida/invalida/vencida, nonce repetido, scope insuficiente, fuente/cliente/tenant cruzados, key revocada y reversa mediante descendiente rotado. Portal paso 12 checks y el contrato de fuentes 14.
 - Los nueve reportes pasaron dia, bisiesto, 366/367, fechas futuras/invertidas, as-of y aislamiento tenant. Se exportaron completas las 245 auditorias existentes al ejecutar la suite; el ejercicio multipagina verifico 1005/1005 IDs unicos, cuatro hojas XLSX, cleanup temporal, limite 100001 y neutralizacion CSV.
-- Dashboard paso 227 archivos/809 pruebas, lint, typecheck, contratos, arquitectura, manifests, builds QA/production y budgets. El build QA final quedo en 1.43 MB inicial, 536.11 kB main y 604.91 kB lazy maximo; solo persisten warnings CommonJS conocidos de `qrcode/dijkstrajs`. RBAC paso 36 verificaciones y navegador 375/768/1024/1440.
-- El ajuste visual del resumen Loyalty agrego un spec con dos casos y paso prueba dirigida, ESLint de los archivos tocados, typecheck completo, arquitectura, navegacion, dependencias, manifests y build QA. Se desplego con `./scripts/deploy.sh dashboard`; por APISIX el QA LAN sirvio `main-HDEV3VWP.js`/`styles-NR7HPDBZ.css` con HTTP 200. Una validacion Playwright con mocks solo en memoria mostro `75.350` completo en KPI/ranking/texto/tooltip, cero abreviaciones `K/k/M/m`, 21/21 etiquetas con `fill` computado blanco y sin errores de consola, pagina, red ni HTTP.
-- Se desplegaron backend con bootstrap, dashboard y gateway exclusivamente con scripts canonicos. `scripts/check-paramascotas.sh`, `scripts/check-container-connectivity.sh qa`, `scripts/e2e-qa.sh`, ownership modular, auditoria APISIX (284 rutas/12 perfiles), runtime CORS/logs y E2E de capacidades/SEO terminaron OK. No se ejecuto deploy ni validacion de produccion.
+- Dashboard paso 227 archivos/809 pruebas, lint, typecheck, contratos, arquitectura, manifests, builds QA/production y budgets. RBAC paso 36 verificaciones y navegador 375/768/1024/1440.
+- Se desplegaron backend con bootstrap, dashboard y gateway exclusivamente con scripts canonicos. `scripts/check-paramascotas.sh`, `scripts/check-container-connectivity.sh qa`, `scripts/e2e-qa.sh`, ownership modular, auditoria APISIX, runtime CORS/logs y E2E de capacidades/SEO terminaron OK. No se ejecuto deploy ni validacion de produccion.
 
 Decisiones y riesgos:
 - Veintisiete `invoice_headers` historicos de Billing no tienen tenant determinista; permanecen nulos y no verificables para Loyalty, en vez de asignarlos por defecto. Requieren conciliacion con evidencia antes de backfill.
-- Una firma POS demuestra que credencial origino el request, no que un POS autorizado diga la verdad; eliminar ese riesgo exige consultar su ledger independiente. `delivery_unknown` requiere conciliacion manual y no debe reintentarse automaticamente.
+- Una firma POS demuestra que la credencial origino el request, no que un POS autorizado diga la verdad; eliminar ese riesgo exige consultar su ledger independiente. `delivery_unknown` requiere conciliacion manual y no debe reintentarse automaticamente.
 - Fechas legacy siguen en columnas `timestamp without time zone`; reportes fallan cerrado cuando no pueden aplicar el timezone tenant. Conviene migrar gradualmente a UTC/`timestamptz` y snapshots historicos.
-- Quedan fuera: doble aprobacion para ajustes de alto valor, motor FIFO de expiracion, reconciliador/outbox para comandos externos que queden `processing` tras una caida exacta y rollout de produccion con observabilidad/alertas.
-- La correccion visual se publico solo en el QA local `192.168.100.229`. El DNS publico observado para `fidepuntos.tecnolts.com` apunta a otro host/build; no se promovio ni modifico produccion. La comprobacion visual no uso credenciales ni datos reales: intercepto APIs en memoria y mantuvo intactas autenticacion y bases.
+- Quedan fuera: doble aprobacion para ajustes de alto valor y motor FIFO de expiracion. La infraestructura de produccion y su observabilidad/failover requieren despliegue y atestacion externos.
 
 ### 2026-07-12 - Loyalty: integridad API, concurrencia, APISIX y aislamiento tenant
 
@@ -2967,7 +3295,7 @@ Objetivo: evitar claves implicitas en `.env` y hacer que el operador defina expl
 Cambios:
 - `backup-and-stop.sh` pide clave y confirmacion antes de generar el snapshot; ya no usa `BACKUP_ENCRYPTION_PASSPHRASE` del `.env` como fallback silencioso.
 - `restore-from-backup.sh` pide la clave del backup en terminal y solo continua si esa clave descifra el `.sql.enc`; `--yes` queda limitado a saltar la confirmacion destructiva.
-- `export-for-git.sh` deja de generar claves aleatorias en `transfer-secrets`; pide clave o usa `TRANSFER_BACKUP_PASSPHRASE` solo en modo no interactivo explicito.
+- `export-for-git.sh` deja de generar claves aleatorias en `transfer-secrets`; pide clave o acepta solo un archivo privado `0400`/`0600` o un descriptor heredado, nunca una passphrase en el environment.
 - `common.sh` ya no exige `BACKUP_ENCRYPTION_PASSPHRASE` para cargar `entorno/.env`.
 - `restore-from-backup.sh --yes` sin archivo queda como comando canonico para restaurar el ultimo backup disponible; `--list` muestra nombres reales y un argumento de archivo debe existir exactamente.
 - Documentacion operativa actualizada para indicar que la misma clave ingresada al sacar backup debe ingresarse al restaurar.

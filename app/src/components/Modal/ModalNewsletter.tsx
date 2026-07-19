@@ -13,7 +13,7 @@ const ModalNewsletter = () => {
     const [open, setOpen] = useState<boolean>(false)
     const router = useRouter()
     const { openQuickview } = useModalQuickviewContext()
-    const { products, loading, error } = useProducts()
+    const { products, loading, error } = useProducts({ pageSize: 16, enabled: open })
 
     const handleDetailProduct = (product: any) => {
         router.push(getProductSeoPath(product));

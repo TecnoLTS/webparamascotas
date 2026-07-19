@@ -67,7 +67,7 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
     }
 
     const refreshSelectedVariant = useCallback(async () => {
-        const snapshot = await fetchLiveCatalogSnapshot()
+        const snapshot = await fetchLiveCatalogSnapshot(getProductVariants(data))
         const refreshedProduct = findLiveCatalogProduct(snapshot.groupedProducts, data.id)
         if (!refreshedProduct) return null
         const refreshedVariant = resolveLiveSelectedVariant(refreshedProduct, {

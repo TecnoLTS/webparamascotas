@@ -18,6 +18,9 @@ interface Props {
     data: Array<ProductType>;
     categoryIds?: string[];
     pageSize?: number;
+    hasMore?: boolean;
+    loadingMore?: boolean;
+    onLoadMore?: () => Promise<void>;
 }
 
 const getPrimaryFilterLabel = (filterId: string) => {
@@ -32,7 +35,14 @@ const normalizePrimaryFilterId = (categoryId: string) => {
     return normalized
 }
 
-const AllProducts: React.FC<Props> = ({ data, categoryIds, pageSize = 15 }) => {
+const AllProducts: React.FC<Props> = ({
+    data,
+    categoryIds,
+    pageSize = 15,
+    hasMore = false,
+    loadingMore = false,
+    onLoadMore,
+}) => {
     const allSecondaryId = getCatalogAllSecondaryId()
     const [page, setPage] = useState<number>(1)
     const [activePrimaryFilter, setActivePrimaryFilter] = useState<string>('todos')
@@ -362,6 +372,18 @@ const AllProducts: React.FC<Props> = ({ data, categoryIds, pageSize = 15 }) => {
                     Siguiente
                 </button>
             </div>
+            {hasMore && onLoadMore ? (
+                <div className="mt-6 flex justify-center">
+                    <button
+                        className="button-main min-w-[220px] rounded-full px-6 py-3"
+                        disabled={loadingMore}
+                        onClick={() => void onLoadMore()}
+                        type="button"
+                    >
+                        {loadingMore ? 'Cargando…' : 'Cargar más productos'}
+                    </button>
+                </div>
+            ) : null}
         </div>
     )
 }

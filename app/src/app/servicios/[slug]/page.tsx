@@ -6,13 +6,10 @@ import { notFound } from 'next/navigation'
 import MenuPet from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
 import { SEO_SERVICE_PAGES, getSeoServicePageBySlug } from '@/data/seoServices'
-import { fetchProducts } from '@/lib/products'
-import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import { generateBreadcrumbJsonLd, generateFaqJsonLd } from '@/lib/seo'
 import { getPublicProductCategories } from '@/lib/api/settings'
-import type { ProductType } from '@/type/ProductType'
 
 type Params = {
   slug: string
@@ -65,19 +62,11 @@ export default async function SeoServicePage({ params }: Props) {
   const requestHeaders = await headers()
   const nonce = requestHeaders.get('x-nonce') || undefined
   const baseUrl = getCanonicalSiteUrl()
-  let products: ProductType[] = []
   let publicCategories: string[] = []
 
-  const [productsResult, categoriesResult] = await Promise.allSettled([
-    fetchProducts({ fresh: true }),
-    getPublicProductCategories(),
-  ])
-
-  if (productsResult.status === 'fulfilled') {
-    products = orderProductsFoodFirst(productsResult.value)
-  } else {
-    console.error('No se pudieron cargar productos para pagina de servicio SEO:', productsResult.reason)
-  }
+  const categoriesResult = await getPublicProductCategories()
+    .then((value) => ({ status: 'fulfilled' as const, value }))
+    .catch((reason) => ({ status: 'rejected' as const, reason }))
 
   if (categoriesResult.status === 'fulfilled') {
     publicCategories = categoriesResult.value
@@ -85,7 +74,7 @@ export default async function SeoServicePage({ params }: Props) {
     console.error('No se pudieron cargar categorias publicas para pagina de servicio SEO:', categoriesResult.reason)
   }
 
-  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const footerCategoryIds = availableCategoryIds
   const serviceUrl = `${baseUrl}${page.path}`
   const serviceJsonLd = {
@@ -132,7 +121,7 @@ export default async function SeoServicePage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
       <header id="header" className="relative w-full style-pet">
-        <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
+        <MenuPet props="bg-transparent" availableCategoryIds={availableCategoryIds} />
       </header>
       <main>
         <section className="bg-surface py-12">

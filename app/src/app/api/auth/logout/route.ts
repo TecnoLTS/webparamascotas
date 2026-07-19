@@ -53,20 +53,26 @@ const buildExpiredCookie = (name: string, options?: { domain?: string; httpOnly?
 
 const appendLogoutCookies = (headers: Headers) => {
   const authCookie = (process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || process.env.AUTH_COOKIE_NAME || 'pm_auth').trim() || 'pm_auth'
-  const csrfCookie = (process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME || process.env.AUTH_CSRF_COOKIE_NAME || 'pm_csrf').trim() || 'pm_csrf'
-  const authCookies = [authCookie, `${authCookie}_ecommerce`, `${authCookie}_dashboard`]
+  const csrfCookie = (process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME || 'pm_csrf_ecommerce').trim() || 'pm_csrf_ecommerce'
+  const legacyFallbackEnabled = ['1', 'true', 'yes', 'on'].includes((process.env.AUTH_LEGACY_COOKIE_FALLBACK_ENABLED || '').trim().toLowerCase())
+  const authCookies = [`${authCookie}_ecommerce`, ...(legacyFallbackEnabled ? [authCookie] : [])]
+  const csrfCookies = [csrfCookie, ...(legacyFallbackEnabled ? [(process.env.AUTH_CSRF_COOKIE_NAME || 'pm_csrf').trim() || 'pm_csrf'] : [])]
 
   // Host-only cookies.
   for (const cookie of authCookies) {
     headers.append('Set-Cookie', buildExpiredCookie(cookie, { httpOnly: true }))
   }
-  headers.append('Set-Cookie', buildExpiredCookie(csrfCookie))
+  for (const cookie of csrfCookies) {
+    headers.append('Set-Cookie', buildExpiredCookie(cookie))
+  }
 
   for (const domain of getConfiguredCookieDomains()) {
     for (const cookie of authCookies) {
       headers.append('Set-Cookie', buildExpiredCookie(cookie, { domain, httpOnly: true }))
     }
-    headers.append('Set-Cookie', buildExpiredCookie(csrfCookie, { domain }))
+    for (const cookie of csrfCookies) {
+      headers.append('Set-Cookie', buildExpiredCookie(cookie, { domain }))
+    }
   }
 }
 
@@ -113,8 +119,8 @@ export const POST = async (req: NextRequest) => {
   resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
   resHeaders.set('Pragma', 'no-cache')
   resHeaders.set('Expires', '0')
-  // Hard logout: clear client-side storage and cookies for this origin.
-  resHeaders.set('Clear-Site-Data', '"cookies", "storage"')
+  // Storage is origin-scoped; cookies are expired explicitly per auth surface.
+  resHeaders.set('Clear-Site-Data', '"storage"')
   appendLogoutCookies(resHeaders)
 
   if (!backendRes) {

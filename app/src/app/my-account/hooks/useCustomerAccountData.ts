@@ -4,6 +4,7 @@ import React from 'react'
 
 import { requestApi } from '@/lib/apiClient'
 import { apiEndpoints } from '@/lib/api/endpoints'
+import { listBoundedOrderHistory } from '@/lib/api/orderHistory'
 import type { Order } from '../types'
 import { normalizeSavedAddresses, type SavedAddressEntry } from '../customerDataUtils'
 
@@ -94,10 +95,10 @@ export const useCustomerAccountData = ({
     const controller = new AbortController()
 
     current.setUserOrdersLoading(true)
-    requestApi<Order[]>(apiEndpoints.myOrders, { signal: controller.signal })
-      .then((res) => {
+    listBoundedOrderHistory<Order>(apiEndpoints.myOrders, { init: { signal: controller.signal } })
+      .then((orders) => {
         if (cancelled || controller.signal.aborted) return
-        current.setUserOrders(res.body)
+        current.setUserOrders(orders)
       })
       .catch((err) => {
         if (cancelled || controller.signal.aborted) return

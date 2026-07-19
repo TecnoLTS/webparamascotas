@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import TopNavOne from '@/components/Header/TopNav/TopNavOne'
 import MenuOne from '@/components/Header/Menu/MenuPet'
@@ -10,20 +10,65 @@ import Product from '@/components/Product/Product'
 import HandlePagination from '@/components/Other/HandlePagination'
 import { buildProductSearchIndex, filterProductsBySearch, sanitizeProductSearchQuery } from '@/lib/productSearch'
 import { buildCatalogCategoryCards, sortCatalogProductsByFamily } from '@/lib/catalog'
+import { groupCatalogProducts } from '@/lib/catalog'
+import { listProductPage } from '@/lib/api/products'
 
 type Props = {
   products: ProductType[]
   error: string | null
   initialQuery: string | null
   publicCategories: string[]
+  initialHasMore: boolean
+  initialNextCursor: string | null
 }
 
-const SearchResultClient = ({ products, error, initialQuery, publicCategories }: Props) => {
+const SearchResultClient = ({
+  products: initialProducts,
+  error,
+  initialQuery,
+  publicCategories,
+  initialHasMore,
+  initialNextCursor,
+}: Props) => {
+  const [products, setProducts] = useState(initialProducts)
+  const [hasMore, setHasMore] = useState(initialHasMore)
+  const [nextCursor, setNextCursor] = useState(initialNextCursor)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState<string>(initialQuery ?? '')
   const [currentPage, setCurrentPage] = useState(0)
   const productsPerPage = 8
   const router = useRouter()
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
+
+  useEffect(() => {
+    setProducts(initialProducts)
+    setHasMore(initialHasMore)
+    setNextCursor(initialNextCursor)
+  }, [initialHasMore, initialNextCursor, initialProducts])
+
+  const loadMore = useCallback(async () => {
+    if (!hasMore || !nextCursor || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const page = await listProductPage({
+        pageSize: 48,
+        cursor: nextCursor,
+        search: initialQuery ?? undefined,
+      })
+      setProducts((current) => {
+        const byId = new Map(current.flatMap((product) => {
+          const variants = product.variantOptions?.map((option) => option.product) ?? [product]
+          return variants.map((variant) => [variant.id, variant] as const)
+        }))
+        page.products.forEach((product) => byId.set(product.id, product))
+        return groupCatalogProducts(Array.from(byId.values()))
+      })
+      setHasMore(page.hasMore)
+      setNextCursor(page.nextCursor)
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [hasMore, initialQuery, loadingMore, nextCursor])
 
   const query = sanitizeProductSearchQuery(initialQuery ?? '')
   const activeQuery = sanitizeProductSearchQuery(deferredSearchKeyword)
@@ -124,6 +169,13 @@ const SearchResultClient = ({ products, error, initialQuery, publicCategories }:
                     <HandlePagination pageCount={pageCount} onPageChange={handlePageChange} />
                   </div>
                 )}
+                {hasMore && nextCursor ? (
+                  <div className="mt-7 flex justify-center">
+                    <button className="button-main" disabled={loadingMore} onClick={() => void loadMore()} type="button">
+                      {loadingMore ? 'Cargando…' : 'Cargar más resultados'}
+                    </button>
+                  </div>
+                ) : null}
               </>
             )}
           </div>

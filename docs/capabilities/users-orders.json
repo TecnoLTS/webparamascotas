@@ -8,7 +8,7 @@
       "gateway": { "exposure": "web-and-tenant-api" },
       "frontend": {
         "pages": [
-          { "path": "/login", "samplePath": "/login", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false }, "e2e": { "expectedStatuses": [301, 302, 307, 308], "expectedRedirectPath": "/dashboard/sign-in" } },
+          { "path": "/login", "samplePath": "/login", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false }, "e2e": { "expectedStatuses": [200] } },
           { "path": "/register", "samplePath": "/register", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } },
           { "path": "/forgot-password", "samplePath": "/forgot-password", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } },
           { "path": "/reset-password", "samplePath": "/reset-password", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false } }
@@ -25,7 +25,7 @@
       "gateway": { "exposure": "web-and-tenant-api" },
       "frontend": {
         "pages": [
-          { "path": "/my-account", "samplePath": "/my-account", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false }, "e2e": { "expectedStatuses": [301, 302, 307, 308], "expectedRedirectPath": "/dashboard/sign-in" } }
+          { "path": "/my-account", "samplePath": "/my-account", "seo": { "policy": "noindex", "follow": true, "canonical": "self", "sitemap": false }, "e2e": { "expectedStatuses": [200] } }
         ]
       },
       "data": { "fixture": "e2e-user-profile", "assertions": ["profile-updated", "address-updated"] },

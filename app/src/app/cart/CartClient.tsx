@@ -227,12 +227,10 @@ const Cart = () => {
                                     <div className="text-title">Subtotal sin IVA</div>
                                     <div className="text-title">$<span className="total-product">{formattedVatSubtotal}</span></div>
                                 </div>
-                                {vatAmount > 0 && (
-                                    <div className="discount-block py-5 flex justify-between border-b border-line">
-                                        <div className="text-title">{mixedVatRates ? 'IVA aplicado' : `IVA (${vatRate.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`}</div>
-                                        <div className="text-title">$<span className="discount">{formattedVatAmount}</span></div>
-                                    </div>
-                                )}
+                                <div className="discount-block py-5 flex justify-between border-b border-line">
+                                    <div className="text-title">{mixedVatRates ? 'IVA aplicado' : `IVA (${vatRate.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`}</div>
+                                    <div className="text-title">$<span className="discount">{formattedVatAmount}</span></div>
+                                </div>
                                 <div className="discount-block py-5 flex justify-between border-b border-line">
                                     <div className="text-title">Descuentos</div>
                                     <div className="text-title"> <span>$</span><span className="discount">{formattedDiscount}</span></div>

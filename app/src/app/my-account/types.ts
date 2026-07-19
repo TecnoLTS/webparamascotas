@@ -595,7 +595,15 @@ export interface Order {
     user_name?: string;
     user_email?: string;
     user_id?: string;
+    customer_name?: string | null;
+    customer_email?: string | null;
+    customer_phone?: string | null;
+    customer_document_type?: string | null;
+    customer_document_number?: string | null;
+    customer_company?: string | null;
+    sales_channel?: string | null;
     items_count?: number;
+    units_count?: number;
     total: number;
     status: string;
     created_at: string;
@@ -604,6 +612,19 @@ export interface Order {
     billing_address?: Record<string, any> | string | null;
     delivery_method?: string | null;
     payment_method?: string | null;
+    items_subtotal?: number;
+    vat_subtotal?: number;
+    vat_rate?: number;
+    vat_amount?: number;
+    shipping?: number;
+    shipping_base?: number;
+    shipping_tax_rate?: number;
+    shipping_tax_amount?: number;
+    discount_code?: string | null;
+    discount_total?: number;
+    mixed_vat_rates?: boolean;
+    invoice_number?: string | null;
+    invoice_created_at?: string | null;
     items?: Array<{
         order_id: string;
         product_id: string;
@@ -915,6 +936,8 @@ export type ProductProcurementDetail = {
     lots: ProductProcurementLotDetail[];
 }
 
+export type ProductTaxTreatment = 'taxed' | 'zero-rated' | 'exempt';
+
 export type ProductFormState = {
     id: string;
     name: string;
@@ -923,6 +946,8 @@ export type ProductFormState = {
     marketPrice: string;
     cost: string;
     taxExempt: boolean;
+    taxTreatment: ProductTaxTreatment;
+    taxRate: string;
     quantity: string;
     category: string;
     brand: string;

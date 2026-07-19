@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
-import { fetchProducts } from '@/lib/products'
+import { fetchAllProducts } from '@/lib/products'
 import { getCategoryUrl } from '@/data/petCategoryCards'
 import { getSiteConfig } from '@/lib/site'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
@@ -67,7 +67,7 @@ export async function GET() {
   let publicCategories: string[] = []
 
   const [productsResult, categoriesResult] = await Promise.allSettled([
-    fetchProducts({ fresh: true }),
+    fetchAllProducts(),
     getPublicProductCategories(),
   ])
 

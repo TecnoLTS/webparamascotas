@@ -3,9 +3,14 @@ import { promises as fs } from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import sharp from 'sharp'
-import { getInternalBackendBaseUrl } from '@/lib/api/backendBase'
+import { toInternalBackendUrl } from '@/lib/api/backendBase'
+import { apiEndpoints } from '@/lib/api/endpoints'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
+import {
+  forwardUploadAuthenticationHeaders,
+  validateDashboardUploadSecurity,
+} from '@/lib/server/uploadAuthSurface.mjs'
 
 type UploadImageKind =
   | 'thumb'
@@ -38,8 +43,31 @@ const categoryImageSpecs: Partial<Record<UploadImageKind, { width: number; heigh
   categoryFeaturedDesktopSecondary: { width: 1260, height: 590, label: 'banner2-desktop-630x295' },
 }
 const maxUploadBytes = 8 * 1024 * 1024
-const backendBase = getInternalBackendBaseUrl()
+const maxProcessedBatchBytes = 16 * 1024 * 1024
+const backendAdminStatsUrl = toInternalBackendUrl(apiEndpoints.adminDashboardStats())
+const backendCatalogImageUploadUrl = toInternalBackendUrl(apiEndpoints.adminCatalogImageUpload)
 const seoFilenameMaxLength = 140
+
+type ProductImageUploadMode = 'local' | 'backend-object-storage'
+
+type ProcessedImageArtifact = {
+  field: 'image' | 'variant220' | 'variant360'
+  fileName: string
+  buffer: Buffer
+}
+
+type BackendCatalogImageResponse = {
+  ok?: boolean
+  data?: {
+    url?: string
+    fileName?: string
+    variants?: Record<string, string>
+  }
+  error?: {
+    message?: string
+    code?: string
+  }
+}
 
 type UploadImageMetadata = {
   platform?: string
@@ -217,6 +245,59 @@ const resolvePublicDir = async () => {
   return fallback
 }
 
+const parseBooleanEnvironment = (name: string, fallback: boolean) => {
+  const raw = (process.env[name] || '').trim().toLowerCase()
+  if (!raw) return fallback
+  if (['1', 'true', 'yes', 'on'].includes(raw)) return true
+  if (['0', 'false', 'no', 'off'].includes(raw)) return false
+  throw new Error(`${name} debe ser true o false.`)
+}
+
+const resolveProductImageUploadMode = (): ProductImageUploadMode => {
+  const appEnvironment = (process.env.APP_ENV || process.env.NEXT_PUBLIC_APP_ENV || 'production').trim().toLowerCase()
+  const production = appEnvironment === 'production' || appEnvironment === 'prod'
+  const requireHa = parseBooleanEnvironment('REQUIRE_HA', false)
+  const configured = (process.env.PRODUCT_IMAGE_UPLOAD_MODE || '').trim().toLowerCase()
+  const mode = (configured || (production || requireHa ? 'backend-object-storage' : 'local')) as ProductImageUploadMode
+
+  if (mode !== 'local' && mode !== 'backend-object-storage') {
+    throw new Error('PRODUCT_IMAGE_UPLOAD_MODE debe ser local o backend-object-storage.')
+  }
+  if ((production || requireHa) && mode !== 'backend-object-storage') {
+    throw new Error('Produccion y REQUIRE_HA=true exigen PRODUCT_IMAGE_UPLOAD_MODE=backend-object-storage.')
+  }
+  if (mode === 'local' && appEnvironment !== 'qa') {
+    throw new Error('PRODUCT_IMAGE_UPLOAD_MODE=local solo esta permitido en APP_ENV=qa.')
+  }
+
+  return mode
+}
+
+const buildBackendRequestHeaders = (req: Request) => {
+  const headers = forwardUploadAuthenticationHeaders(req.headers)
+  for (const name of [
+    'origin',
+    'referer',
+    'sec-fetch-site',
+    'user-agent',
+    'x-request-id',
+  ]) {
+    const value = req.headers.get(name)
+    if (value) headers.set(name, value)
+  }
+
+  const host = resolveTenantHost(req.headers.get('x-forwarded-host') || req.headers.get('host'))
+  const proto = resolveRequestProto(req.headers.get('x-forwarded-proto'), req.url)
+  if (host) {
+    headers.set('host', host)
+    headers.set('x-forwarded-host', host)
+  }
+  headers.set('x-forwarded-proto', proto)
+  attachInternalProxyToken(headers)
+
+  return headers
+}
+
 const validateAdminRequest = async (req: Request) => {
   const authorization = req.headers.get('authorization')
   const cookieHeader = req.headers.get('cookie')
@@ -227,24 +308,10 @@ const validateAdminRequest = async (req: Request) => {
     )
   }
 
-  const headers = new Headers()
-  if (authorization) {
-    headers.set('authorization', authorization)
-  }
-  if (cookieHeader) {
-    headers.set('cookie', cookieHeader)
-  }
-  const host = resolveTenantHost(req.headers.get('x-forwarded-host') || req.headers.get('host'))
-  const proto = resolveRequestProto(req.headers.get('x-forwarded-proto'), req.url)
-  if (host) {
-    headers.set('host', host)
-    headers.set('x-forwarded-host', host)
-  }
-  headers.set('x-forwarded-proto', proto)
-  attachInternalProxyToken(headers)
+  const headers = buildBackendRequestHeaders(req)
 
   try {
-    const res = await fetch(`${backendBase}/admin/dashboard/stats`, {
+    const res = await fetch(backendAdminStatsUrl, {
       cache: 'no-store',
       headers,
     })
@@ -265,7 +332,137 @@ const validateAdminRequest = async (req: Request) => {
   }
 }
 
+const persistProcessedImagesLocally = async (
+  publicDir: string,
+  uploadFolder: string,
+  artifacts: ProcessedImageArtifact[],
+) => {
+  const uploadDir = path.join(/* turbopackIgnore: true */ publicDir, 'uploads', uploadFolder)
+  await fs.mkdir(uploadDir, { recursive: true })
+
+  const staged: Array<{ temporaryPath: string; finalPath: string }> = []
+  const published: string[] = []
+  try {
+    for (const artifact of artifacts) {
+      const finalPath = path.join(/* turbopackIgnore: true */ uploadDir, artifact.fileName)
+      try {
+        await fs.access(finalPath)
+        throw new Error('El archivo generado ya existe.')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      const temporaryPath = path.join(
+        /* turbopackIgnore: true */ uploadDir,
+        `.${artifact.fileName}.${randomUUID()}.tmp`,
+      )
+      await fs.writeFile(temporaryPath, artifact.buffer, { flag: 'wx', mode: 0o644 })
+      staged.push({ temporaryPath, finalPath })
+    }
+
+    for (const item of staged) {
+      await fs.rename(item.temporaryPath, item.finalPath)
+      published.push(item.finalPath)
+    }
+  } catch (error) {
+    await Promise.allSettled([
+      ...staged.map((item) => fs.rm(item.temporaryPath, { force: true })),
+      ...published.map((publishedPath) => fs.rm(publishedPath, { force: true })),
+    ])
+    throw error
+  }
+}
+
+const uploadProcessedImagesToBackend = async (
+  req: Request,
+  uploadFolder: string,
+  mainFileName: string,
+  artifacts: ProcessedImageArtifact[],
+) => {
+  const backendForm = new FormData()
+  backendForm.set('folder', uploadFolder)
+  backendForm.set('fileName', mainFileName)
+  for (const artifact of artifacts) {
+    backendForm.set(
+      artifact.field,
+      new Blob([new Uint8Array(artifact.buffer)], { type: 'image/webp' }),
+      artifact.fileName,
+    )
+  }
+
+  const configuredTimeout = Number(process.env.UPLOAD_BACKEND_TIMEOUT_MS || 30_000)
+  const timeoutMs = Number.isFinite(configuredTimeout)
+    ? Math.max(5_000, Math.min(120_000, Math.trunc(configuredTimeout)))
+    : 30_000
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(backendCatalogImageUploadUrl, {
+      method: 'POST',
+      headers: buildBackendRequestHeaders(req),
+      body: backendForm,
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    const rawPayload = await response.text()
+    let payload: BackendCatalogImageResponse
+    try {
+      payload = rawPayload ? JSON.parse(rawPayload) as BackendCatalogImageResponse : {}
+    } catch {
+      payload = {}
+    }
+
+    return { response, payload }
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+const isExpectedBackendPublicUrl = (candidate: string, fileName: string) => {
+  const configuredBase = (process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || '').trim()
+  if (!configuredBase) return false
+  try {
+    const base = new URL(configuredBase)
+    const url = new URL(candidate)
+    if (base.protocol !== 'https:'
+      || base.username
+      || base.password
+      || base.search
+      || base.hash
+      || url.protocol !== 'https:'
+      || url.origin !== base.origin
+      || url.username
+      || url.password
+      || url.search
+      || url.hash) return false
+
+    const basePath = base.pathname.replace(/\/$/, '')
+    const expectedPrefix = `${basePath}/tenants/`.replace(/^\/\//, '/')
+    return url.pathname.startsWith(expectedPrefix)
+      && url.pathname.endsWith(`/${encodeURIComponent(fileName)}`)
+  } catch {
+    return false
+  }
+}
+
 export const handleProductImageUpload = async (req: Request) => {
+  const requestSecurity = validateDashboardUploadSecurity(req.headers)
+  if (!requestSecurity.ok) {
+    return NextResponse.json(
+      { ok: false, error: { code: 'UPLOAD_REQUEST_FORBIDDEN', message: 'Solicitud de carga no autorizada.' } },
+      { status: requestSecurity.status },
+    )
+  }
+
+  let uploadMode: ProductImageUploadMode
+  try {
+    uploadMode = resolveProductImageUploadMode()
+  } catch {
+    return NextResponse.json(
+      { ok: false, error: { message: 'La configuración de almacenamiento de imágenes no es válida.' } },
+      { status: 503 },
+    )
+  }
+
   const authFailure = await validateAdminRequest(req)
   if (authFailure) {
     return authFailure
@@ -319,29 +516,72 @@ export const handleProductImageUpload = async (req: Request) => {
       return NextResponse.json({ ok: false, error: { message: 'No se pudo convertir la imagen a WebP.' } }, { status: 400 })
     }
 
-    const publicDir = await resolvePublicDir()
     const uploadFolder = kindValue === 'brandLogo' ? 'brands' : isCategoryImageKind(kindValue) ? 'categories' : 'products'
-    const uploadDir = path.join(/* turbopackIgnore: true */ publicDir, 'uploads', uploadFolder)
-    await fs.mkdir(uploadDir, { recursive: true })
     const fileName = buildSeoImageFileName(metadata, kindValue, outputImageExtension)
-    const filePath = path.join(/* turbopackIgnore: true */ uploadDir, fileName)
-    await fs.writeFile(filePath, webpBuffer)
+    const artifacts: ProcessedImageArtifact[] = [{
+      field: 'image',
+      fileName,
+      buffer: webpBuffer,
+    }]
     if (kindValue === 'thumb' || kindValue === 'gallery') {
-      await Promise.all(productUploadVariantWidths.map(async (width) => {
-        const variantPath = path.join(/* turbopackIgnore: true */ uploadDir, buildVariantFileName(fileName, width))
-        await sharp(webpBuffer)
+      const variants = await Promise.all(productUploadVariantWidths.map(async (width) => ({
+        field: `variant${width}` as 'variant220' | 'variant360',
+        fileName: buildVariantFileName(fileName, width),
+        buffer: await sharp(webpBuffer)
           .resize({ width, withoutEnlargement: true })
           .webp({ quality: 78, effort: 5 })
-          .toFile(variantPath)
-      }))
+          .toBuffer(),
+      })))
+      artifacts.push(...variants)
+    }
+    const processedBytes = artifacts.reduce((total, artifact) => total + artifact.buffer.length, 0)
+    if (artifacts.some((artifact) => artifact.buffer.length <= 0 || artifact.buffer.length > maxUploadBytes)
+      || processedBytes > maxProcessedBatchBytes) {
+      return NextResponse.json(
+        { ok: false, error: { message: 'Las imágenes WebP procesadas superan el tamaño permitido.' } },
+        { status: 400 },
+      )
     }
 
     const outputMetadata = await sharp(webpBuffer).metadata()
+    let publicUrl = `/uploads/${uploadFolder}/${fileName}`
+    if (uploadMode === 'local') {
+      const publicDir = await resolvePublicDir()
+      await persistProcessedImagesLocally(publicDir, uploadFolder, artifacts)
+    } else {
+      let backendResult: Awaited<ReturnType<typeof uploadProcessedImagesToBackend>>
+      try {
+        backendResult = await uploadProcessedImagesToBackend(req, uploadFolder, fileName, artifacts)
+      } catch {
+        return NextResponse.json(
+          { ok: false, error: { message: 'No se pudo conectar con el almacenamiento de imágenes.' } },
+          { status: 502 },
+        )
+      }
+      const { response, payload } = backendResult
+      if (!response.ok) {
+        return NextResponse.json(
+          payload.error
+            ? { ok: false, error: payload.error }
+            : { ok: false, error: { message: 'El backend rechazó la imagen procesada.' } },
+          { status: response.status },
+        )
+      }
+      const backendUrl = typeof payload.data?.url === 'string' ? payload.data.url.trim() : ''
+      const backendFileName = typeof payload.data?.fileName === 'string' ? payload.data.fileName.trim() : ''
+      if (!isExpectedBackendPublicUrl(backendUrl, fileName) || backendFileName !== fileName) {
+        return NextResponse.json(
+          { ok: false, error: { message: 'El backend devolvió una referencia de imagen inválida.' } },
+          { status: 502 },
+        )
+      }
+      publicUrl = backendUrl
+    }
 
     return NextResponse.json({
       ok: true,
       data: {
-        url: `/uploads/${uploadFolder}/${fileName}`,
+        url: publicUrl,
         fileName,
         kind: kindValue,
         width: outputMetadata.width,

@@ -6,7 +6,7 @@ import { fetchJson } from '@/lib/apiClient'
 
 // 👇 Re-exports (para que otros módulos puedan importar desde aquí)
 export { apiEndpoints } from './endpoints'
-export { listProducts, getProduct, createProduct, updateProduct, deleteProduct } from './products'
+export { listProductPage, getProduct, createProduct, updateProduct, deleteProduct } from './products'
 export { createOrder, getQuote } from './orders'
 export { fetchRecentOrdersReport } from './reports'
 export { getProductPageSettings, updateProductPageSettings } from './settings'
@@ -14,6 +14,12 @@ export { listDiscounts, createDiscount, updateDiscount, updateDiscountStatus, li
 export { fetchJson, requestApi } from '@/lib/apiClient'
 
 // Endpoints ligeros disponibles para chequeo rápido de salud/demo.
-export type HealthResponse = { estado: string; fecha: string; base_de_datos: string }
+export type HealthResponse = {
+  estado: string
+  fecha: string
+  servicio?: string
+  base_de_datos?: string
+  registro_tenants?: string
+}
 
 export const healthApi = () => fetchJson<HealthResponse>(apiEndpoints.health)

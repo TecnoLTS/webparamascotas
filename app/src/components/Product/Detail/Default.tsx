@@ -140,10 +140,10 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
   }, [data])
 
   const refreshLiveCatalog = useCallback(async () => {
-    const snapshot = await fetchLiveCatalogSnapshot()
+    const snapshot = await fetchLiveCatalogSnapshot(data.flatMap(getProductVariants))
     setLiveProducts(snapshot.groupedProducts)
     return findLiveCatalogProduct(snapshot.groupedProducts, requestedId)
-  }, [requestedId])
+  }, [data, requestedId])
 
   const refreshSelectedVariant = useCallback(async () => {
     const refreshedFamily = await refreshLiveCatalog()

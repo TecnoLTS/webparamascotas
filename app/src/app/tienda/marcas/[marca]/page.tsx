@@ -4,10 +4,9 @@ import type { Metadata } from 'next'
 import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import MenuPet from '@/components/Header/Menu/MenuPet'
-import ShopBreadCrumb1 from '@/components/Shop/ShopBreadCrumb1'
+import CursorShopCatalog from '@/components/Shop/CursorShopCatalog'
 import Footer from '@/components/Footer/Footer'
-import { fetchProducts } from '@/lib/products'
-import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
+import { loadProducts } from '@/lib/products.server'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import {
   findBrandBySlug,
@@ -35,14 +34,15 @@ type Props = {
 
 export const dynamic = 'force-dynamic'
 
-const loadBrandProducts = async (marca: string) => {
-  const products = orderProductsFoodFirst(await fetchProducts({ fresh: true }))
+const loadBrandProducts = async (marca: string, pageSize = 48) => {
+  const result = await loadProducts({ brandSlug: marca, pageSize })
+  const products = result.products
   const brand = findBrandBySlug(products, marca)
   const brandProducts = brand
     ? products.filter((product) => matchesBrandLanding(product, brand))
     : []
 
-  return { products, brand, brandProducts }
+  return { ...result, brand, brandProducts }
 }
 
 const toAbsoluteImage = (baseUrl: string, image?: string | null) => {
@@ -55,7 +55,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { marca } = await params
 
   try {
-    const { brand } = await loadBrandProducts(marca)
+    const { brand } = await loadBrandProducts(marca, 1)
     if (!brand) {
       return {
         title: 'Marca no disponible',
@@ -89,10 +89,11 @@ export default async function BrandPage({ params }: Props) {
   const requestHeaders = await headers()
   const nonce = requestHeaders.get('x-nonce') || undefined
   const { marca } = await params
-  let products: ProductType[] = []
   let brandProducts: ProductType[] = []
   let brand: string | null = null
   let publicCategories: string[] = []
+  let hasMore = false
+  let nextCursor: string | null = null
 
   try {
     const [result, categoriesResult] = await Promise.allSettled([
@@ -103,9 +104,10 @@ export default async function BrandPage({ params }: Props) {
       throw result.reason
     }
     publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
-    products = result.value.products
     brand = result.value.brand
     brandProducts = result.value.brandProducts
+    hasMore = result.value.hasMore
+    nextCursor = result.value.nextCursor
   } catch (error) {
     console.error('No se pudieron cargar productos para marca SEO:', error)
   }
@@ -116,7 +118,7 @@ export default async function BrandPage({ params }: Props) {
 
   const copy = getBrandLandingCopy(brand)
   const baseUrl = getCanonicalSiteUrl()
-  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const footerCategoryIds = availableCategoryIds
   const brandPath = getBrandSeoPath(brand)
   const itemListJsonLd = generateItemListJsonLd(
@@ -164,7 +166,7 @@ export default async function BrandPage({ params }: Props) {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }}
       />
       <header id="header" className="relative w-full style-pet">
-        <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
+        <MenuPet props="bg-transparent" availableCategoryIds={availableCategoryIds} />
       </header>
       <section className="bg-surface py-10">
         <div className="container max-w-4xl">
@@ -172,16 +174,17 @@ export default async function BrandPage({ params }: Props) {
           <h1 className="heading3 mt-2">{copy.h1}</h1>
           <p className="mt-4 text-secondary">{copy.intro}</p>
           <div className="mt-5 flex flex-wrap gap-2 text-sm">
-            <span className="rounded-full bg-white px-3 py-1">{brandProducts.length} productos publicados</span>
+            <span className="rounded-full bg-white px-3 py-1">{brandProducts.length} productos visibles</span>
             <span className="rounded-full bg-white px-3 py-1">Perros y gatos</span>
             <span className="rounded-full bg-white px-3 py-1">Compra online en Ecuador</span>
           </div>
         </div>
       </section>
-      <ShopBreadCrumb1
-        data={brandProducts}
-        productPerPage={9}
-        dataType={null}
+      <CursorShopCatalog
+        initialProducts={brandProducts}
+        initialHasMore={hasMore}
+        initialNextCursor={nextCursor}
+        filters={{ brandSlug: marca }}
         gender={null}
         category={null}
         categoryIds={availableCategoryIds}

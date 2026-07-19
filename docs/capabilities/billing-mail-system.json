@@ -47,12 +47,17 @@
     },
     {
       "id": "system.health",
-      "summary": "Healthchecks de frontend, backend, gateway y Billing.",
+      "summary": "Liveness y readiness separados para frontend, backend, gateway y Billing.",
       "auth": "public",
       "gateway": { "exposure": "web-and-tenant-api-and-billing-api" },
       "frontend": {
         "handlers": [
-          { "path": "/healthz", "method": "GET", "public": true }
+          { "path": "/healthz", "method": "GET", "public": true },
+          { "path": "/healthz", "method": "HEAD", "public": true },
+          { "path": "/livez", "method": "GET", "public": true },
+          { "path": "/livez", "method": "HEAD", "public": true },
+          { "path": "/readyz", "method": "GET", "public": true },
+          { "path": "/readyz", "method": "HEAD", "public": true }
         ]
       },
       "data": { "fixture": "none", "assertions": ["services-healthy"] },

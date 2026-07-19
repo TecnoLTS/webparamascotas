@@ -248,6 +248,36 @@ export const backendApiRoutes = [
     "capabilityId": "admin.tenants"
   },
   {
+    "id": "backend:POST:/api/admin/tenants/{tenantId}/lifecycle",
+    "method": "POST",
+    "path": "/api/admin/tenants/{tenantId}/lifecycle",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:PUT:/api/admin/tenants/{tenantId}/domains",
+    "method": "PUT",
+    "path": "/api/admin/tenants/{tenantId}/domains",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:POST:/api/admin/tenants/{tenantId}/reconcile",
+    "method": "POST",
+    "path": "/api/admin/tenants/{tenantId}/reconcile",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:POST:/api/admin/tenants/{tenantId}/rollback",
+    "method": "POST",
+    "path": "/api/admin/tenants/{tenantId}/rollback",
+    "capabilityId": "admin.tenants"
+  },
+  {
+    "id": "backend:GET:/api/admin/tenants/{tenantId}/events",
+    "method": "GET",
+    "path": "/api/admin/tenants/{tenantId}/events",
+    "capabilityId": "admin.tenants"
+  },
+  {
     "id": "backend:GET:/api/admin/settings/session",
     "method": "GET",
     "path": "/api/admin/settings/session",
@@ -258,6 +288,18 @@ export const backendApiRoutes = [
     "method": "PUT",
     "path": "/api/admin/settings/session",
     "capabilityId": "admin.settings"
+  },
+  {
+    "id": "backend:GET:/api/livez",
+    "method": "GET",
+    "path": "/api/livez",
+    "capabilityId": "system.health"
+  },
+  {
+    "id": "backend:GET:/api/readyz",
+    "method": "GET",
+    "path": "/api/readyz",
+    "capabilityId": "system.health"
   },
   {
     "id": "backend:GET:/api/health",
@@ -305,6 +347,12 @@ export const backendApiRoutes = [
     "id": "backend:GET:/api/admin/products",
     "method": "GET",
     "path": "/api/admin/products",
+    "capabilityId": "catalog.admin"
+  },
+  {
+    "id": "backend:POST:/api/admin/catalog/images",
+    "method": "POST",
+    "path": "/api/admin/catalog/images",
     "capabilityId": "catalog.admin"
   },
   {

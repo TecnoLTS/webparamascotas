@@ -4,6 +4,7 @@ import React from 'react'
 import * as Icon from "@phosphor-icons/react/dist/ssr"
 
 import { apiEndpoints } from '@/lib/api/endpoints'
+import { requestApi } from '@/lib/apiClient'
 import { toPublicApiUrl } from '@/lib/publicApiPath'
 import type {
     ProductCategoryImageReference,
@@ -34,16 +35,6 @@ const featuredCategoryImageRequirements = categoryImageRequirements.filter((requ
 
 type CategoryImageFiles = Partial<Record<CategoryImageRequirement['key'], File>>
 type CategoryImageUrlMap = Record<CategoryImageRequirement['key'], string>
-
-type UploadResponse = {
-    ok?: boolean;
-    data?: {
-        url?: string;
-    };
-    error?: {
-        message?: string;
-    };
-}
 
 type ProductReferenceSectionCardProps = {
     section: ProductReferenceSection;
@@ -347,23 +338,12 @@ export default React.memo(function ProductReferenceSectionCard({
         formData.append('category', categoryName)
         formData.append('variantLabel', requirement.label)
 
-        const response = await fetch(toPublicApiUrl(apiEndpoints.uploads.images), {
+        const response = await requestApi<{ url: string }>(toPublicApiUrl(apiEndpoints.uploads.images), {
             method: 'POST',
             body: formData,
-            credentials: 'include',
+            timeoutMs: 60000,
         })
-
-        const payload = await response.json().catch(() => null) as UploadResponse | null
-
-        if (!response.ok || !payload?.ok || !payload.data?.url) {
-            if (response.status === 429) {
-                throw new Error('429 Too Many Requests: el servidor bloqueó demasiadas subidas seguidas. Intenta nuevamente en unos segundos.')
-            }
-
-            throw new Error(payload?.error?.message || 'No se pudo subir una imagen de la categoría.')
-        }
-
-        return payload.data.url
+        return response.body.url
     }, [])
 
     const addValue = React.useCallback(async () => {

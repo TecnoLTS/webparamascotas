@@ -20,6 +20,8 @@ const useMenuMobile = () => {
     }, [openMenuMobile]);
 
     useEffect(() => {
+        if (!openMenuMobile) return
+
         document.addEventListener('click', handleClickOutsideMenuMobile);
 
         return () => {

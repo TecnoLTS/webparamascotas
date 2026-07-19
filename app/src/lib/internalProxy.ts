@@ -1,5 +1,5 @@
 export const getInternalProxyToken = () =>
-  (process.env.INTERNAL_PROXY_TOKEN || process.env.BACKEND_INTERNAL_PROXY_TOKEN || '').trim()
+  (process.env.STOREFRONT_BACKEND_PROXY_TOKEN || '').trim()
 
 export const attachInternalProxyToken = (headers: Headers) => {
   const token = getInternalProxyToken()

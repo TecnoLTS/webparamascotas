@@ -1,21 +1,18 @@
 'use client'
 
 import React from 'react'
-import Link from 'next/link'
-import Image from '@/components/Common/AppImage'
+import { ArrowRight, Package } from '@phosphor-icons/react/dist/ssr'
 
 import type { Order } from '../types'
-import { isDynamicOrderItemImage, normalizeOrderItemImage } from '../customerDataUtils'
 
 type CustomerOrdersPanelProps = {
-    activeOrders: string | undefined;
-    orders: Order[];
-    loading: boolean;
-    onFilterChange: (order: string) => void;
-    onOpenOrder: (order: Order) => void;
-    getStatusBadge: (status: string) => { label: string; className: string };
-    getItemNetPrice: (item: any, order: Order) => number;
-    formatDateTime: (value: string) => string;
+    activeOrders: string | undefined
+    orders: Order[]
+    loading: boolean
+    onFilterChange: (order: string) => void
+    onOpenOrder: (order: Order) => void
+    getStatusBadge: (status: string) => { label: string; className: string }
+    formatDateTime: (value: string) => string
 }
 
 const ORDER_FILTERS = [
@@ -23,8 +20,24 @@ const ORDER_FILTERS = [
     { id: 'pending', label: 'Pendientes' },
     { id: 'delivery', label: 'Enviados' },
     { id: 'completed', label: 'Completados' },
-    { id: 'canceled', label: 'Cancelados' }
+    { id: 'canceled', label: 'Cancelados' },
 ]
+
+const deliveryLabel = (order: Order) => {
+    const method = String(order.delivery_method || '').trim().toLowerCase()
+    if (method === 'pickup') return 'Retiro en tienda'
+    if (method === 'delivery') return 'Envío a domicilio'
+    return 'Por confirmar'
+}
+
+const paymentLabel = (order: Order) => {
+    const raw = String(order.payment_method || '').trim()
+    const method = raw.toLowerCase()
+    if (['cash', 'efectivo'].includes(method)) return 'Efectivo'
+    if (['card', 'tarjeta'].includes(method)) return 'Tarjeta'
+    if (['transfer', 'transferencia'].includes(method)) return 'Transferencia'
+    return raw || 'Por confirmar'
+}
 
 export default React.memo(function CustomerOrdersPanel({
     activeOrders,
@@ -33,122 +46,106 @@ export default React.memo(function CustomerOrdersPanel({
     onFilterChange,
     onOpenOrder,
     getStatusBadge,
-    getItemNetPrice,
     formatDateTime,
 }: CustomerOrdersPanelProps) {
-    const getDeliveryMethodLabel = (order: Order) => {
-        const method = String(order.delivery_method || '').trim().toLowerCase()
-        if (method === 'pickup') return 'Retiro en tienda'
-        if (method === 'delivery') return 'Envío a domicilio'
-        return 'Entrega por confirmar'
-    }
-
-    const getPaymentMethodLabel = (order: Order) => {
-        const method = String(order.payment_method || '').trim().toLowerCase()
-        if (!method) return 'Pago por confirmar'
-        if (['cash', 'efectivo'].includes(method)) return 'Pago en efectivo'
-        if (['card', 'tarjeta'].includes(method)) return 'Pago con tarjeta'
-        if (['transfer', 'transferencia'].includes(method)) return 'Transferencia'
-        return String(order.payment_method || '').trim()
-    }
-
     return (
-        <div className="tab text-content overflow-hidden w-full p-7 border border-line rounded-xl">
-            <h6 className="heading6">Tus Pedidos</h6>
-            <div className="w-full">
-                <div className="menu-tab flex flex-wrap gap-2 border-b border-line mt-3 pb-3">
-                    {ORDER_FILTERS.map((item) => (
-                        <button
-                            key={item.id}
-                            className={`item relative px-3 sm:px-4 py-2 text-secondary text-center duration-300 hover:text-black border-b-2 text-xs sm:text-sm ${activeOrders === item.id ? 'active border-black' : 'border-transparent'}`}
-                            onClick={() => onFilterChange(item.id)}
-                        >
-                            <span className="relative text-button z-[1]">
+        <section className="customer-content-surface customer-orders-panel overflow-hidden">
+            <header className="flex flex-col gap-3 border-b border-line px-4 pt-3 sm:flex-row sm:items-end sm:justify-between sm:px-5">
+                <nav className="flex max-w-full gap-2 overflow-x-auto" aria-label="Filtrar pedidos por estado">
+                    {ORDER_FILTERS.map((item) => {
+                        const active = activeOrders === item.id
+                        return (
+                            <button
+                                key={item.id}
+                                type="button"
+                                className={`customer-filter shrink-0 px-2 sm:px-3 ${active ? 'customer-filter--active' : ''}`}
+                                onClick={() => onFilterChange(item.id)}
+                                aria-pressed={active}
+                            >
                                 {item.label}
-                            </span>
-                        </button>
-                    ))}
-                </div>
-            </div>
-            <div className="list_order">
-                {loading && (
-                    <div className="text-center py-6 text-secondary">Cargando pedidos...</div>
-                )}
-                {!loading && orders.length === 0 && (
-                    <div className="text-center py-6 text-secondary">No tienes pedidos en este estado.</div>
-                )}
-                {!loading && orders.map((order) => {
-                    const badge = getStatusBadge(order.status)
+                            </button>
+                        )
+                    })}
+                </nav>
+                <p className="customer-muted pb-3 text-sm" aria-live="polite">
+                    {loading ? 'Actualizando…' : `${orders.length} ${orders.length === 1 ? 'pedido' : 'pedidos'}`}
+                </p>
+            </header>
 
-                    return (
-                        <div key={order.id} className="order_item mt-5 border border-line rounded-lg box-shadow-xs">
-                            <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center justify-between gap-4 p-5 border-b border-line">
-                                <div className="space-y-2">
-                                    <div className="flex items-center gap-2">
-                                        <strong className="text-title">Número de Pedido:</strong>
-                                        <strong className="order_number text-button uppercase">{order.id}</strong>
-                                    </div>
-                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-secondary">
-                                        <span><strong className="text-title">Fecha:</strong> {formatDateTime(order.created_at)}</span>
-                                        <span><strong className="text-title">Entrega:</strong> {getDeliveryMethodLabel(order)}</span>
-                                        <span><strong className="text-title">Pago:</strong> {getPaymentMethodLabel(order)}</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <strong className="text-title">Estado del pedido:</strong>
-                                    <span className={`tag px-4 py-1.5 rounded-full bg-opacity-10 ${badge.className} caption1 font-semibold`}>{badge.label}</span>
-                                </div>
-                            </div>
-                            <div className="list_prd px-5">
-                                {(order.items && order.items.length > 0) ? (
-                                    order.items.map((item, idx) => (
-                                        <div key={`${order.id}-${idx}`} className="prd_item flex flex-wrap items-center justify-between gap-3 py-5 border-b border-line last:border-0">
-                                            <Link href="/tienda" className="flex items-center gap-5">
-                                                <div className="bg-img flex-shrink-0 md:w-[100px] w-20 aspect-square rounded-lg overflow-hidden">
-                                                    {(() => {
-                                                        const imageSrc = normalizeOrderItemImage(item.product_image)
-                                                        return (
-                                                    <Image
-                                                        src={imageSrc}
-                                                        width={1000}
-                                                        height={1000}
-                                                        alt={item.product_name}
-                                                        className="w-full h-full object-cover"
-                                                        unoptimized={isDynamicOrderItemImage(item.product_image)}
-                                                    />
-                                                        )
-                                                    })()}
-                                                </div>
-                                                <div>
-                                                    <div className="prd_name text-title">{item.product_name}</div>
-                                                    <div className="caption1 text-secondary mt-2">
-                                                        <span>{item.quantity} unidad{item.quantity === 1 ? '' : 'es'}</span>
-                                                    </div>
-                                                </div>
-                                            </Link>
-                                            <div className="text-title">
-                                                <span className="prd_quantity">{item.quantity}</span>
-                                                <span> X </span>
-                                                <span className="prd_price">${Number(getItemNetPrice(item, order)).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                            </div>
-                                        </div>
-                                    ))
-                                ) : (
-                                    <div className="py-5 text-secondary">Sin productos asociados.</div>
-                                )}
-                            </div>
-                            <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-                                <div className="text-sm text-secondary">
-                                    {order.items?.length || 0} producto{(order.items?.length || 0) === 1 ? '' : 's'} en este pedido
-                                </div>
-                                <button className="button-main" onClick={() => onOpenOrder(order)}>
-                                    Detalles del Pedido
+            {loading ? (
+                <div className="customer-muted px-5 py-12 text-center" aria-live="polite">Cargando pedidos...</div>
+            ) : orders.length === 0 ? (
+                <div className="customer-muted px-5 py-12 text-center">
+                    <Package size={28} className="mx-auto mb-2" aria-hidden="true" />
+                    No tienes pedidos en este estado.
+                </div>
+            ) : (
+                <>
+                    <div className="hidden lg:block">
+                        <table className="customer-data-table">
+                            <thead>
+                                <tr>
+                                    <th className="w-[24%]">Pedido / Fecha</th>
+                                    <th className="w-[21%]">Entrega</th>
+                                    <th className="w-[14%]">Pago</th>
+                                    <th className="w-[13%]">Productos</th>
+                                    <th className="w-[10%]">Total</th>
+                                    <th className="w-[10%]">Estado</th>
+                                    <th className="w-[8%]"><span className="sr-only">Acción</span></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {orders.map((order) => {
+                                    const badge = getStatusBadge(order.status)
+                                    const items = Number(order.items_count ?? 0)
+                                    const units = Number(order.units_count ?? items)
+                                    return (
+                                        <tr key={order.id}>
+                                            <td>
+                                                <span className="customer-order-number block truncate">{order.order_number || order.id}</span>
+                                                <span className="customer-muted mt-1 block text-xs">{formatDateTime(order.created_at)}</span>
+                                            </td>
+                                            <td className="text-sm font-semibold">{deliveryLabel(order)}</td>
+                                            <td className="customer-muted text-sm">{paymentLabel(order)}</td>
+                                            <td className="text-sm">{items} {items === 1 ? 'línea' : 'líneas'} · {units} u.</td>
+                                            <td><span className="customer-order-total">${Number(order.total || 0).toFixed(2)}</span></td>
+                                            <td><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span></td>
+                                            <td className="text-right">
+                                                <button type="button" onClick={() => onOpenOrder(order)} className="customer-order-detail ml-auto" aria-label={`Ver detalle del pedido ${order.order_number || order.id}`}>
+                                                    Ver <ArrowRight size={15} aria-hidden="true" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="space-y-2 p-3 lg:hidden">
+                        {orders.map((order) => {
+                            const badge = getStatusBadge(order.status)
+                            const items = Number(order.items_count ?? 0)
+                            const units = Number(order.units_count ?? items)
+                            return (
+                                <button key={order.id} type="button" onClick={() => onOpenOrder(order)} className="customer-order-card block min-h-[48px] w-full p-3 text-left">
+                                    <span className="flex items-start justify-between gap-3">
+                                        <span className="min-w-0">
+                                            <span className="customer-order-number block truncate text-sm">{order.order_number || order.id}</span>
+                                            <span className="customer-muted mt-1 block text-xs">{formatDateTime(order.created_at)}</span>
+                                        </span>
+                                        <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${badge.className}`}>{badge.label}</span>
+                                    </span>
+                                    <span className="mt-3 grid grid-cols-2 gap-3 border-t border-line pt-3 text-sm">
+                                        <span><strong className="block">{deliveryLabel(order)}</strong><span className="customer-muted text-xs">{paymentLabel(order)}</span></span>
+                                        <span className="text-right"><strong className="customer-order-total block">${Number(order.total || 0).toFixed(2)}</strong><span className="customer-muted text-xs">{items} {items === 1 ? 'línea' : 'líneas'} · {units} u.</span></span>
+                                    </span>
                                 </button>
-                            </div>
-                        </div>
-                    )
-                })}
-            </div>
-        </div>
+                            )
+                        })}
+                    </div>
+                </>
+            )}
+        </section>
     )
 })

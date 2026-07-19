@@ -175,20 +175,30 @@ configure_frontend_public_urls() {
 prepare_frontend_secrets() {
   local env_file="$1"
   local token secret_dir secret_file
+  local runtime_owner="10001:10001"
 
-  token="$(normalize_env_value "$(read_env_value "${env_file}" "INTERNAL_PROXY_TOKEN")")"
-  if [[ -z "${token}" || "${token}" == "replace-with-shared-internal-proxy-token" ]]; then
-    echo "INTERNAL_PROXY_TOKEN no esta configurado en ${env_file}" >&2
+  token="$(normalize_env_value "$(read_env_value "${env_file}" "STOREFRONT_BACKEND_PROXY_TOKEN")")"
+  if [[ -z "${token}" || "${token}" == "replace-with-dedicated-storefront-backend-proxy-token" ]]; then
+    echo "STOREFRONT_BACKEND_PROXY_TOKEN no esta configurado en ${env_file}" >&2
     exit 1
   fi
 
   secret_dir="${ENTORNO_DIR}/.secrets"
-  secret_file="${secret_dir}/internal_proxy_token"
+  secret_file="${secret_dir}/storefront_backend_proxy_token"
   mkdir -p "${secret_dir}"
   chmod 700 "${secret_dir}"
   umask 077
   printf '%s' "${token}" > "${secret_file}"
-  chmod 600 "${secret_file}"
+  # Docker Compose implementa los secrets basados en archivos como bind mounts;
+  # por ello uid/gid/mode del target no sustituyen los permisos del archivo
+  # origen. El runtime estable corre como 10001:10001 y debe poder leer solo su
+  # copia scoped sin hacerla visible a otros usuarios del host.
+  if ! chown "${runtime_owner}" "${secret_file}" 2>/dev/null; then
+    echo "No se pudo asignar ${secret_file} a ${runtime_owner}." >&2
+    echo "Ejecuta el deploy con permisos para preparar el secret del runtime." >&2
+    exit 1
+  fi
+  chmod 400 "${secret_file}"
 }
 
 prepare_frontend_uploads() {
@@ -249,12 +259,51 @@ resolve_env_file() {
 validate_frontend_env_for_mode() {
   local mode="$1"
   local env_file="$2"
-  local app_env profile runtime
+  local app_env profile runtime require_ha upload_mode uploads_base_url upload_timeout frontend_workers forbidden_key
 
   app_env="$(normalize_env_value "$(read_env_value "${env_file}" "APP_ENV" || true)")"
   profile="$(frontend_profile_from_env "${env_file}")"
   runtime="$(normalize_env_value "$(read_env_value "${env_file}" "FRONTEND_QA_RUNTIME" || true)")"
   runtime="${runtime:-stable}"
+  require_ha="$(normalize_env_value "$(read_env_value "${env_file}" "REQUIRE_HA" || true)")"
+  require_ha="${require_ha:-false}"
+  upload_mode="$(normalize_env_value "$(read_env_value "${env_file}" "PRODUCT_IMAGE_UPLOAD_MODE" || true)")"
+  if [[ -z "${upload_mode}" ]]; then
+    if [[ "${app_env}" == "qa" ]]; then
+      upload_mode="local"
+    else
+      upload_mode="backend-object-storage"
+    fi
+  fi
+  uploads_base_url="$(normalize_env_value "$(read_env_value "${env_file}" "NEXT_PUBLIC_UPLOADS_BASE_URL" || true)")"
+  upload_timeout="$(normalize_env_value "$(read_env_value "${env_file}" "UPLOAD_BACKEND_TIMEOUT_MS" || true)")"
+  upload_timeout="${upload_timeout:-30000}"
+  frontend_workers="$(normalize_env_value "$(read_env_value "${env_file}" "FRONTEND_WORKERS" || true)")"
+  frontend_workers="${frontend_workers:-4}"
+
+  if [[ ! "${frontend_workers}" =~ ^[1-9][0-9]*$ ]] || (( frontend_workers > 16 )); then
+    echo "FRONTEND_WORKERS debe ser un entero entre 1 y 16." >&2
+    exit 1
+  fi
+
+  if [[ ! "${require_ha,,}" =~ ^(0|1|true|false|yes|no|on|off)$ ]]; then
+    echo "REQUIRE_HA debe ser booleano." >&2
+    exit 1
+  fi
+  if [[ "${upload_mode}" != "local" && "${upload_mode}" != "backend-object-storage" ]]; then
+    echo "PRODUCT_IMAGE_UPLOAD_MODE=${upload_mode:-<vacio>} no es valido; usa local o backend-object-storage." >&2
+    exit 1
+  fi
+  if [[ ! "${upload_timeout}" =~ ^[0-9]+$ ]] || (( upload_timeout < 5000 || upload_timeout > 120000 )); then
+    echo "UPLOAD_BACKEND_TIMEOUT_MS debe estar entre 5000 y 120000." >&2
+    exit 1
+  fi
+  for forbidden_key in OBJECT_STORAGE_ACCESS_KEY OBJECT_STORAGE_SECRET_KEY OBJECT_STORAGE_SESSION_TOKEN; do
+    if [[ -n "$(normalize_env_value "$(read_env_value "${env_file}" "${forbidden_key}" || true)")" ]]; then
+      echo "${forbidden_key} no puede configurarse en Next; las credenciales pertenecen al backend." >&2
+      exit 1
+    fi
+  done
 
   case "${mode}" in
     qa)
@@ -276,8 +325,29 @@ validate_frontend_env_for_mode() {
         echo "COMPOSE_PROFILES=${profile:-<vacio>} no es valido para production; usa production." >&2
         exit 1
       fi
+      if [[ ! "${require_ha,,}" =~ ^(1|true|yes|on)$ ]]; then
+        echo "Frontend production exige REQUIRE_HA=true." >&2
+        exit 1
+      fi
       ;;
   esac
+
+  if [[ "${upload_mode}" == "local" && "${app_env}" != "qa" ]]; then
+    echo "PRODUCT_IMAGE_UPLOAD_MODE=local solo esta permitido en APP_ENV=qa." >&2
+    exit 1
+  fi
+  if [[ "${require_ha,,}" =~ ^(1|true|yes|on)$ || "${app_env}" =~ ^(production|prod)$ ]]; then
+    if [[ "${upload_mode}" != "backend-object-storage" ]]; then
+      echo "Produccion y REQUIRE_HA=true exigen PRODUCT_IMAGE_UPLOAD_MODE=backend-object-storage." >&2
+      exit 1
+    fi
+  fi
+  if [[ "${upload_mode}" == "backend-object-storage" ]]; then
+    if [[ ! "${uploads_base_url}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[^?#]*)?$ || "${uploads_base_url}" == *"@"* ]]; then
+      echo "NEXT_PUBLIC_UPLOADS_BASE_URL debe ser una URL HTTPS publica sin credenciales, query ni fragmento." >&2
+      exit 1
+    fi
+  fi
 
   if [[ "${profile}" == "qa" && "${runtime}" != "stable" ]]; then
     echo "FRONTEND_QA_RUNTIME=${runtime} no es valido para deploy detras del gateway; usa stable." >&2
@@ -339,7 +409,7 @@ assert_frontend_mode() {
   fi
 
   expected_app_env="$(normalize_env_value "$(read_env_value "${env_file}" "APP_ENV" || true)")"
-  container_app_env="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${expected_container}" 2>/dev/null | awk -F= '/^APP_ENV=/{print $2; exit}')"
+  container_app_env="$(docker inspect -f '{{range .Config.Env}}{{if eq . "APP_ENV=qa"}}qa{{else if eq . "APP_ENV=production"}}production{{end}}{{end}}' "${expected_container}" 2>/dev/null)"
   if [[ "${container_app_env}" != "${expected_app_env}" ]]; then
     echo "El frontend quedo con APP_ENV=${container_app_env:-desconocido}, esperado ${expected_app_env:-<vacio>}" >&2
     exit 1
@@ -374,16 +444,64 @@ wait_for_container_health() {
   exit 1
 }
 
+assert_frontend_scoped_secret() {
+  local container_name="$1"
+
+  if ! docker exec "${container_name}" sh -lc '
+    test -r "${STOREFRONT_BACKEND_PROXY_TOKEN_FILE:?}" &&
+    found=0
+    for environment in /proc/[0-9]*/environ; do
+      [ -r "$environment" ] || continue
+      if tr "\000" "\n" < "$environment" |
+        grep -Eq "^STOREFRONT_BACKEND_PROXY_TOKEN=[A-Za-z0-9_-]{32,128}$"; then
+        found=1
+        break
+      fi
+    done
+    test "$found" -eq 1
+  '; then
+    echo "El frontend no incorporo su credencial scoped en el proceso runtime." >&2
+    exit 1
+  fi
+}
+
+assert_frontend_cluster() {
+  local container_name="$1"
+  local env_file="$2"
+  local expected attempt=1
+
+  expected="$(normalize_env_value "$(read_env_value "${env_file}" "FRONTEND_WORKERS" || true)")"
+  expected="${expected:-4}"
+
+  while (( attempt <= 30 )); do
+    if docker exec "${container_name}" sh /app/check-cluster-process-tree.sh "${expected}" >/dev/null; then
+      return 0
+    fi
+    sleep 1
+    ((attempt++))
+  done
+
+  echo "El cluster frontend no alcanzo ${expected} workers mas su proceso primary." >&2
+  docker logs --tail 80 "${container_name}" >&2 || true
+  exit 1
+}
+
 deploy_frontend() {
   local mode="${1:-qa}"
-  local env_file profile service
+  local env_file profile service upload_mode
 
   ensure_docker_ready
   env_file="$(resolve_env_file "${mode}")"
   profile="$(frontend_profile_from_env "${env_file}")"
   service="$(frontend_service_name "${profile}")"
   prepare_frontend_secrets "${env_file}"
-  prepare_frontend_uploads
+  upload_mode="$(normalize_env_value "$(read_env_value "${env_file}" "PRODUCT_IMAGE_UPLOAD_MODE" || true)")"
+  if [[ -z "${upload_mode}" && "${mode}" == "qa" ]]; then
+    upload_mode="local"
+  fi
+  if [[ "${upload_mode}" == "local" ]]; then
+    prepare_frontend_uploads
+  fi
 
   echo "Levantando webparamascotas (${mode}, perfil ${profile}) usando ${env_file}..."
   for legacy_container in paramascotasec-app paramascotasec-app-qa paramascotasec-app-dev; do
@@ -404,6 +522,8 @@ deploy_frontend() {
   compose_cmd "${env_file}" "${profile}" up -d --build --remove-orphans
   assert_frontend_mode "${env_file}"
   wait_for_container_health "$(frontend_container_name "${profile}")"
+  assert_frontend_scoped_secret "$(frontend_container_name "${profile}")"
+  assert_frontend_cluster "$(frontend_container_name "${profile}")" "${env_file}"
   compose_cmd "${env_file}" "${profile}" ps
   echo "webparamascotas (${mode}) listo"
 }

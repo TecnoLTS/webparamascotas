@@ -1,12 +1,12 @@
 import React from 'react'
-import { fetchProducts } from '@/lib/products'
 import { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { getSiteConfig } from '@/lib/site'
 import ParamascotasecHome from '@/tenants/paramascotasec.com/Home'
-import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { toCanonicalUrl } from '@/lib/publicUrl'
 import { getPublicBrandLogos, getPublicProductCategoryReferences } from '@/lib/api/settings'
 import HomeHeroPreloads from '@/components/Slider/HomeHeroPreloads'
+import { generatePetStoreJsonLd, generateWebSiteJsonLd } from '@/lib/seo'
 
 export async function generateMetadata(): Promise<Metadata> {
     const site = getSiteConfig()
@@ -37,20 +37,15 @@ export async function generateMetadata(): Promise<Metadata> {
 export const dynamic = 'force-dynamic'
 
 export default async function HomePet() {
-    let products = [] as Awaited<ReturnType<typeof fetchProducts>>
+    const requestHeaders = await headers()
+    const nonce = requestHeaders.get('x-nonce') || undefined
+    const site = getSiteConfig()
     let brandLogos = [] as Awaited<ReturnType<typeof getPublicBrandLogos>>
     let publicCategories = [] as Awaited<ReturnType<typeof getPublicProductCategoryReferences>>
-    const [productsResult, brandLogosResult, categoriesResult] = await Promise.allSettled([
-        fetchProducts({ fresh: true }),
+    const [brandLogosResult, categoriesResult] = await Promise.allSettled([
         getPublicBrandLogos(),
         getPublicProductCategoryReferences(),
     ])
-
-    if (productsResult.status === 'fulfilled') {
-        products = orderProductsFoodFirst(productsResult.value)
-    } else {
-        console.error('No se pudieron cargar productos en HomePet:', productsResult.reason)
-    }
 
     if (brandLogosResult.status === 'fulfilled') {
         brandLogos = brandLogosResult.value
@@ -67,7 +62,23 @@ export default async function HomePet() {
     return (
         <>
             <HomeHeroPreloads />
-            <ParamascotasecHome products={products} brandLogos={brandLogos} publicCategories={publicCategories} />
+            <ParamascotasecHome brandLogos={brandLogos} publicCategories={publicCategories} />
+            <script
+                nonce={nonce}
+                suppressHydrationWarning
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                    __html: JSON.stringify(generatePetStoreJsonLd(site)),
+                }}
+            />
+            <script
+                nonce={nonce}
+                suppressHydrationWarning
+                type="application/ld+json"
+                dangerouslySetInnerHTML={{
+                    __html: JSON.stringify(generateWebSiteJsonLd(site)),
+                }}
+            />
         </>
     )
 }

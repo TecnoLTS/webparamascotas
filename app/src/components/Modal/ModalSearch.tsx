@@ -16,10 +16,14 @@ const ModalSearch = () => {
   const { isModalOpen, closeModalSearch } = useModalSearchContext();
   const [searchKeyword, setSearchKeyword] = useState('');
   const router = useRouter();
-  const { products, loading, error } = useProducts();
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
-  const productSearchIndex = useMemo(() => buildProductSearchIndex(products), [products])
   const trimmedSearchKeyword = sanitizeProductSearchQuery(deferredSearchKeyword)
+  const { products, loading, error } = useProducts({
+    search: trimmedSearchKeyword || undefined,
+    pageSize: 16,
+    enabled: isModalOpen,
+  });
+  const productSearchIndex = useMemo(() => buildProductSearchIndex(products), [products])
   const liveResults = useMemo(
     () => trimmedSearchKeyword
       ? filterProductsBySearch(products, trimmedSearchKeyword, productSearchIndex).slice(0, 4)

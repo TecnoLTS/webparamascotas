@@ -1,8 +1,6 @@
-'use client'
-
 import React from 'react'
+import Link from 'next/link'
 import Image from '@/components/Common/AppImage'
-import { useRouter } from 'next/navigation'
 import {
     PetCategoryCard,
     PetCategoryFeaturedImageVariant,
@@ -16,17 +14,7 @@ type CollectionProps = {
 }
 
 const Collection = ({ categories = getHomeSecondaryCategoryCards() }: CollectionProps) => {
-    const router = useRouter()
     const featuredCategories = categories.slice(0, 3)
-
-    const sizesMobilePrimary = '92vw'
-    const sizesMobileSecondary = '46vw'
-    const sizesDesktopPrimary = '(min-width: 1150px) 630px, (min-width: 640px) calc((100vw - 32px - 16px) / 2), 92vw'
-    const sizesDesktopSecondary = '(min-width: 1150px) 630px, (min-width: 640px) calc((100vw - 32px - 16px) / 2), calc((100vw - 32px - 12px) / 2)'
-
-    const handleCategoryClick = (category: string) => {
-        router.push(getCategoryUrl(category))
-    }
 
     if (featuredCategories.length === 0) {
         return null
@@ -37,19 +25,21 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
         options?: {
             aspectClass?: string
             imageVariant?: PetCategoryFeaturedImageVariant
-            sizes?: string
             labelWidthClass?: string
             wrapperClass?: string
         }
     ) => {
         const imageSpec = getHomeFeaturedCategoryImageSpec(item.id, options?.imageVariant)
         const dynamicFeaturedImage = options?.imageVariant ? item.featuredImages?.[options.imageVariant] : undefined
+        // Cada slot ya publica un WebP recortado a 2x de su tamano visual.
+        // Evitar el optimizador aqui elimina un srcset de decenas de candidatos
+        // sin degradar la resolucion ni cambiar la imagen elegida por breakpoint.
 
         return (
-            <div
+            <Link
                 key={item.id}
+                href={getCategoryUrl(item.id)}
                 className={`collection-item block h-full relative md:rounded-[20px] rounded-xl overflow-hidden cursor-pointer ${options?.wrapperClass ?? ''}`}
-                onClick={() => handleCategoryClick(item.id)}
             >
                 <div className={`bg-img h-full w-full bg-[#f6f7f9] ${options?.aspectClass ?? 'aspect-square'}`}>
                     <Image
@@ -59,7 +49,7 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                         height={1000}
                         quality={90}
                         loading="lazy"
-                        sizes={options?.sizes ?? '(min-width: 1280px) 360px, (min-width: 640px) 44vw, 92vw'}
+                        unoptimized
                         className='category-card-image h-full w-full object-cover'
                         style={{ transform: 'none' }}
                     />
@@ -69,7 +59,7 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                 >
                     {item.label}
                 </div>
-            </div>
+            </Link>
         )
     }
 
@@ -87,7 +77,6 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                         {renderCategoryTile(primary, {
                             aspectClass: 'aspect-[16/10]',
                             imageVariant: 'mobilePrimary',
-                            sizes: sizesMobilePrimary,
                             labelWidthClass: 'w-[calc(100%-28px)] max-w-[210px]',
                         })}
                     </div>
@@ -95,7 +84,6 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                         {renderCategoryTile(secondaryTop, {
                             aspectClass: 'aspect-square',
                             imageVariant: 'mobileSecondary',
-                            sizes: sizesMobileSecondary,
                             labelWidthClass: 'w-[calc(100%-20px)] max-w-[160px]',
                         })}
                     </div>
@@ -103,7 +91,6 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                         {renderCategoryTile(secondaryBottom, {
                             aspectClass: 'aspect-square',
                             imageVariant: 'mobileSecondary',
-                            sizes: sizesMobileSecondary,
                             labelWidthClass: 'w-[calc(100%-20px)] max-w-[160px]',
                         })}
                     </div>
@@ -113,7 +100,6 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                         {renderCategoryTile(primary, {
                             aspectClass: 'aspect-[630/620]',
                             imageVariant: 'desktopPrimary',
-                            sizes: sizesDesktopPrimary,
                             labelWidthClass: 'lg:w-[220px]',
                         })}
                     </div>
@@ -122,7 +108,6 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                             {renderCategoryTile(secondaryTop, {
                                 aspectClass: 'aspect-[630/295]',
                                 imageVariant: 'desktopSecondary',
-                                sizes: sizesDesktopSecondary,
                                 labelWidthClass: 'lg:w-[220px]',
                             })}
                         </div>
@@ -130,7 +115,6 @@ const Collection = ({ categories = getHomeSecondaryCategoryCards() }: Collection
                             {renderCategoryTile(secondaryBottom, {
                                 aspectClass: 'aspect-[630/295]',
                                 imageVariant: 'desktopSecondary',
-                                sizes: sizesDesktopSecondary,
                                 labelWidthClass: 'lg:w-[220px]',
                             })}
                         </div>

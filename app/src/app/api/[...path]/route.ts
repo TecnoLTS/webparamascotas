@@ -41,18 +41,24 @@ const buildExpiredCookie = (name: string, options?: { domain?: string; httpOnly?
 
 const appendLogoutCookies = (headers: Headers) => {
   const authCookie = (process.env.NEXT_PUBLIC_AUTH_COOKIE_NAME || process.env.AUTH_COOKIE_NAME || 'pm_auth').trim() || 'pm_auth'
-  const csrfCookie = (process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME || process.env.AUTH_CSRF_COOKIE_NAME || 'pm_csrf').trim() || 'pm_csrf'
-  const authCookies = [authCookie, `${authCookie}_ecommerce`, `${authCookie}_dashboard`]
+  const csrfCookie = (process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME || 'pm_csrf_ecommerce').trim() || 'pm_csrf_ecommerce'
+  const legacyFallbackEnabled = ['1', 'true', 'yes', 'on'].includes((process.env.AUTH_LEGACY_COOKIE_FALLBACK_ENABLED || '').trim().toLowerCase())
+  const authCookies = [`${authCookie}_ecommerce`, ...(legacyFallbackEnabled ? [authCookie] : [])]
+  const csrfCookies = [csrfCookie, ...(legacyFallbackEnabled ? [(process.env.AUTH_CSRF_COOKIE_NAME || 'pm_csrf').trim() || 'pm_csrf'] : [])]
 
   for (const cookie of authCookies) {
     headers.append('Set-Cookie', buildExpiredCookie(cookie, { httpOnly: true }))
   }
-  headers.append('Set-Cookie', buildExpiredCookie(csrfCookie))
+  for (const cookie of csrfCookies) {
+    headers.append('Set-Cookie', buildExpiredCookie(cookie))
+  }
   for (const domain of getConfiguredCookieDomains()) {
     for (const cookie of authCookies) {
       headers.append('Set-Cookie', buildExpiredCookie(cookie, { domain, httpOnly: true }))
     }
-    headers.append('Set-Cookie', buildExpiredCookie(csrfCookie, { domain }))
+    for (const cookie of csrfCookies) {
+      headers.append('Set-Cookie', buildExpiredCookie(cookie, { domain }))
+    }
   }
 }
 
@@ -162,7 +168,7 @@ const forward = async (req: NextRequest) => {
   resHeaders.set('Expires', '0')
 
   if (req.nextUrl.pathname === '/api/auth/logout') {
-    resHeaders.set('Clear-Site-Data', '"cookies", "storage"')
+    resHeaders.set('Clear-Site-Data', '"storage"')
     appendLogoutCookies(resHeaders)
   }
 

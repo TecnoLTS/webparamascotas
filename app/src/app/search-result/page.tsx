@@ -11,15 +11,15 @@ export const dynamic = 'force-dynamic'
 
 export default async function SearchResult({ searchParams }: { searchParams?: Promise<SearchParams> }) {
     const resolvedSearchParams = await searchParams
+    const query = typeof resolvedSearchParams?.query === 'string' ? resolvedSearchParams.query : null
     const [productsResult, categoriesResult] = await Promise.allSettled([
-        loadProducts(),
+        loadProducts({ search: query ?? undefined, pageSize: 48 }),
         getPublicProductCategories(),
     ])
-    const { products, error } = productsResult.status === 'fulfilled'
+    const { products, error, hasMore, nextCursor } = productsResult.status === 'fulfilled'
         ? productsResult.value
-        : { products: [], error: 'No se pudieron cargar productos.' }
+        : { products: [], error: 'No se pudieron cargar productos.', hasMore: false, nextCursor: null }
     const publicCategories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : []
-    const query = typeof resolvedSearchParams?.query === 'string' ? resolvedSearchParams.query : null
 
     return (
         <SearchResultClient
@@ -27,6 +27,8 @@ export default async function SearchResult({ searchParams }: { searchParams?: Pr
             error={error}
             initialQuery={query}
             publicCategories={publicCategories}
+            initialHasMore={hasMore}
+            initialNextCursor={nextCursor}
         />
     )
 }

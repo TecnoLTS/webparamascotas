@@ -5,9 +5,10 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import MenuOne from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
-import * as Icon from "@phosphor-icons/react/dist/ssr";
+import { CheckSquare } from '@phosphor-icons/react/dist/ssr'
 import { login } from '@/lib/api/auth'
 import { setCookieSessionMarker, setStoredSessionUser } from '@/lib/authSession'
+import { normalizeEcommerceReturnPath } from '@/lib/ecommerceChannel'
 
 const Login = () => {
     const router = useRouter()
@@ -32,11 +33,7 @@ const Login = () => {
     const getNextPath = React.useCallback(() => {
         if (typeof window === 'undefined') return '/my-account'
         const query = new URLSearchParams(window.location.search)
-        const next = query.get('next') || '/my-account'
-        if (!next.startsWith('/')) {
-            return '/my-account'
-        }
-        return next
+        return normalizeEcommerceReturnPath(query.get('next'))
     }, [])
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -75,28 +72,48 @@ const Login = () => {
                 <div className="container">
                     <div className="content-main flex gap-y-8 max-md:flex-col">
                         <div className="left md:w-1/2 w-full lg:pr-[60px] md:pr-[40px] md:border-r border-line">
-                            <div className="heading4">Inicia Sesión</div>
+                            <div className="heading4">Cuenta de cliente</div>
+                            <p className="mt-2 text-secondary">
+                                Ingresa para comprar y consultar tus pedidos, envíos y direcciones.
+                            </p>
+                            <div className="mt-4 rounded-lg border border-line bg-surface px-4 py-3 text-sm" role="note">
+                                <span className="font-semibold">¿Eres administrador u operador?</span>{' '}
+                                <a href="/dashboard/sign-in" className="font-semibold text-primary hover:underline">
+                                    Ir al panel administrativo
+                                </a>
+                                .
+                            </div>
                             {success && <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-lg">{success}</div>}
                             {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg">{error}</div>}
                             <form className="md:mt-7 mt-4" onSubmit={handleSubmit}>
                                 <div className="email ">
+                                    <label htmlFor="storefront-username" className="mb-2 block text-sm font-semibold">
+                                        Correo de cliente
+                                    </label>
                                     <input
                                         className="border-line px-4 pt-3 pb-3 w-full rounded-lg"
-                                        id="username"
+                                        id="storefront-username"
+                                        name="storefront-email"
                                         type="email"
                                         placeholder="Correo electrónico *"
                                         required
+                                        autoComplete="section-storefront username"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                     />
                                 </div>
                                 <div className="pass mt-5">
+                                    <label htmlFor="storefront-password" className="mb-2 block text-sm font-semibold">
+                                        Contraseña
+                                    </label>
                                     <input
                                         className="border-line px-4 pt-3 pb-3 w-full rounded-lg"
-                                        id="password"
+                                        id="storefront-password"
+                                        name="storefront-password"
                                         type="password"
                                         placeholder="Contraseña *"
                                         required
+                                        autoComplete="section-storefront current-password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                     />
@@ -134,7 +151,7 @@ const Login = () => {
                                                 name='remember'
                                                 id='remember'
                                             />
-                                            <Icon.CheckSquare size={20} weight='fill' className='icon-checkbox' />
+                                            <CheckSquare size={20} weight='fill' className='icon-checkbox' />
                                         </div>
                                         <label htmlFor='remember' className="pl-2 cursor-pointer">Recuérdame</label>
                                     </div>

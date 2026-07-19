@@ -6,13 +6,12 @@ import {
   apiEndpoints,
   authFreeApiPaths,
   isPublicApiPath,
-  shouldDisableApiPathCache,
 } from '@/lib/api/endpoints'
 import { toInternalBackendUrl } from '@/lib/api/backendBase'
 
 const getCsrfCookieName = () => {
   const fromEnv = process.env.NEXT_PUBLIC_AUTH_CSRF_COOKIE_NAME
-  return fromEnv?.trim() || 'pm_csrf'
+  return fromEnv?.trim() || 'pm_csrf_ecommerce'
 }
 
 const readCookieValue = (cookieHeader: string | null | undefined, cookieName: string) => {
@@ -83,19 +82,29 @@ const resolveUrl = (path: string) => {
   return toPublicApiUrl(normalizedPath)
 }
 
+const stablePublicReferencePaths = new Set<string>([
+  apiEndpoints.settings.publicBrandLogos,
+  apiEndpoints.settings.publicProductCategories,
+  apiEndpoints.settings.publicProductCategoryReferences,
+])
+
 const getServerCachePolicy = (
   pathname: string,
   method: string,
 ): { cache: RequestCache; next?: { revalidate?: number | false } } | null => {
   if (typeof window !== 'undefined') return null
   if (method !== 'GET') return null
-  if (!isPublicApiPath(pathname, method) || shouldDisableApiPathCache(pathname)) return null
+  if (!isPublicApiPath(pathname, method)) return null
 
   if (process.env.NODE_ENV === 'development') {
     if (pathname === apiEndpoints.products || pathname.startsWith(`${apiEndpoints.products}/`)) {
       return { cache: 'force-cache', next: { revalidate: 5 } }
     }
     return { cache: 'force-cache', next: { revalidate: 15 } }
+  }
+
+  if (stablePublicReferencePaths.has(pathname)) {
+    return { cache: 'force-cache', next: { revalidate: 300 } }
   }
 
   return { cache: 'force-cache', next: { revalidate: 60 } }
@@ -167,24 +176,6 @@ const withAuth = async (path: string, init?: RequestInit): Promise<RequestInit> 
     const cookieHeader = serverContext?.cookieHeader ?? null
     const csrfToken = methodRequiresCsrf(init?.method) ? (serverContext?.csrfToken ?? null) : null
     attachInternalProxyToken(headers)
-    if (authFreeApiPaths.has(pathname)) {
-      const tenantHost = resolveForwardedHost(forwardedHost)
-      const tenantProto = forwardedProto || getConfiguredTenantProto()
-      if (tenantHost) {
-        headers.set('x-forwarded-host', tenantHost)
-        headers.set('host', tenantHost)
-      }
-      if (tenantProto) {
-        headers.set('x-forwarded-proto', tenantProto)
-      }
-      if (cookieHeader) {
-        headers.set('cookie', cookieHeader)
-      }
-      if (csrfToken && !headers.has('x-csrf-token')) {
-        headers.set('x-csrf-token', csrfToken)
-      }
-      return { ...init, headers }
-    }
     const tenantHost = resolveForwardedHost(forwardedHost)
     const tenantProto = forwardedProto || getConfiguredTenantProto()
     if (tenantHost) {
@@ -194,14 +185,29 @@ const withAuth = async (path: string, init?: RequestInit): Promise<RequestInit> 
     if (tenantProto) {
       headers.set('x-forwarded-proto', tenantProto)
     }
+
+    if (authFreeApiPaths.has(pathname)) {
+      if (cookieHeader) {
+        headers.set('cookie', cookieHeader)
+      }
+      if (csrfToken && !headers.has('x-csrf-token')) {
+        headers.set('x-csrf-token', csrfToken)
+      }
+      return { ...init, headers }
+    }
+
+    // Los contratos publicos son independientes de la sesion. No reenviar
+    // cookies evita contaminar caches compartidas y reduce el radio de una
+    // credencial del navegador en llamadas SSR.
+    if (isPublicApiPath(pathname, init?.method)) {
+      return { ...init, headers }
+    }
+
     if (cookieHeader) {
       headers.set('cookie', cookieHeader)
     }
     if (csrfToken && !headers.has('x-csrf-token')) {
       headers.set('x-csrf-token', csrfToken)
-    }
-    if (isPublicApiPath(pathname, init?.method)) {
-      return { ...init, headers }
     }
     return { ...init, headers }
   }
@@ -562,6 +568,46 @@ export async function fetchJson<T>(path: string, init?: ApiRequestInit): Promise
   }
 
   return result.body as T
+}
+
+export type FetchJsonEnvelopeResult<T> = {
+  data: T
+  meta: Record<string, unknown>
+  status: number
+}
+
+export async function fetchJsonEnvelope<T>(path: string, init?: ApiRequestInit): Promise<FetchJsonEnvelopeResult<T>> {
+  const method = (init?.method || 'GET').toUpperCase()
+  const pathname = getPathname(path)
+  const serverCachePolicy = getServerCachePolicy(pathname, method)
+  const cache = init?.cache || serverCachePolicy?.cache || 'no-store'
+  const result = await performReadableRequest(path, init, cache, serverCachePolicy?.next)
+
+  if (!result.ok) {
+    if (typeof window !== 'undefined' && shouldClearSessionOnSecurityBlock(result.body)) {
+      clearStoredSession()
+    }
+    handleAuthFailure(result.status, result.body)
+    throw new Error(normalizeHttpErrorMessage(
+      result.status,
+      result.url,
+      result.body,
+      result.envelope?.error?.message,
+    ))
+  }
+
+  if (!result.envelope) {
+    return { data: result.body as T, meta: {}, status: result.status }
+  }
+  if (!result.envelope.ok) {
+    throw new Error(result.envelope.error?.message || result.envelope.message || 'Error desconocido')
+  }
+
+  return {
+    data: result.envelope.data as T,
+    meta: result.envelope.meta ?? {},
+    status: result.status,
+  }
 }
 
 export async function requestApi<T>(path: string, init?: ApiRequestInit): Promise<{ ok: boolean; status: number; body: T; message?: string }> {

@@ -1,8 +1,10 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ProductType } from '@/type/ProductType'
+import { listProductPage } from '@/lib/api/products'
+import { groupCatalogProducts } from '@/lib/catalog'
 
 const AllProducts = dynamic(() => import('./AllProducts'), {
     ssr: false,
@@ -10,9 +12,62 @@ const AllProducts = dynamic(() => import('./AllProducts'), {
 })
 
 interface Props {
-    data: Array<ProductType>
+    data?: Array<ProductType>
     categoryIds?: string[]
     pageSize?: number
+}
+
+const RemoteAllProducts = ({ categoryIds, pageSize }: Omit<Props, 'data'>) => {
+    const [rawProducts, setRawProducts] = useState<ProductType[]>([])
+    const [nextCursor, setNextCursor] = useState<string | null>(null)
+    const [hasMore, setHasMore] = useState(true)
+    const [loading, setLoading] = useState(true)
+    const [error, setError] = useState<string | null>(null)
+    const products = useMemo(() => groupCatalogProducts(rawProducts), [rawProducts])
+
+    const loadPage = useCallback(async (cursor: string | null) => {
+        setLoading(true)
+        try {
+            const page = await listProductPage({ pageSize: 48, cursor })
+            setRawProducts((current) => {
+                const byId = new Map(current.map((product) => [product.id, product]))
+                page.products.forEach((product) => byId.set(product.id, product))
+                return Array.from(byId.values())
+            })
+            setNextCursor(page.nextCursor)
+            setHasMore(page.hasMore)
+            setError(null)
+        } catch (reason) {
+            setError(reason instanceof Error ? reason.message : 'No se pudo cargar el catálogo.')
+        } finally {
+            setLoading(false)
+        }
+    }, [])
+
+    useEffect(() => {
+        void loadPage(null)
+    }, [loadPage])
+
+    if (loading && rawProducts.length === 0) return <AllProductsPlaceholder />
+    if (error && rawProducts.length === 0) {
+        return (
+            <section className="container pm-catalog md:py-10 py-5" role="status">
+                <div className="rounded-2xl border border-line bg-surface px-6 py-10 text-center text-secondary">
+                    No pudimos cargar el catálogo. Intenta nuevamente en unos minutos.
+                </div>
+            </section>
+        )
+    }
+    return (
+        <AllProducts
+            data={products}
+            categoryIds={categoryIds}
+            pageSize={pageSize}
+            hasMore={hasMore}
+            loadingMore={loading}
+            onLoadMore={() => nextCursor ? loadPage(nextCursor) : Promise.resolve()}
+        />
+    )
 }
 
 const AllProductsPlaceholder = () => (
@@ -59,7 +114,11 @@ export default function DeferredAllProducts({ data, categoryIds, pageSize }: Pro
 
     return (
         <div ref={containerRef}>
-            {shouldLoad ? <AllProducts data={data} categoryIds={categoryIds} pageSize={pageSize} /> : <AllProductsPlaceholder />}
+            {shouldLoad
+                ? data
+                    ? <AllProducts data={data} categoryIds={categoryIds} pageSize={pageSize} />
+                    : <RemoteAllProducts categoryIds={categoryIds} pageSize={pageSize} />
+                : <AllProductsPlaceholder />}
         </div>
     )
 }

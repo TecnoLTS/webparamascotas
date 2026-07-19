@@ -22,13 +22,16 @@ const normalizeBrandKey = (value?: string | null) =>
 const Brand = ({ products = [], brandReferences = [] }: BrandProps) => {
     const logoReferences = normalizeProductBrandRecords(brandReferences).filter((brand) => brand.logoUrl)
     const logosByBrand = new Map(logoReferences.map((brand) => [normalizeBrandKey(brand.name), brand]))
-    const brands = getCatalogBrandStats(products)
-        .map((brandStat) => {
-            const reference = logosByBrand.get(normalizeBrandKey(brandStat.brand))
+    const orderedBrandNames = products.length > 0
+        ? getCatalogBrandStats(products).map((brandStat) => brandStat.brand)
+        : logoReferences.map((brand) => brand.name)
+    const brands = orderedBrandNames
+        .map((brandName) => {
+            const reference = logosByBrand.get(normalizeBrandKey(brandName))
             if (!reference?.logoUrl) return null
 
             return {
-                name: brandStat.brand,
+                name: brandName,
                 logoUrl: reference.logoUrl,
             }
         })

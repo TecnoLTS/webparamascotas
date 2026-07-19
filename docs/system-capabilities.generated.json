@@ -805,6 +805,46 @@
           "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateConfiguration",
           "capabilityId": "admin.tenants",
           "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/tenants/{tenantId}/lifecycle",
+          "method": "POST",
+          "path": "/api/admin/tenants/{tenantId}/lifecycle",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminLifecycle",
+          "capabilityId": "admin.tenants",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:PUT:/api/admin/tenants/{tenantId}/domains",
+          "method": "PUT",
+          "path": "/api/admin/tenants/{tenantId}/domains",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateDomains",
+          "capabilityId": "admin.tenants",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/tenants/{tenantId}/reconcile",
+          "method": "POST",
+          "path": "/api/admin/tenants/{tenantId}/reconcile",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminReconcile",
+          "capabilityId": "admin.tenants",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/tenants/{tenantId}/rollback",
+          "method": "POST",
+          "path": "/api/admin/tenants/{tenantId}/rollback",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminRollback",
+          "capabilityId": "admin.tenants",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/admin/tenants/{tenantId}/events",
+          "method": "GET",
+          "path": "/api/admin/tenants/{tenantId}/events",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminEvents",
+          "capabilityId": "admin.tenants",
+          "source": "backend/config/routes.php"
         }
       ],
       "billingApiRoutes": []
@@ -1163,6 +1203,14 @@
           "method": "GET",
           "path": "/api/admin/products",
           "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@adminIndex",
+          "capabilityId": "catalog.admin",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:POST:/api/admin/catalog/images",
+          "method": "POST",
+          "path": "/api/admin/catalog/images",
+          "handler": "App\\Modules\\CatalogInventory\\Controllers\\CatalogImageUploadController@store",
           "capabilityId": "catalog.admin",
           "source": "backend/config/routes.php"
         },
@@ -2142,7 +2190,7 @@
           "id": "backend:GET:/api/loyalty/v1/health",
           "method": "GET",
           "path": "/api/loyalty/v1/health",
-          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalHealth",
+          "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyHealthController@health",
           "capabilityId": "loyalty.public",
           "source": "backend/config/routes.php"
         },
@@ -2689,7 +2737,7 @@
       "domain": "billing-mail-system",
       "source": "webparamascotas/docs/capabilities/billing-mail-system.json",
       "id": "system.health",
-      "summary": "Healthchecks de frontend, backend, gateway y Billing.",
+      "summary": "Liveness y readiness separados para frontend, backend, gateway y Billing.",
       "auth": "public",
       "gateway": {
         "exposure": "web-and-tenant-api-and-billing-api"
@@ -2699,6 +2747,31 @@
           {
             "path": "/healthz",
             "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/healthz",
+            "method": "HEAD",
+            "public": true
+          },
+          {
+            "path": "/livez",
+            "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/livez",
+            "method": "HEAD",
+            "public": true
+          },
+          {
+            "path": "/readyz",
+            "method": "GET",
+            "public": true
+          },
+          {
+            "path": "/readyz",
+            "method": "HEAD",
             "public": true
           }
         ]
@@ -2716,6 +2789,22 @@
         "cleanup": false
       },
       "backendRoutes": [
+        {
+          "id": "backend:GET:/api/livez",
+          "method": "GET",
+          "path": "/api/livez",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\HealthController@live",
+          "capabilityId": "system.health",
+          "source": "backend/config/routes.php"
+        },
+        {
+          "id": "backend:GET:/api/readyz",
+          "method": "GET",
+          "path": "/api/readyz",
+          "handler": "App\\Modules\\IdentityPlatform\\Controllers\\HealthController@ready",
+          "capabilityId": "system.health",
+          "source": "backend/config/routes.php"
+        },
         {
           "id": "backend:GET:/api/health",
           "method": "GET",
@@ -2959,12 +3048,8 @@
             },
             "e2e": {
               "expectedStatuses": [
-                301,
-                302,
-                307,
-                308
-              ],
-              "expectedRedirectPath": "/dashboard/sign-in"
+                200
+              ]
             }
           },
           {
@@ -3133,12 +3218,8 @@
             },
             "e2e": {
               "expectedStatuses": [
-                301,
-                302,
-                307,
-                308
-              ],
-              "expectedRedirectPath": "/dashboard/sign-in"
+                200
+              ]
             }
           }
         ]
@@ -3549,6 +3630,46 @@
         "source": "backend/config/routes.php"
       },
       {
+        "id": "backend:POST:/api/admin/tenants/{tenantId}/lifecycle",
+        "method": "POST",
+        "path": "/api/admin/tenants/{tenantId}/lifecycle",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminLifecycle",
+        "capabilityId": "admin.tenants",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:PUT:/api/admin/tenants/{tenantId}/domains",
+        "method": "PUT",
+        "path": "/api/admin/tenants/{tenantId}/domains",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminUpdateDomains",
+        "capabilityId": "admin.tenants",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/tenants/{tenantId}/reconcile",
+        "method": "POST",
+        "path": "/api/admin/tenants/{tenantId}/reconcile",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminReconcile",
+        "capabilityId": "admin.tenants",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/tenants/{tenantId}/rollback",
+        "method": "POST",
+        "path": "/api/admin/tenants/{tenantId}/rollback",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminRollback",
+        "capabilityId": "admin.tenants",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/admin/tenants/{tenantId}/events",
+        "method": "GET",
+        "path": "/api/admin/tenants/{tenantId}/events",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\TenantController@adminEvents",
+        "capabilityId": "admin.tenants",
+        "source": "backend/config/routes.php"
+      },
+      {
         "id": "backend:GET:/api/admin/settings/session",
         "method": "GET",
         "path": "/api/admin/settings/session",
@@ -3562,6 +3683,22 @@
         "path": "/api/admin/settings/session",
         "handler": "App\\Modules\\IdentityPlatform\\Controllers\\SessionSettingsController@updateSessionSettings",
         "capabilityId": "admin.settings",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/livez",
+        "method": "GET",
+        "path": "/api/livez",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\HealthController@live",
+        "capabilityId": "system.health",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:GET:/api/readyz",
+        "method": "GET",
+        "path": "/api/readyz",
+        "handler": "App\\Modules\\IdentityPlatform\\Controllers\\HealthController@ready",
+        "capabilityId": "system.health",
         "source": "backend/config/routes.php"
       },
       {
@@ -3625,6 +3762,14 @@
         "method": "GET",
         "path": "/api/admin/products",
         "handler": "App\\Modules\\CatalogInventory\\Controllers\\ProductController@adminIndex",
+        "capabilityId": "catalog.admin",
+        "source": "backend/config/routes.php"
+      },
+      {
+        "id": "backend:POST:/api/admin/catalog/images",
+        "method": "POST",
+        "path": "/api/admin/catalog/images",
+        "handler": "App\\Modules\\CatalogInventory\\Controllers\\CatalogImageUploadController@store",
         "capabilityId": "catalog.admin",
         "source": "backend/config/routes.php"
       },
@@ -5008,7 +5153,7 @@
         "id": "backend:GET:/api/loyalty/v1/health",
         "method": "GET",
         "path": "/api/loyalty/v1/health",
-        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyController@externalHealth",
+        "handler": "App\\Modules\\LoyaltyRewards\\Controllers\\LoyaltyHealthController@health",
         "capabilityId": "loyalty.public",
         "source": "backend/config/routes.php"
       },
@@ -5426,6 +5571,11 @@
       },
       {
         "method": "ANY",
+        "path": "/livez",
+        "source": "webparamascotas/app/src/app/livez/route.ts"
+      },
+      {
+        "method": "ANY",
         "path": "/llms.txt",
         "source": "webparamascotas/app/src/app/llms.txt/route.ts"
       },
@@ -5433,6 +5583,11 @@
         "method": "ANY",
         "path": "/quote",
         "source": "webparamascotas/app/src/app/quote/route.ts"
+      },
+      {
+        "method": "ANY",
+        "path": "/readyz",
+        "source": "webparamascotas/app/src/app/readyz/route.ts"
       },
       {
         "method": "GET",

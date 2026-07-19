@@ -118,7 +118,7 @@ export default React.memo(function ShipmentsPanel({
                                 <div key={order.id} className="p-4 bg-white rounded-lg border border-line flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                                     <div>
                                         <div className="font-semibold">Pedido #{order.id}</div>
-                                        <div className="text-xs text-secondary mt-1">Cliente: {order.user_name || 'Cliente'}</div>
+                                        <div className="text-xs text-secondary mt-1">Cliente: {order.customer_name || order.user_name || 'Cliente'}</div>
                                         <div className="text-xs text-secondary mt-1">Creado: {formatDate(order.created_at)}</div>
                                     </div>
                                     <div className="flex items-center gap-3">

@@ -5,7 +5,7 @@ import {
     normalizeProductType,
     normalizeProductSpecies,
 } from '@/lib/productTaxonomy'
-import type { ProductFormState, PurchaseInvoiceFormState } from './types'
+import type { ProductFormState, ProductTaxTreatment, PurchaseInvoiceFormState } from './types'
 
 export const MAX_PRODUCT_IMAGE_BYTES = 8 * 1024 * 1024
 export const PRODUCT_IMAGE_ACCEPTED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
@@ -734,6 +734,52 @@ export const isTaxExemptProduct = (product?: any) => {
     return normalizeBooleanLikeValue(rawValue, false)
 }
 
+export const normalizeProductSaleTaxRate = (value: unknown): number | null => {
+    if (value === null || value === undefined || typeof value === 'boolean') return null
+    const normalized = String(value).trim().replace(',', '.')
+    if (!normalized || !/^\d+(?:\.\d+)?$/.test(normalized)) return null
+    const parsed = Number(normalized)
+    if (!Number.isFinite(parsed)) return null
+    return Math.min(100, Math.max(0, Math.round(parsed * 100) / 100))
+}
+
+export const resolveProductSaleTaxPolicy = (
+    product: any,
+    tenantVatMultiplier: number
+): { treatment: ProductTaxTreatment; rate: number } => {
+    const attributes = product?.attributes && typeof product.attributes === 'object'
+        ? product.attributes
+        : {}
+    if (isTaxExemptProduct({ ...product, attributes })) {
+        return { treatment: 'exempt', rate: 0 }
+    }
+
+    const projectedTreatment = String(product?.tax?.treatment ?? attributes.taxTreatment ?? attributes.tax_treatment ?? '').trim()
+    const explicitRateCandidates = [
+        product?.tax?.rate,
+        product?.taxRate,
+        attributes.taxRate,
+        attributes.tax_rate,
+    ]
+    let explicitRate: number | null = null
+    for (const candidate of explicitRateCandidates) {
+        explicitRate = normalizeProductSaleTaxRate(candidate)
+        if (explicitRate !== null) break
+    }
+
+    if (projectedTreatment === 'exempt') return { treatment: 'exempt', rate: 0 }
+    if (projectedTreatment === 'zero-rated') return { treatment: 'zero-rated', rate: 0 }
+
+    const tenantRate = normalizeProductSaleTaxRate((Math.max(1, tenantVatMultiplier) - 1) * 100)
+    const rate = explicitRate ?? tenantRate
+    if (rate === null) {
+        throw new Error('La tasa tributaria canónica del tenant no está disponible.')
+    }
+    return rate === 0
+        ? { treatment: 'zero-rated', rate: 0 }
+        : { treatment: 'taxed', rate }
+}
+
 export const getEmptyAttributes = (type: string): Record<string, string> => {
     if (type === 'Alimento') {
         return {
@@ -839,6 +885,7 @@ export const getAttributesForTypeChange = (nextType: string, currentAttributes?:
         'storageLocation',
         'supplier',
         'taxExempt',
+        'taxRate',
         'variantLabel',
         'variantAxis',
         'variantBaseName',
@@ -1020,6 +1067,8 @@ export const createEmptyProductForm = (): ProductFormState => ({
     marketPrice: '',
     cost: '',
     taxExempt: false,
+    taxTreatment: 'taxed',
+    taxRate: '',
     quantity: '',
     category: '',
     brand: 'Generico',
@@ -1042,8 +1091,11 @@ export const createProductFormFromProduct = (product: any, vatMultiplier: number
         name: String(product?.name || ''),
         attributes: normalizeAttributes(productType, product?.attributes),
     })
-    const taxExempt = isTaxExemptProduct({ ...product, attributes })
-    const effectiveVatMultiplier = taxExempt ? 1 : Math.max(1, vatMultiplier)
+    const saleTaxPolicy = resolveProductSaleTaxPolicy({ ...product, attributes }, vatMultiplier)
+    const taxExempt = saleTaxPolicy.treatment === 'exempt'
+    const effectiveVatMultiplier = saleTaxPolicy.treatment === 'taxed'
+        ? 1 + (saleTaxPolicy.rate / 100)
+        : 1
     const basePrice = effectiveVatMultiplier > 0 ? pvpPrice / effectiveVatMultiplier : pvpPrice
     const imageMeta = Array.isArray(product?.imageMeta) ? product.imageMeta : []
     const thumbMeta = imageMeta.filter((img: any) => (img.kind || 'gallery') === 'thumb')
@@ -1095,6 +1147,8 @@ export const createProductFormFromProduct = (product: any, vatMultiplier: number
         marketPrice: Number.isFinite(marketPrice) && marketPrice > pvpPrice ? marketPrice.toFixed(2) : '',
         cost: String(product?.business?.cost ?? product?.cost ?? 0),
         taxExempt,
+        taxTreatment: saleTaxPolicy.treatment,
+        taxRate: String(saleTaxPolicy.rate),
         quantity: String(product?.quantity ?? ''),
         category: normalizeProductCategory(product?.category || ''),
         brand: String(product?.brand || 'Generico'),

@@ -5,8 +5,6 @@ import { headers } from 'next/headers'
 import MenuPet from '@/components/Header/Menu/MenuPet'
 import Footer from '@/components/Footer/Footer'
 import { SEO_GUIDES } from '@/data/seoGuides'
-import { fetchProducts } from '@/lib/products'
-import { orderProductsFoodFirst } from '@/lib/shopProductOrdering'
 import { buildCatalogCategoryCards } from '@/lib/catalog'
 import {
   generateBreadcrumbJsonLd,
@@ -14,7 +12,6 @@ import {
 } from '@/lib/seo'
 import { getCanonicalSiteUrl, toCanonicalUrl } from '@/lib/publicUrl'
 import { getPublicProductCategories } from '@/lib/api/settings'
-import type { ProductType } from '@/type/ProductType'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,19 +34,11 @@ export async function generateMetadata(): Promise<Metadata> {
 export default async function GuiasPage() {
   const requestHeaders = await headers()
   const nonce = requestHeaders.get('x-nonce') || undefined
-  let products: ProductType[] = []
   let publicCategories: string[] = []
 
-  const [productsResult, categoriesResult] = await Promise.allSettled([
-    fetchProducts({ fresh: true }),
-    getPublicProductCategories(),
-  ])
-
-  if (productsResult.status === 'fulfilled') {
-    products = orderProductsFoodFirst(productsResult.value)
-  } else {
-    console.error('No se pudieron cargar productos para indice de guias:', productsResult.reason)
-  }
+  const categoriesResult = await getPublicProductCategories()
+    .then((value) => ({ status: 'fulfilled' as const, value }))
+    .catch((reason) => ({ status: 'rejected' as const, reason }))
 
   if (categoriesResult.status === 'fulfilled') {
     publicCategories = categoriesResult.value
@@ -58,7 +47,7 @@ export default async function GuiasPage() {
   }
 
   const baseUrl = getCanonicalSiteUrl()
-  const availableCategoryIds = buildCatalogCategoryCards(products, undefined, { referenceCategories: publicCategories }).map((category) => category.id)
+  const availableCategoryIds = buildCatalogCategoryCards([], undefined, { referenceCategories: publicCategories }).map((category) => category.id)
   const guideItems = SEO_GUIDES.map((guide) => ({
     name: guide.title,
     url: `${baseUrl}/guias/${guide.slug}`,
@@ -84,7 +73,7 @@ export default async function GuiasPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
       <header id="header" className="relative w-full style-pet">
-        <MenuPet props="bg-transparent" searchProducts={products} availableCategoryIds={availableCategoryIds} />
+        <MenuPet props="bg-transparent" availableCategoryIds={availableCategoryIds} />
       </header>
       <main>
         <section className="bg-surface py-10">

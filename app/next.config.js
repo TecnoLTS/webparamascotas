@@ -7,6 +7,16 @@ const publicSiteHosts = Array.from(new Set([
     ...splitCsv(process.env.NEXT_PUBLIC_SITE_ALIASES || process.env.SITE_ALIASES || `www.${primarySiteDomain}`),
 ]))
 const localSiteHosts = splitCsv(process.env.NEXT_PUBLIC_SITE_LOCAL_IPS || process.env.PRIMARY_SITE_LOCAL_IPS)
+const uploadsPublicBaseUrl = (() => {
+    const raw = (process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || '').trim()
+    if (!raw) return null
+    try {
+        const url = new URL(raw)
+        return url.protocol === 'https:' ? url : null
+    } catch {
+        return null
+    }
+})()
 const allowedDevOrigins = process.env.NODE_ENV === 'production'
     ? publicSiteHosts
     : [
@@ -37,9 +47,26 @@ const securityHeaders = [
         key: 'X-Frame-Options',
         value: 'SAMEORIGIN',
     },
+    {
+        key: 'Cross-Origin-Opener-Policy',
+        value: 'same-origin',
+    },
+    {
+        key: 'Cross-Origin-Resource-Policy',
+        value: 'same-origin',
+    },
+    {
+        key: 'Origin-Agent-Cluster',
+        value: '?1',
+    },
+    {
+        key: 'X-Frontend-Channel',
+        value: 'ecommerce',
+    },
 ]
 
 const nextConfig = {
+    output: 'standalone',
     reactStrictMode: true,
     poweredByHeader: false,
     allowedDevOrigins,
@@ -71,6 +98,14 @@ const nextConfig = {
                 protocol: 'https',
                 hostname,
             })),
+            ...(uploadsPublicBaseUrl
+                ? [{
+                    protocol: 'https',
+                    hostname: uploadsPublicBaseUrl.hostname,
+                    port: uploadsPublicBaseUrl.port,
+                    pathname: `${uploadsPublicBaseUrl.pathname.replace(/\/$/, '')}/**`,
+                }]
+                : []),
         ],
     },
     async headers() {
