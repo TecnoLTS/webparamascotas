@@ -1163,34 +1163,6 @@ export const getProductVariantDisplayInfo = (product: ProductType): { label: str
 }
 
 export const getProductVariantDisplayRows = (product: ProductType): Array<{ label: string; values: string[] }> => {
-  const variants = getProductVariants(product)
-  const normalizedType = getNormalizedProductType(product)
-  const hasExplicitAxis = variants.some((variant) => getVariantAxisValue(variant))
-
-  if (hasExplicitAxis) {
-    const info = getProductVariantDisplayInfo(product)
-    if (info.values.length > 0) {
-      return [info]
-    }
-  }
-
-  if (normalizedType === 'cuidado') {
-    const collectAttributeValues = (keys: string[]) =>
-      normalizeMeasurementLabels(
-        variants.map((variant) => getAttributeValue(variant, keys)).filter(Boolean),
-      )
-
-    const rows = [
-      { label: 'Contenido / dosis', values: collectAttributeValues(['weight', 'volume', 'dosage']) },
-      { label: 'Presentacion', values: collectAttributeValues(['presentation', 'packaging']) },
-      { label: 'Etapa / rango recomendado', values: collectAttributeValues(['target', 'age', 'range']) },
-    ].filter((row) => row.values.length > 0)
-
-    if (rows.length > 0) {
-      return rows
-    }
-  }
-
   const info = getProductVariantDisplayInfo(product)
   return info.values.length > 0 ? [info] : []
 }

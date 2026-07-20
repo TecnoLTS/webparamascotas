@@ -43,6 +43,40 @@ interface ProductProps {
     showQuickView?: boolean
 }
 
+const uploadImageRetryDelays = [1000, 4000, 15000] as const
+
+const appendRetryToken = (src: string, attempt: number) => {
+    const [pathAndQuery, hash = ''] = src.split('#', 2)
+    const separator = pathAndQuery.includes('?') ? '&' : '?'
+    return `${pathAndQuery}${separator}pm_image_retry=${attempt}-${Date.now()}${hash ? `#${hash}` : ''}`
+}
+
+const recoverDirectUploadImage = (
+    image: HTMLImageElement,
+    originalSrc: string,
+    fallbackSrc: string,
+) => {
+    const attempt = Number.parseInt(image.dataset.uploadRetryAttempt || '0', 10)
+
+    // A srcSet fallido sigue teniendo prioridad sobre src en varios navegadores.
+    // Se elimina antes de mostrar el fallback o reintentar la miniatura original.
+    image.removeAttribute('srcset')
+    image.removeAttribute('sizes')
+
+    if (attempt >= uploadImageRetryDelays.length) {
+        if (!image.src.endsWith(fallbackSrc)) image.src = fallbackSrc
+        return
+    }
+
+    image.dataset.uploadRetryAttempt = String(attempt + 1)
+    if (!image.src.endsWith(fallbackSrc)) image.src = fallbackSrc
+
+    window.setTimeout(() => {
+        if (!image.isConnected || !image.src.endsWith(fallbackSrc)) return
+        image.src = appendRetryToken(originalSrc, attempt + 1)
+    }, uploadImageRetryDelays[attempt])
+}
+
 const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView = false }) => {
     const [activeColor, setActiveColor] = useState<string>('')
     const [activeSize, setActiveSize] = useState<string>('')
@@ -169,8 +203,11 @@ const Product: React.FC<ProductProps> = ({ data, type, style = '', showQuickView
                     className="w-full h-full object-contain duration-700"
                     onError={(event) => {
                         const fallback = '/images/product/1.webp'
-                        if (event.currentTarget.src.endsWith(fallback)) return
-                        event.currentTarget.src = fallback
+                        recoverDirectUploadImage(
+                            event.currentTarget,
+                            buildUploadVariantUrl(resolvedSrc, 220),
+                            fallback,
+                        )
                     }}
                 />
             )
