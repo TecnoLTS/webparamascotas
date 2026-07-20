@@ -62,7 +62,7 @@ Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultim
 Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
-- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas de negocio: `dashboard`, `ecommerce`, `facturacion` y `loyalty`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
+- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA y produccion usan `postgres18_data`, mientras `DB_ENV` identifica el modo activo) con bases logicas de negocio: `dashboard`, `ecommerce`, `facturacion` y `loyalty`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
 - Base logica Billing SRI actual: `facturacion`, atendida por `platform-core/Billing`.
 - Base logica LoyaltyRewards actual: `loyalty`, atendida por `platform-core/LoyaltyRewards` para `loyalty-points`.
 - Store de infraestructura gatewayapisix: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
@@ -288,7 +288,7 @@ cd backend
 docker stop $(docker ps -aq) 2>/dev/null || true
 docker rm -f $(docker ps -aq) 2>/dev/null || true
 docker system prune -a --volumes -f
-rm -rf basesdedatos/postgres18_data basesdedatos/postgres18_qa_data
+rm -rf basesdedatos/postgres18_data
 ./scripts/deploy.sh db
 RUN_DB_SETUP=1 SEED_QA_CATALOG=1 ./scripts/deploy.sh backend
 ./scripts/deploy.sh frontend
@@ -3601,7 +3601,7 @@ Objetivo: dejar QA como unico modo no productivo, eliminar el alias operativo he
 
 Cambios:
 - Se renombraron las carpetas runtime conservando `.git`, cambios locales y datos: `gatewayapisix` y `basesdedatos`.
-- La data QA de PostgreSQL se preservo bajo `basesdedatos/postgres18_qa_data`; la red interna de DB pasa a `basesdedatos-internal`.
+- La data PostgreSQL del ambiente activo se preserva bajo `basesdedatos/postgres18_data`; la red interna de DB pasa a `basesdedatos-internal`.
 - Se eliminaron wrappers de deploy por ambiente y scripts de migracion de `.env` legacy; los scripts activos leen `qa|production` solo desde `.env`.
 - El frontend QA usa `COMPOSE_PROFILES=qa`, `FRONTEND_QA_RUNTIME=stable` y contenedor `webparamascotas`.
 - Dashboard queda como tooling interno con `APP_ENV=qa` y configuracion Angular `qa`; las topologias publicadas usan `gatewayapisix` y `basesdedatos`.
