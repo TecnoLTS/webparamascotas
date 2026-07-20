@@ -19,23 +19,38 @@ interface Props {
 
 const RemoteAllProducts = ({ categoryIds, pageSize }: Omit<Props, 'data'>) => {
     const [rawProducts, setRawProducts] = useState<ProductType[]>([])
-    const [nextCursor, setNextCursor] = useState<string | null>(null)
-    const [hasMore, setHasMore] = useState(true)
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState<string | null>(null)
     const products = useMemo(() => groupCatalogProducts(rawProducts), [rawProducts])
 
-    const loadPage = useCallback(async (cursor: string | null) => {
+    const loadCatalogPages = useCallback(async () => {
         setLoading(true)
         try {
-            const page = await listProductPage({ pageSize: 48, cursor })
-            setRawProducts((current) => {
-                const byId = new Map(current.map((product) => [product.id, product]))
+            const byId = new Map<string, ProductType>()
+            const seenCursors = new Set<string>()
+            let cursor: string | null = null
+            let catalogComplete = false
+
+            for (let pageNumber = 0; pageNumber < 100; pageNumber += 1) {
+                const page = await listProductPage({ pageSize: 48, cursor })
                 page.products.forEach((product) => byId.set(product.id, product))
-                return Array.from(byId.values())
-            })
-            setNextCursor(page.nextCursor)
-            setHasMore(page.hasMore)
+                if (!page.hasMore) {
+                    catalogComplete = true
+                    break
+                }
+
+                cursor = page.nextCursor
+                if (!cursor || seenCursors.has(cursor)) {
+                    throw new Error('La paginación del catálogo produjo un cursor inválido.')
+                }
+                seenCursors.add(cursor)
+            }
+
+            if (!catalogComplete) {
+                throw new Error('El catálogo excedió el máximo seguro de páginas.')
+            }
+
+            setRawProducts(Array.from(byId.values()))
             setError(null)
         } catch (reason) {
             setError(reason instanceof Error ? reason.message : 'No se pudo cargar el catálogo.')
@@ -45,8 +60,8 @@ const RemoteAllProducts = ({ categoryIds, pageSize }: Omit<Props, 'data'>) => {
     }, [])
 
     useEffect(() => {
-        void loadPage(null)
-    }, [loadPage])
+        void loadCatalogPages()
+    }, [loadCatalogPages])
 
     if (loading && rawProducts.length === 0) return <AllProductsPlaceholder />
     if (error && rawProducts.length === 0) {
@@ -63,9 +78,6 @@ const RemoteAllProducts = ({ categoryIds, pageSize }: Omit<Props, 'data'>) => {
             data={products}
             categoryIds={categoryIds}
             pageSize={pageSize}
-            hasMore={hasMore}
-            loadingMore={loading}
-            onLoadMore={() => nextCursor ? loadPage(nextCursor) : Promise.resolve()}
         />
     )
 }

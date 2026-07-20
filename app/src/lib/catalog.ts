@@ -412,8 +412,12 @@ const getPresentationDisplayRows = (
   if (valuesByPresentation.size > 0) {
     return Array.from(valuesByPresentation.entries()).map(([label, values]) => {
       const normalizedValues = normalizeMeasurementLabels(values)
+      const normalizedLabel = normalizeDisplayIdentity(label)
+      const displayLabel = ['presentacion', 'presentación', 'presentaciones', 'presentation', 'presentations'].includes(normalizedLabel)
+        ? (normalizedValues.length === 1 ? 'Presentación' : 'Presentaciones')
+        : label
       return normalizedValues.length > 0
-        ? { label, values: normalizedValues }
+        ? { label: displayLabel, values: normalizedValues }
         : { label: 'Formato', values: [label] }
     })
   }

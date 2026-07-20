@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { isExpectedBackendPublicUrl } from '../src/lib/server/backendUploadUrl.mjs'
 
 const root = process.cwd()
 const errors = []
@@ -74,6 +75,7 @@ expectInvalid('object storage without public HTTPS base', {
 })
 
 const uploadHandler = read('src/lib/server/productImageUpload.ts')
+const backendUploadUrl = read('src/lib/server/backendUploadUrl.mjs')
 const productMapper = read('src/lib/productMapper.ts')
 const compose = read('../docker-compose.yml')
 const dockerfile = read('Dockerfile')
@@ -84,13 +86,43 @@ const backendStorage = read('../../backend/src/Modules/CatalogInventory/Infrastr
 for (const token of [
   "'local' | 'backend-object-storage'",
   'backendCatalogImageUploadUrl',
-  'isExpectedBackendPublicUrl',
-  'url.origin !== base.origin',
-  'expectedPrefix',
+  'isExpectedBackendPublicUrl(',
   'forwardUploadAuthenticationHeaders(req.headers)',
   'attachInternalProxyToken(headers)',
 ]) {
   if (!uploadHandler.includes(token)) errors.push(`productImageUpload.ts is missing ${token}`)
+}
+
+for (const token of [
+  'url.origin !== base.origin',
+  "candidate.startsWith('/') && !candidate.startsWith('//')",
+  'new URL(candidate, base.origin)',
+  'expectedPrefix',
+  "new Set(['products', 'brands', 'categories'])",
+]) {
+  if (!backendUploadUrl.includes(token)) errors.push(`backendUploadUrl.mjs is missing ${token}`)
+}
+
+const uploadBase = 'https://paramascotasec.com/uploads'
+const uploadFile = 'producto-seguro.webp'
+for (const validUrl of [
+  '/uploads/tenants/paramascotasec/products/producto-seguro.webp',
+  'https://paramascotasec.com/uploads/tenants/paramascotasec/products/producto-seguro.webp',
+]) {
+  if (!isExpectedBackendPublicUrl(validUrl, uploadFile, uploadBase)) {
+    errors.push(`backend upload URL was unexpectedly rejected: ${validUrl}`)
+  }
+}
+for (const invalidUrl of [
+  '//evil.example/uploads/tenants/paramascotasec/products/producto-seguro.webp',
+  'https://evil.example/uploads/tenants/paramascotasec/products/producto-seguro.webp',
+  '/uploads/tenants/paramascotasec/private/producto-seguro.webp',
+  '/uploads/tenants/paramascotasec/products/otro.webp',
+  '/uploads/tenants/paramascotasec/products/producto-seguro.webp?download=1',
+]) {
+  if (isExpectedBackendPublicUrl(invalidUrl, uploadFile, uploadBase)) {
+    errors.push(`backend upload URL was unexpectedly accepted: ${invalidUrl}`)
+  }
 }
 
 for (const forbidden of ['OBJECT_STORAGE_ACCESS_KEY', 'OBJECT_STORAGE_SECRET_KEY', 'OBJECT_STORAGE_SESSION_TOKEN']) {

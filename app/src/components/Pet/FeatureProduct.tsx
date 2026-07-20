@@ -108,11 +108,11 @@ const FeatureProduct: React.FC<Props> = ({ data, start, limit }) => {
                 <div className="container">
                     <div className="heading flex flex-col items-center text-center">
                         <div className="heading3">Novedades</div>
-                        <div className="menu-tab style-pet flex items-center gap-2 p-1 bg-surface rounded-2xl mt-6">
+                        <div className="menu-tab style-pet flex w-full min-w-0 max-w-full flex-wrap items-center justify-center gap-2 overflow-visible rounded-2xl bg-surface p-1 mt-6">
                             {availableTabs.map((type: string) => (
                                 <div
                                     key={type}
-                                    className={`tab-item relative text-secondary text-button-uppercase py-2 px-5 cursor-pointer duration-500 ${resolvedActiveTab === type ? 'active text-white' : 'hover:text-black'}`}
+                                    className={`tab-item relative shrink-0 text-secondary text-button-uppercase py-2 px-5 cursor-pointer duration-500 ${resolvedActiveTab === type ? 'active text-white' : 'hover:text-black'}`}
                                     onClick={() => handleTabClick(type)}
                                 >
                                     {resolvedActiveTab === type && (

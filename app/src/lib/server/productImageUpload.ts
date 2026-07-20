@@ -7,6 +7,7 @@ import { toInternalBackendUrl } from '@/lib/api/backendBase'
 import { apiEndpoints } from '@/lib/api/endpoints'
 import { resolveRequestProto, resolveTenantHost } from '@/lib/requestHost'
 import { attachInternalProxyToken } from '@/lib/internalProxy'
+import { isExpectedBackendPublicUrl } from '@/lib/server/backendUploadUrl.mjs'
 import {
   forwardUploadAuthenticationHeaders,
   validateDashboardUploadSecurity,
@@ -421,33 +422,6 @@ const uploadProcessedImagesToBackend = async (
   }
 }
 
-const isExpectedBackendPublicUrl = (candidate: string, fileName: string) => {
-  const configuredBase = (process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || '').trim()
-  if (!configuredBase) return false
-  try {
-    const base = new URL(configuredBase)
-    const url = new URL(candidate)
-    if (base.protocol !== 'https:'
-      || base.username
-      || base.password
-      || base.search
-      || base.hash
-      || url.protocol !== 'https:'
-      || url.origin !== base.origin
-      || url.username
-      || url.password
-      || url.search
-      || url.hash) return false
-
-    const basePath = base.pathname.replace(/\/$/, '')
-    const expectedPrefix = `${basePath}/tenants/`.replace(/^\/\//, '/')
-    return url.pathname.startsWith(expectedPrefix)
-      && url.pathname.endsWith(`/${encodeURIComponent(fileName)}`)
-  } catch {
-    return false
-  }
-}
-
 export const handleProductImageUpload = async (req: Request) => {
   const requestSecurity = validateDashboardUploadSecurity(req.headers)
   if (!requestSecurity.ok) {
@@ -462,7 +436,7 @@ export const handleProductImageUpload = async (req: Request) => {
     uploadMode = resolveProductImageUploadMode()
   } catch {
     return NextResponse.json(
-      { ok: false, error: { message: 'La configuración de almacenamiento de imágenes no es válida.' } },
+      { ok: false, error: { code: 'UPLOAD_STORAGE_CONFIG_INVALID', message: 'El almacenamiento de imágenes no está configurado.' } },
       { status: 503 },
     )
   }
@@ -558,7 +532,7 @@ export const handleProductImageUpload = async (req: Request) => {
         backendResult = await uploadProcessedImagesToBackend(req, uploadFolder, fileName, artifacts)
       } catch {
         return NextResponse.json(
-          { ok: false, error: { message: 'No se pudo conectar con el almacenamiento de imágenes.' } },
+          { ok: false, error: { code: 'UPLOAD_STORAGE_UNAVAILABLE', message: 'El almacenamiento de imágenes no respondió.' } },
           { status: 502 },
         )
       }
@@ -573,9 +547,13 @@ export const handleProductImageUpload = async (req: Request) => {
       }
       const backendUrl = typeof payload.data?.url === 'string' ? payload.data.url.trim() : ''
       const backendFileName = typeof payload.data?.fileName === 'string' ? payload.data.fileName.trim() : ''
-      if (!isExpectedBackendPublicUrl(backendUrl, fileName) || backendFileName !== fileName) {
+      if (!isExpectedBackendPublicUrl(
+        backendUrl,
+        fileName,
+        (process.env.NEXT_PUBLIC_UPLOADS_BASE_URL || '').trim(),
+      ) || backendFileName !== fileName) {
         return NextResponse.json(
-          { ok: false, error: { message: 'El backend devolvió una referencia de imagen inválida.' } },
+          { ok: false, error: { code: 'UPLOAD_PUBLIC_URL_INVALID', message: 'La imagen se guardó, pero no se pudo publicar su dirección.' } },
           { status: 502 },
         )
       }
@@ -594,6 +572,9 @@ export const handleProductImageUpload = async (req: Request) => {
       },
     })
   } catch {
-    return NextResponse.json({ ok: false, error: { message: 'No se pudo subir la imagen.' } }, { status: 500 })
+    return NextResponse.json(
+      { ok: false, error: { code: 'UPLOAD_FAILED', message: 'No se pudo procesar la imagen.' } },
+      { status: 500 },
+    )
   }
 }

@@ -20,6 +20,7 @@ const productApi = read('src/lib/api/products.ts')
 const apiClient = read('src/lib/apiClient.ts')
 const deferredCatalog = read('src/components/Product/DeferredAllProducts.tsx')
 const catalogGrid = read('src/components/Product/AllProducts.tsx')
+const featuredProducts = read('src/components/Pet/FeatureProduct.tsx')
 
 if (/\bfetchProducts\b/.test(homePage)) {
   failures.push('La portada no debe recuperar ni serializar el catálogo completo durante SSR.')
@@ -30,8 +31,13 @@ if (/ParamascotasecHome\s+products=/.test(homePage) || /products:\s*ProductType\
 requireText(tenantHome, '<DeferredAllProducts categoryIds=', 'Home debe diferir la carga paginada del catálogo.')
 requireText(productApi, 'listProductPage', 'Falta el cliente de páginas de catálogo.')
 requireText(productApi, 'seenCursors', 'El recorrido paginado debe detectar ciclos de cursor.')
-requireText(catalogGrid, 'Cargar más productos', 'El Home debe exponer carga incremental, no un bypass ilimitado.')
+if (catalogGrid.includes('Cargar más productos')) {
+  failures.push('El catálogo no debe mezclar paginación numerada con un segundo botón de carga.')
+}
 requireText(deferredCatalog, 'pageSize: 48', 'La primera carga del Home debe estar acotada explícitamente.')
+requireText(deferredCatalog, 'seenCursors', 'La paginación diferida del Home debe detectar ciclos de cursor.')
+requireText(featuredProducts, 'max-w-full flex-wrap', 'Las categorías de Novedades deben ajustarse sin desbordar la pantalla.')
+requireText(featuredProducts, 'tab-item relative shrink-0', 'Cada categoría de Novedades debe conservar su ancho legible.')
 requireText(apiClient, 'const stablePublicReferencePaths = new Set<string>([', 'Falta el catálogo explícito de referencias públicas estables.')
 for (const endpoint of [
   'apiEndpoints.settings.publicBrandLogos',

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import ShopBreadCrumb1 from '@/components/Shop/ShopBreadCrumb1'
 import { groupCatalogProducts } from '@/lib/catalog'
 import { listProductPage, type ProductPageFilters } from '@/lib/api/products'
@@ -32,41 +32,53 @@ export default function CursorShopCatalog({
   categoryIds,
 }: Props) {
   const [products, setProducts] = useState(initialProducts)
-  const [hasMore, setHasMore] = useState(initialHasMore)
-  const [nextCursor, setNextCursor] = useState(initialNextCursor)
-  const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     setProducts(initialProducts)
-    setHasMore(initialHasMore)
-    setNextCursor(initialNextCursor)
     setLoadError(false)
-  }, [initialHasMore, initialNextCursor, initialProducts])
+    if (!initialHasMore || !initialNextCursor) return
 
-  const loadMore = useCallback(async () => {
-    if (!hasMore || !nextCursor || loading) return
-    setLoading(true)
-    try {
-      const page = await listProductPage({
-        ...filters,
-        pageSize: 48,
-        cursor: nextCursor,
-      })
-      setProducts((current) => {
-        const byId = new Map(flattenVariants(current).map((product) => [product.id, product]))
-        page.products.forEach((product) => byId.set(product.id, product))
-        return groupCatalogProducts(Array.from(byId.values()))
-      })
-      setHasMore(page.hasMore)
-      setNextCursor(page.nextCursor)
-      setLoadError(false)
-    } catch {
-      setLoadError(true)
-    } finally {
-      setLoading(false)
+    let cancelled = false
+    const loadRemainingPages = async () => {
+      const byId = new Map(flattenVariants(initialProducts).map((product) => [product.id, product]))
+      const seenCursors = new Set<string>()
+      let cursor: string | null = initialNextCursor
+
+      try {
+        for (let pageNumber = 0; pageNumber < 100 && cursor; pageNumber += 1) {
+          if (seenCursors.has(cursor)) {
+            throw new Error('La paginación del catálogo produjo un cursor repetido.')
+          }
+          seenCursors.add(cursor)
+
+          const page = await listProductPage({
+            ...filters,
+            pageSize: 48,
+            cursor,
+          })
+          page.products.forEach((product) => byId.set(product.id, product))
+          cursor = page.hasMore ? page.nextCursor : null
+        }
+
+        if (cursor) {
+          throw new Error('El catálogo excedió el máximo seguro de páginas.')
+        }
+
+        if (!cancelled) {
+          setProducts(groupCatalogProducts(Array.from(byId.values())))
+          setLoadError(false)
+        }
+      } catch {
+        if (!cancelled) setLoadError(true)
+      }
     }
-  }, [filters, hasMore, loading, nextCursor])
+
+    void loadRemainingPages()
+    return () => {
+      cancelled = true
+    }
+  }, [filters, initialHasMore, initialNextCursor, initialProducts])
 
   return (
     <>
@@ -79,13 +91,6 @@ export default function CursorShopCatalog({
         searchQuery={searchQuery}
         categoryIds={categoryIds}
       />
-      {hasMore && nextCursor ? (
-        <div className="container flex justify-center pb-10">
-          <button className="button-main min-w-[220px]" disabled={loading} onClick={() => void loadMore()} type="button">
-            {loading ? 'Cargando…' : 'Cargar más productos'}
-          </button>
-        </div>
-      ) : null}
       {loadError ? (
         <p className="container pb-10 text-center text-sm text-secondary" role="status">
           No se pudo cargar la siguiente página. Puedes intentarlo nuevamente.
