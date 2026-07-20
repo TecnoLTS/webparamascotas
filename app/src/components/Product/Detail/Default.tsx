@@ -7,7 +7,19 @@ import { useRouter } from 'next/navigation'
 import { Swiper, SwiperSlide } from 'swiper/react'
 import { Navigation } from 'swiper/modules'
 import SwiperCore from 'swiper/core'
-import { Minus, Plus, X } from '@phosphor-icons/react/dist/ssr'
+import {
+  ArrowCounterClockwise,
+  CheckCircle,
+  CreditCard,
+  Info,
+  ListBullets,
+  Minus,
+  Package,
+  Plus,
+  Star,
+  Truck,
+  X,
+} from '@phosphor-icons/react/dist/ssr'
 import 'swiper/css/bundle'
 import { ProductType } from '@/type/ProductType'
 import Product from '../Product'
@@ -24,7 +36,7 @@ import {
   getProductVariants,
   hasRealReviews,
 } from '@/lib/catalog'
-import { getBrandSeoPath, getCatalogPagePath } from '@/lib/seoUrls'
+import { getBrandSeoPath } from '@/lib/seoUrls'
 import {
   fetchLiveCatalogSnapshot,
   findLiveCatalogProduct,
@@ -47,8 +59,16 @@ import { getProductImageAlt } from '@/lib/productImageAlt'
 import type { ProductReview, ProductReviewSummary } from '@/lib/api/productReviews'
 
 const Icon = {
+  ArrowCounterClockwise,
+  CheckCircle,
+  CreditCard,
+  Info,
+  ListBullets,
   Minus,
+  Package,
   Plus,
+  Star,
+  Truck,
   X,
 } as const
 
@@ -68,12 +88,13 @@ const areVariantSelectionsEqual = (left: VariantSelection, right: VariantSelecti
 
 interface Props {
   data: Array<ProductType>
+  relatedProducts?: Array<ProductType>
   productId: string | number | null
   reviews?: ProductReview[]
   reviewSummary?: ProductReviewSummary
 }
 
-const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary }) => {
+const Default: React.FC<Props> = ({ data, relatedProducts = [], productId, reviews = [], reviewSummary }) => {
   const router = useRouter()
   const popupSwiperRef = useRef<SwiperCore | null>(null)
 
@@ -401,9 +422,6 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
   const formattedCategory = [productFamily?.category, petLabel]
     .filter(Boolean)
     .join(' · ')
-  const categoryPath = productFamily?.category
-    ? getCatalogPagePath(productFamily.category, { gender: productFamily.gender })
-    : '/tienda'
   const brandPath = productFamily?.brand ? getBrandSeoPath(productFamily.brand) : null
   const descriptionText =
     activeVariant?.description?.trim()
@@ -419,11 +437,11 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
       { key: 'price', label: 'Precio', value: price > 0 ? `USD ${price.toFixed(2)}` : '' },
       { key: 'stock', label: hasVariantChoices ? 'Stock de variante' : 'Disponibilidad', value: availableStock > 0 ? `${availableStock} en stock` : 'Sin stock' },
       { key: 'familyStock', label: 'Stock total', value: hasVariantChoices ? `${totalFamilyStock} en la familia` : '' },
-      { key: 'variants', label: 'Variantes', value: variantProducts.length > 1 ? `${variantProducts.length} opciones` : 'Producto unico' },
+      { key: 'variants', label: 'Variantes', value: variantProducts.length > 1 ? `${variantProducts.length} opciones` : 'Producto único' },
       { key: 'presentations', label: variantDisplayInfo.label, value: variantDisplayValues.join(', ') },
       {
         key: 'expiration',
-        label: 'Fecha de expiracion',
+        label: 'Fecha de expiración',
         value: activeVariant?.expirationDate
           || activeVariant?.inventory?.expiration?.date
           || activeVariant?.attributes?.expirationDate
@@ -460,14 +478,6 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
     variantDisplayValues,
     variantProducts.length,
   ])
-
-  const relatedProducts = useMemo(() => {
-    if (!productFamily) return []
-    return data
-      .filter((product) => product.id !== productFamily.id && product.variantGroupKey !== productFamily.variantGroupKey)
-      .filter((product) => !productFamily.gender || product.gender === productFamily.gender)
-      .slice(0, 4)
-  }, [data, productFamily?.gender, productFamily?.id, productFamily?.variantGroupKey])
 
   const addVariantToCart = useCallback((variantToAdd: ProductType, stockToUse: number) => {
     const quantityToAdd = Math.min(Math.max(quantity ?? 1, 1), stockToUse)
@@ -881,80 +891,117 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
         </div>
 
         <div className="container mt-10">
-          <div className="product-tabs pb-10 border-b border-line">
-            <div className="tab-headers flex items-center gap-6 border-b border-line pb-3 overflow-x-auto">
+          <div className="product-tabs pb-10">
+            <div
+              className="tab-headers inline-flex max-w-full items-center gap-1.5 overflow-x-auto rounded-2xl border border-line bg-white p-1.5 shadow-[0_6px_20px_rgba(15,23,42,0.05)]"
+              role="tablist"
+              aria-label="Información del producto"
+            >
               <button
                 type="button"
-                className={`text-button pb-1 relative ${activeTab === 'description'
-                  ? 'font-semibold after:content-[""] after:absolute after:left-0 after:-bottom-[2px] after:w-full after:h-[2px] after:bg-black'
-                  : 'text-secondary'
+                id="product-tab-description"
+                role="tab"
+                aria-selected={activeTab === 'description'}
+                aria-controls="product-tabpanel-description"
+                className={`inline-flex min-h-11 flex-none items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-[background-color,color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)] focus-visible:ring-offset-2 ${activeTab === 'description'
+                  ? 'bg-[var(--blue)] text-white'
+                  : 'text-secondary hover:bg-surface hover:text-black'
                   }`}
                 onClick={() => setActiveTab('description')}
               >
+                <Icon.Info size={19} weight="bold" aria-hidden="true" />
                 Descripción
               </button>
               <button
                 type="button"
-                className={`text-button pb-1 relative ${activeTab === 'specifications'
-                  ? 'font-semibold after:content-[""] after:absolute after:left-0 after:-bottom-[2px] after:w-full after:h-[2px] after:bg-black'
-                  : 'text-secondary'
+                id="product-tab-specifications"
+                role="tab"
+                aria-selected={activeTab === 'specifications'}
+                aria-controls="product-tabpanel-specifications"
+                className={`inline-flex min-h-11 flex-none items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-[background-color,color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)] focus-visible:ring-offset-2 ${activeTab === 'specifications'
+                  ? 'bg-[var(--blue)] text-white'
+                  : 'text-secondary hover:bg-surface hover:text-black'
                   }`}
                 onClick={() => setActiveTab('specifications')}
               >
+                <Icon.ListBullets size={19} weight="bold" aria-hidden="true" />
                 Especificaciones
               </button>
               {visibleReviews.length > 0 && (
                 <button
                   type="button"
-                  className={`text-button pb-1 relative ${activeTab === 'reviews'
-                    ? 'font-semibold after:content-[""] after:absolute after:left-0 after:-bottom-[2px] after:w-full after:h-[2px] after:bg-black'
-                    : 'text-secondary'
+                  id="product-tab-reviews"
+                  role="tab"
+                  aria-selected={activeTab === 'reviews'}
+                  aria-controls="product-tabpanel-reviews"
+                  className={`inline-flex min-h-11 flex-none items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-[background-color,color,box-shadow] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--blue)] focus-visible:ring-offset-2 ${activeTab === 'reviews'
+                    ? 'bg-[var(--blue)] text-white'
+                    : 'text-secondary hover:bg-surface hover:text-black'
                     }`}
                   onClick={() => setActiveTab('reviews')}
                 >
+                  <Icon.Star size={19} weight="bold" aria-hidden="true" />
                   Reseñas
                 </button>
               )}
             </div>
 
             {activeTab === 'description' ? (
-              <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-normal text-secondary">
-                    Compra online en Ecuador
+              <div
+                id="product-tabpanel-description"
+                role="tabpanel"
+                aria-labelledby="product-tab-description"
+                className="mt-6 overflow-hidden rounded-[28px] border border-line bg-white shadow-[0_18px_50px_rgba(15,23,42,0.055)] lg:grid lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]"
+              >
+                <article className="p-6 sm:p-8 lg:p-10">
+                  <div className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-line bg-white text-[var(--blue)]" aria-hidden="true">
+                    <Icon.Info size={24} weight="duotone" />
+                  </div>
+                  <p className="mt-5 text-sm font-semibold uppercase tracking-[0.08em] text-[var(--blue)]">
+                    Conoce este producto
                   </p>
-                  <h2 className="heading5 mt-2">
+                  <h2 className="heading4 mt-2 max-w-3xl text-black">
                     {productFamily.name}{productFamily.gender === 'dog' ? ' para perros' : productFamily.gender === 'cat' ? ' para gatos' : ''}
                   </h2>
-                  <p className="mt-4 text-secondary leading-7">{descriptionText}</p>
-                  <div className="mt-5 flex flex-wrap gap-2 text-sm">
+                  <p className="mt-4 max-w-3xl text-base leading-7 text-secondary">{descriptionText}</p>
+                  <dl className="mt-7 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {specificationRows.slice(0, 5).map((row) => (
-                      <span key={`desc-${row.key}`} className="rounded-full bg-surface px-3 py-1">
-                        {row.label}: {String(row.value)}
-                      </span>
+                      <div key={`desc-${row.key}`} className="rounded-2xl border border-line bg-white px-4 py-3 shadow-[0_3px_12px_rgba(15,23,42,0.035)]">
+                        <dt className="text-xs font-semibold uppercase tracking-[0.06em] text-secondary">{row.label}</dt>
+                        <dd className="mt-1 break-words text-sm font-semibold text-black">{String(row.value)}</dd>
+                      </div>
                     ))}
+                  </dl>
+                </article>
+
+                <aside className="border-t border-line bg-white p-6 sm:p-8 lg:border-l lg:border-t-0 lg:p-10" aria-labelledby="useful-details-title">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-2xl border border-line bg-white text-[var(--blue)]" aria-hidden="true">
+                      <Icon.Package size={24} weight="duotone" />
+                    </span>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--blue)]">Información rápida</p>
+                      <h3 id="useful-details-title" className="text-title mt-0.5">Detalles útiles</h3>
+                    </div>
                   </div>
-                </div>
-                <div className="border-line pl-0 lg:border-l lg:pl-8">
-                  <h3 className="text-title">Detalles utiles</h3>
-                  <dl className="mt-4 space-y-3 text-sm">
+                  <dl className="mt-6 divide-y divide-line">
                     {specificationRows
                       .filter((row) => ['stock', 'familyStock', 'variants', 'presentations', 'expiration'].includes(row.key))
                       .slice(0, 4)
                       .map((row) => (
-                        <div key={`useful-${row.key}`} className="flex justify-between gap-4 border-b border-line pb-3">
-                          <dt className="text-secondary">{row.label}</dt>
-                          <dd className="text-right font-semibold">{String(row.value)}</dd>
+                        <div key={`useful-${row.key}`} className="flex min-h-14 items-center justify-between gap-4 py-3.5">
+                          <dt className="flex items-center gap-2.5 text-sm text-secondary">
+                            <Icon.CheckCircle size={19} weight="duotone" className="flex-none text-[var(--blue)]" aria-hidden="true" />
+                            {row.label}
+                          </dt>
+                          <dd className="text-right text-sm font-semibold text-black">{String(row.value)}</dd>
                         </div>
                       ))}
                   </dl>
-                  <Link href={categoryPath} className="button-main mt-6 inline-flex rounded-full px-6 py-3">
-                    Ver productos relacionados
-                  </Link>
-                </div>
+                </aside>
               </div>
             ) : activeTab === 'reviews' ? (
-              <div className="mt-6">
+              <div id="product-tabpanel-reviews" role="tabpanel" aria-labelledby="product-tab-reviews" className="mt-6 rounded-[28px] border border-line bg-white p-6 shadow-[0_18px_50px_rgba(15,23,42,0.055)] sm:p-8">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h2 className="heading5">Reseñas verificadas</h2>
@@ -985,54 +1032,79 @@ const Default: React.FC<Props> = ({ data, productId, reviews = [], reviewSummary
                 </div>
               </div>
             ) : (
-              <div className="mt-6 grid gap-4">
+              <div id="product-tabpanel-specifications" role="tabpanel" aria-labelledby="product-tab-specifications" className="mt-6 overflow-hidden rounded-[28px] border border-line bg-white shadow-[0_18px_50px_rgba(15,23,42,0.055)]">
                 {specificationRows.length > 0 ? (
-                  specificationRows.map((item) => (
+                  <dl className="grid sm:grid-cols-2">
+                    {specificationRows.map((item) => (
                     <div
                       key={`spec-${item.key}`}
-                      className="grid grid-cols-1 gap-1 rounded-xl border border-line bg-white p-4 text-left sm:grid-cols-[minmax(140px,220px)_1fr] sm:items-start sm:gap-4"
+                      className="flex min-h-20 items-start justify-between gap-4 border-b border-line p-5 text-left last:border-b-0 sm:items-center sm:border-r sm:[&:nth-last-child(-n+2)]:border-b-0 sm:[&:nth-child(2n)]:border-r-0"
                     >
-                      <div className="caption1 text-secondary text-left">{item.label}</div>
-                      <div className="text-title mt-0 text-left">{String(item.value)}</div>
+                      <dt className="flex items-center gap-2 text-sm text-secondary">
+                        <Icon.CheckCircle size={18} weight="duotone" className="flex-none text-[var(--blue)]" aria-hidden="true" />
+                        {item.label}
+                      </dt>
+                      <dd className="max-w-[55%] break-words text-right text-sm font-semibold text-black">{String(item.value)}</dd>
                     </div>
-                  ))
+                    ))}
+                  </dl>
                 ) : (
-                  <div className="text-secondary">Este producto aun no tiene especificaciones adicionales cargadas.</div>
+                  <div className="p-6 text-secondary">Este producto aún no tiene especificaciones adicionales cargadas.</div>
                 )}
               </div>
             )}
           </div>
         </div>
 
-        <div className="container mt-10">
-          <div className="grid md:grid-cols-3 gap-4">
-            <div className="rounded-2xl border border-line p-5 bg-surface">
-              <div className="text-title">Envíos y entregas</div>
-              <div className="caption1 text-secondary mt-2">Envíos en zonas habilitadas con tiempos informados.</div>
+        <div className="container mt-2">
+          <div className="grid overflow-hidden rounded-[24px] border border-line bg-white shadow-[0_14px_36px_rgba(15,23,42,0.045)] md:grid-cols-3 md:divide-x md:divide-line">
+            <div className="flex items-start gap-4 border-b border-line p-5 sm:p-6 md:border-b-0">
+              <span className="inline-flex h-12 w-12 flex-none items-center justify-center rounded-2xl border border-line bg-white text-[var(--blue)]" aria-hidden="true">
+                <Icon.Truck size={25} weight="duotone" />
+              </span>
+              <div>
+                <div className="text-title">Envíos y entregas</div>
+                <div className="mt-1.5 text-sm leading-6 text-secondary">Envíos en zonas habilitadas con tiempos informados.</div>
+              </div>
             </div>
-            <div className="rounded-2xl border border-line p-5 bg-surface">
-              <div className="text-title">Pagos seguros</div>
-              <div className="caption1 text-secondary mt-2">Transferencia bancaria o efectivo coordinado, con confirmación previa.</div>
+            <div className="flex items-start gap-4 border-b border-line p-5 sm:p-6 md:border-b-0">
+              <span className="inline-flex h-12 w-12 flex-none items-center justify-center rounded-2xl border border-line bg-white text-[var(--blue)]" aria-hidden="true">
+                <Icon.CreditCard size={25} weight="duotone" />
+              </span>
+              <div>
+                <div className="text-title">Pagos seguros</div>
+                <div className="mt-1.5 text-sm leading-6 text-secondary">Transferencia bancaria o efectivo coordinado, con confirmación previa.</div>
+              </div>
             </div>
-            <div className="rounded-2xl border border-line p-5 bg-surface">
-              <div className="text-title">Cambios y devoluciones</div>
-              <div className="caption1 text-secondary mt-2">Consulta políticas completas en Términos y Condiciones.</div>
+            <div className="flex items-start gap-4 p-5 sm:p-6">
+              <span className="inline-flex h-12 w-12 flex-none items-center justify-center rounded-2xl border border-line bg-white text-[var(--blue)]" aria-hidden="true">
+                <Icon.ArrowCounterClockwise size={25} weight="duotone" />
+              </span>
+              <div>
+                <div className="text-title">Cambios y devoluciones</div>
+                <div className="mt-1.5 text-sm leading-6 text-secondary">Consulta las políticas completas en Términos y Condiciones.</div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {relatedProducts.length > 0 && (
-        <div className="related-product md:py-20 py-10">
+        <section className="related-product bg-white pb-14 md:pb-20" aria-labelledby="related-products-title">
           <div className="container">
-            <div className="heading3 text-center">Productos relacionados</div>
-            <div className="list-product hide-product-sold grid lg:grid-cols-4 grid-cols-2 md:gap-[30px] gap-5 md:mt-10 mt-6">
-              {relatedProducts.map((item) => (
-                <Product key={item.id} data={item} type="grid" style="style-1" />
-              ))}
+            <div className="border-t border-line pt-10 md:pt-14">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.08em] text-[var(--blue)]">Productos relacionados</p>
+                <h2 id="related-products-title" className="heading3 mt-2">También te puede gustar</h2>
+              </div>
+              <div className="list-product hide-product-sold mt-7 grid grid-cols-2 gap-[20px] sm:gap-[30px] md:mt-10 lg:grid-cols-4">
+                {relatedProducts.map((item) => (
+                  <Product key={item.id} data={item} type="grid" style="style-1" />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
+        </section>
       )}
     </div>
   )

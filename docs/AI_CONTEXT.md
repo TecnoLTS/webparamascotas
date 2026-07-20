@@ -62,7 +62,7 @@ Restore sin archivo (`./scripts/restore-from-backup.sh --yes`) restaura el ultim
 Los snapshots locales viven en un solo directorio `basesdedatos/backups/`; los nombres nuevos son neutrales (`backup-YYYYMMDDTHHMMSSZ.sql.enc` y `latest.sql.enc`) y no codifican ambiente.
 Solo `frontend` y `dashboard` tienen flujo hot local separado: `webparamascotas/app -> npm run dev` y `dashboard -> npm start`. Backend, DB y gatewayapisix no necesitan scripts dev/prod distintos por comportamiento; cambian modo por el mismo `deploy.sh`.
 Persistencia real actual verificada:
-- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA y produccion usan `postgres18_data`, mientras `DB_ENV` identifica el modo activo) con bases logicas de negocio: `dashboard`, `ecommerce`, `facturacion` y `loyalty`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
+- Servicio PostgreSQL compartido: PostgreSQL 18 (`basesdedatos`; QA usa `postgres18_qa_data` en este host y produccion usa `postgres18_data`) con bases logicas de negocio: `dashboard`, `ecommerce`, `facturacion` y `loyalty`. `postgres` es la base administrativa propia de PostgreSQL y no se elimina.
 - Base logica Billing SRI actual: `facturacion`, atendida por `platform-core/Billing`.
 - Base logica LoyaltyRewards actual: `loyalty`, atendida por `platform-core/LoyaltyRewards` para `loyalty-points`.
 - Store de infraestructura gatewayapisix: etcd 3.5 (`apisix-etcd`, volumen `apisix_etcd_data`).
@@ -288,7 +288,7 @@ cd backend
 docker stop $(docker ps -aq) 2>/dev/null || true
 docker rm -f $(docker ps -aq) 2>/dev/null || true
 docker system prune -a --volumes -f
-rm -rf basesdedatos/postgres18_data
+rm -rf basesdedatos/postgres18_data basesdedatos/postgres18_qa_data
 ./scripts/deploy.sh db
 RUN_DB_SETUP=1 SEED_QA_CATALOG=1 ./scripts/deploy.sh backend
 ./scripts/deploy.sh frontend
@@ -13842,3 +13842,25 @@ Bugs corregidos:
 Pendientes:
 - Monitorear si el indice compuesto reduce el tiempo de `getProductSalesRanking`.
 - Considerar cache similar para "Resumen y orden comercial" si se percibe lento.
+
+### 2026-07-20 - Productos relacionados restaurados en fichas ecommerce
+
+Objetivo: restaurar los productos relacionados en `/productos/[slug]`, mejorar su presentacion y eliminar el CTA redundante que enviaba a la tienda/categoria.
+
+Cambios frontend:
+- La ficha mantiene `data` limitado a la familia/variantes activas y recibe `relatedProducts` por separado; ya no intenta derivar relacionados desde un arreglo que contiene solo el producto actual.
+- `page.tsx` carga hasta 16 candidatos de la misma categoria y especie, excluye todos los IDs/slugs/grupos de la familia actual y prioriza coincidencia de etapa/rango y marca antes de seleccionar cuatro.
+- La seccion relacionada permanece integrada al fondo blanco, conserva jerarquia de titulo y reutiliza directamente `Product` con `style-1` y las mismas clases/grid de `FeatureProduct` del home; no mantiene una segunda implementacion visual de tarjeta. Se retiro el boton `Ver productos relacionados` de `Detalles utiles`.
+- El bloque de informacion senalado por el usuario se rehizo como una composicion responsive: tabs ARIA con objetivos de 44 px, panel de descripcion y metadatos, lateral de detalles utiles, especificaciones en `dl` adaptable y una sola franja blanca de confianza con iconos SVG para envios, pagos y devoluciones. Las tres cajas grises independientes fueron eliminadas.
+- Refinamiento corporativo posterior: se eliminaron el degradado y las superficies azuladas extensas; tabs, paneles, metadatos, detalles utiles y franja de confianza usan fondos blancos, divisores neutrales y sombras sobrias. El turquesa queda reservado como acento de marca en estados activos, rotulos e iconos.
+
+Verificacion:
+- `npm run typecheck`, `npm run lint`, `npm run api:contracts:check` y `npx next build` aprobados.
+- Render local de la URL reportada, consumiendo el catalogo QA por APISIX, mostro cuatro rutas SEO relacionadas validas y ningun texto `Ver productos relacionados`; las cuatro rutas verificadas respondieron HTTP 200 por el contrato publico.
+- Render local del rediseño mostro tablist/panel ARIA, `Detalles utiles`, la franja de confianza sin las clases grises anteriores y exactamente cuatro `pm-product-card style-1` iguales a home.
+- El refinamiento corporativo aprobo typecheck, lint, contratos API y build; el render local de la URL reportada respondio HTTP 200, no contiene el antiguo degradado, conserva el panel blanco de detalles y mantiene exactamente cuatro tarjetas relacionadas `style-1` del home.
+- El rediseño aclarado se publico con `./scripts/deploy.sh frontend`: la URL publica por APISIX respondio HTTP 200 con tablist/panel ARIA, `Detalles utiles`, franja de confianza, cero clases de las cajas grises anteriores, fondo blanco en relacionados y exactamente cuatro `pm-product-card style-1`; sus cuatro destinos respondieron HTTP 200 y el contenedor quedo saludable.
+- El refinamiento corporativo sin degradado se publico con el mismo script canonico: la URL publica por APISIX respondio HTTP 200, mostro tabs y panel lateral blancos con bordes neutrales, no incluyo `linear-gradient(145deg,...)`, conservo cuatro tarjetas relacionadas del home y el contenedor quedo `running/healthy`.
+
+Pendientes:
+- Sin pendientes funcionales para esta correccion; observar la relevancia comercial de las sugerencias con el catalogo real.

@@ -5,7 +5,7 @@ import { notFound, permanentRedirect } from 'next/navigation'
 import MenuOne from '@/components/Header/Menu/MenuPet'
 import Default from '@/components/Product/Detail/Default'
 import Footer from '@/components/Footer/Footer'
-import { loadProductFamily } from '@/lib/products.server'
+import { loadProductFamily, loadProducts } from '@/lib/products.server'
 import { buildCatalogCategoryCards, getProductDetailRouteId, getProductVariants } from '@/lib/catalog'
 import {
   findCatalogProductForSeoSlug,
@@ -36,6 +36,11 @@ type Props = {
 }
 
 export const dynamic = 'force-dynamic'
+
+const normalizeRelevanceValue = (value?: string | null) => (value ?? '').trim().toLocaleLowerCase('es')
+
+const getProductAudience = (product: ReturnType<typeof getProductVariants>[number]) =>
+  normalizeRelevanceValue(product.attributes?.target || product.attributes?.age || product.attributes?.range)
 
 const getVariantParam = (value?: string | string[]) => {
   const variant = Array.isArray(value) ? value[0] : value
@@ -110,6 +115,39 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
     permanentRedirect(canonicalPath)
   }
 
+  const relatedGender = currentProduct.gender === 'dog' || currentProduct.gender === 'cat'
+    ? currentProduct.gender
+    : undefined
+  const relatedResult = await loadProducts({
+    category: currentProduct.category || undefined,
+    gender: relatedGender,
+    pageSize: 16,
+  })
+  const currentIdentifiers = new Set(
+    getProductVariants(currentProduct).flatMap((variant) =>
+      [variant.id, variant.internalId, variant.slug].filter((identifier): identifier is string => Boolean(identifier)),
+    ),
+  )
+  const currentBrand = normalizeRelevanceValue(currentProduct.brand)
+  const currentAudience = getProductAudience(currentProduct)
+  const relatedProducts = relatedResult.products
+    .filter((product) => product.variantGroupKey !== currentProduct.variantGroupKey)
+    .filter((product) => !getProductVariants(product).some((variant) =>
+      [variant.id, variant.internalId, variant.slug].some((identifier) =>
+        Boolean(identifier && currentIdentifiers.has(identifier)),
+      ),
+    ))
+    .map((product, index) => ({
+      product,
+      index,
+      relevance:
+        (currentAudience && getProductAudience(product) === currentAudience ? 4 : 0)
+        + (currentBrand && normalizeRelevanceValue(product.brand) === currentBrand ? 3 : 0),
+    }))
+    .sort((left, right) => right.relevance - left.relevance || left.index - right.index)
+    .map(({ product }) => product)
+    .slice(0, 4)
+
   const baseUrl = getCanonicalSiteUrl()
   const selectedVariant = requestedVariant
     ? getProductVariants(currentProduct).find((variant) =>
@@ -157,7 +195,13 @@ export default async function SeoProductPage({ params, searchParams }: Props) {
       <div id="header" className="relative w-full">
         <MenuOne props="bg-white" availableCategoryIds={availableCategoryIds} />
       </div>
-      <Default data={productsWithSettings} productId={productId} reviews={reviewData.reviews} reviewSummary={reviewData.summary} />
+      <Default
+        data={productsWithSettings}
+        relatedProducts={relatedProducts}
+        productId={productId}
+        reviews={reviewData.reviews}
+        reviewSummary={reviewData.summary}
+      />
       <Footer categoryIds={footerCategoryIds} />
     </>
   )
