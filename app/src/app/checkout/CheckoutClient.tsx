@@ -275,7 +275,7 @@ const Checkout = () => {
     const [overwriteOriginal, setOverwriteOriginal] = useState(false)
     const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null)
-    const { cartState, clearCart, removeFromCart, updateCart } = useCart()
+    const { cartState, isHydrated: isCartHydrated, clearCart, updateCart } = useCart()
     const router = useRouter()
     const [availableProductsMap, setAvailableProductsMap] = useState<Map<string, number> | null>(null)
     const [isLoggedIn, setIsLoggedIn] = useState(false)
@@ -320,6 +320,8 @@ const Checkout = () => {
         is_free_shipping?: boolean
         store_address?: string
     } | null>(null)
+    const [quoteLoading, setQuoteLoading] = useState(false)
+    const [quoteIncludesShipping, setQuoteIncludesShipping] = useState(false)
 
     const mergeAddressFields = (current: AddressData, incoming?: Partial<AddressData>) => {
         if (!incoming) return current
@@ -593,11 +595,16 @@ const Checkout = () => {
     }, [orderNotes, couponDraft, tempAddress.state, tempAddress.city, tempAddress.zip, tempAddress.country, tempAddress.street, tempAddress.latitude, tempAddress.longitude, tempAddress.formattedAddress, tempAddress.placeId])
 
     const refreshAvailableProducts = useCallback(async () => {
+        if (!isCartHydrated || cartState.cartArray.length === 0) {
+            const emptyAvailabilityMap = new Map<string, number>()
+            setAvailableProductsMap(emptyAvailabilityMap)
+            return emptyAvailabilityMap
+        }
         const snapshot = await fetchLiveCatalogSnapshot(cartState.cartArray)
         const availabilityMap = buildLiveAvailabilityMap(snapshot.rawProducts)
         setAvailableProductsMap(availabilityMap)
         return availabilityMap
-    }, [cartState.cartArray])
+    }, [cartState.cartArray, isCartHydrated])
 
     useEffect(() => {
         let mounted = true
@@ -996,22 +1003,20 @@ const Checkout = () => {
     )
 
     const syncCartWithLiveAvailability = useCallback((availabilityMap: Map<string, number>, showFeedback = true) => {
-        const removedItems: string[] = []
+        const unavailableItems: string[] = []
         const adjustedItems: Array<{ name: string; available: number }> = []
 
         normalizedCart.forEach((item) => {
             const itemId = String(item.id)
             const liveStock = availabilityMap.get(itemId)
 
-            if (!Number.isFinite(liveStock)) {
-                removeFromCart(itemId)
-                removedItems.push(item.name)
-                return
-            }
+            // A catalog lookup may be partial (for example while variants are
+            // being regrouped). Absence is not proof that the product vanished.
+            // The quote endpoint remains the source of truth for missing IDs.
+            if (!Number.isFinite(liveStock)) return
 
             if ((liveStock ?? 0) <= 0) {
-                removeFromCart(itemId)
-                removedItems.push(item.name)
+                unavailableItems.push(item.name)
                 return
             }
 
@@ -1022,12 +1027,12 @@ const Checkout = () => {
         })
 
         if (!showFeedback) {
-            return { changed: removedItems.length > 0 || adjustedItems.length > 0, removedItems, adjustedItems }
+            return { changed: unavailableItems.length > 0 || adjustedItems.length > 0, unavailableItems, adjustedItems }
         }
 
-        if (removedItems.length > 0) {
+        if (unavailableItems.length > 0) {
             setMessage({
-                text: 'Se eliminaron productos que ya no están disponibles. Revisa tu carrito.',
+                text: 'Hay productos sin stock. Tu carrito se conservó para que puedas revisarlo.',
                 type: 'error'
             })
         } else if (adjustedItems.length > 0) {
@@ -1037,8 +1042,8 @@ const Checkout = () => {
             })
         }
 
-        return { changed: removedItems.length > 0 || adjustedItems.length > 0, removedItems, adjustedItems }
-    }, [normalizedCart, removeFromCart, setMessage, updateCart])
+        return { changed: unavailableItems.length > 0 || adjustedItems.length > 0, unavailableItems, adjustedItems }
+    }, [normalizedCart, setMessage, updateCart])
 
     const quoteShippingAddress = useMemo(() => {
         if (deliveryMethod !== 'delivery' || !hasGeoCoordinates(tempAddress)) {
@@ -1085,30 +1090,37 @@ const Checkout = () => {
         let cancelled = false
 
         const updateQuote = async () => {
-            if (normalizedCart.length === 0) return;
+            if (!isCartHydrated || normalizedCart.length === 0) {
+                setQuote(null)
+                setQuoteLoading(false)
+                setQuoteIncludesShipping(false)
+                return
+            }
             if (availableProductsMap) {
                 const syncResult = syncCartWithLiveAvailability(availableProductsMap)
                 if (syncResult.changed) {
                     return
                 }
             }
+
+            const isDeliveryQuote = deliveryMethod === 'delivery' && Boolean(quoteShippingAddress)
+            setQuote(null)
+            setQuoteLoading(true)
+            setQuoteIncludesShipping(false)
             try {
-                // Product pricing does not depend on the delivery coordinates. Until the
-                // customer selects a location, quote the items as pickup so the backend can
-                // still return its authoritative prices, VAT and discounts. Shipping and the
-                // grand total remain explicitly pending in the UI.
-                const quoteDeliveryMethod = deliveryMethod === 'delivery' && !quoteShippingAddress
-                    ? 'pickup'
-                    : deliveryMethod
                 const res = await getQuote({
                     items: normalizedCart.map(i => ({ product_id: i.id, quantity: i.quantity })),
-                    delivery_method: quoteDeliveryMethod,
+                    // Product prices and taxes do not depend on knowing the
+                    // destination. Use pickup as a product-only quote until a
+                    // delivery location is available.
+                    delivery_method: isDeliveryQuote ? 'delivery' : 'pickup',
                     coupon_code: appliedCouponCode,
-                    shipping_address: quoteShippingAddress,
+                    shipping_address: isDeliveryQuote ? quoteShippingAddress : null,
                 });
                 if (cancelled) return
                 if (res?.storeDisabled) {
                     setQuote(null)
+                    setQuoteIncludesShipping(false)
                     setMessage({
                         text: String(res?.message || 'Tienda temporalmente en mantenimiento. Intenta más tarde.'),
                         type: 'error'
@@ -1116,19 +1128,16 @@ const Checkout = () => {
                     return
                 }
                 setQuote(res);
+                setQuoteIncludesShipping(deliveryMethod === 'pickup' || isDeliveryQuote)
             } catch (err) {
                 if (cancelled) return
                 const backendMessage = err instanceof Error ? err.message.trim() : ''
                 if (backendMessage.includes('Producto no encontrado')) {
-                    const missingId = backendMessage.split(':').pop()?.trim()
-                    if (missingId) {
-                        removeFromCart(String(missingId))
-                        setMessage({
-                            text: 'Se eliminó un producto que ya no está disponible. Revisa tu carrito.',
-                            type: 'error'
-                        })
-                        return
-                    }
+                    setMessage({
+                        text: 'No pudimos validar uno de los productos. Tu carrito se conservó para que puedas revisarlo.',
+                        type: 'error'
+                    })
+                    return
                 }
                 if (backendMessage.includes('Stock insuficiente')) {
                     try {
@@ -1150,28 +1159,59 @@ const Checkout = () => {
                     return
                 }
                 console.error("Error fetching quote", err);
-                setMessage({ text: 'No se pudo calcular el total del pedido.', type: 'error' })
+                setMessage({
+                    text: isDeliveryQuote
+                        ? 'No se pudo calcular el envío. Los precios de tus productos siguen disponibles.'
+                        : 'No se pudo actualizar el cálculo del pedido. Conservamos los precios del carrito.',
+                    type: 'error'
+                })
+            } finally {
+                if (!cancelled) setQuoteLoading(false)
             }
         };
-        updateQuote();
+        void updateQuote();
 
         return () => {
             cancelled = true
         }
-    }, [normalizedCart, deliveryMethod, appliedCouponCode, availableProductsMap, syncCartWithLiveAvailability, quoteShippingAddress]);
+    }, [normalizedCart, deliveryMethod, appliedCouponCode, availableProductsMap, syncCartWithLiveAvailability, quoteShippingAddress, isCartHydrated]);
 
     const items = normalizedCart
-    const subtotal = quote?.subtotal || 0
-    const shipping = quote?.shipping || 0
+    const localPriceSummary = useMemo(() => {
+        const taxRates = new Set<number>()
+        let gross = 0
+        let net = 0
+
+        cartState.cartArray.forEach((item) => {
+            const lineGross = Math.max(0, Number(item.price) || 0) * Math.max(0, Number(item.quantity) || 0)
+            const taxRate = item.tax?.exempt ? 0 : Math.max(0, Number(item.tax?.rate) || 0)
+            taxRates.add(taxRate)
+            gross += lineGross
+            net += taxRate > 0 ? lineGross / (1 + (taxRate / 100)) : lineGross
+        })
+
+        const roundedGross = Math.round((gross + Number.EPSILON) * 100) / 100
+        const roundedNet = Math.round((net + Number.EPSILON) * 100) / 100
+        return {
+            gross: roundedGross,
+            net: roundedNet,
+            vat: Math.round((roundedGross - roundedNet + Number.EPSILON) * 100) / 100,
+            vatRate: taxRates.size === 1 ? Array.from(taxRates)[0] : 0,
+            mixedVatRates: taxRates.size > 1,
+        }
+    }, [cartState.cartArray])
+    const shipping = quoteIncludesShipping ? Number(quote?.shipping ?? 0) : 0
     const fallbackDeliveryFee = shippingRatesLoaded ? shippingRates.delivery : 0
     const fallbackPickupFee = shippingRatesLoaded ? shippingRates.pickup : 0
     const deliveryFeeLabel = deliveryMethod === 'delivery'
         ? (quote ? shipping : fallbackDeliveryFee)
         : fallbackPickupFee
-    const total = quote?.total || 0
-    const vatRateValue = Number(quote?.vat_rate ?? 0)
-    const vatNetSubtotal = Number(quote?.vat_subtotal ?? 0)
-    const vatAmount = Number(quote?.vat_amount ?? 0)
+    const total = quoteIncludesShipping
+        ? Number(quote?.total ?? (localPriceSummary.gross + deliveryFeeLabel))
+        : localPriceSummary.gross
+    const vatRateValue = Number(quote?.vat_rate ?? localPriceSummary.vatRate)
+    const vatNetSubtotal = Number(quote?.vat_subtotal ?? localPriceSummary.net)
+    const vatAmount = Number(quote?.vat_amount ?? localPriceSummary.vat)
     const vatNetSubtotalBeforeDiscount = Number(quote?.vat_subtotal_before_discount ?? vatNetSubtotal)
     const vatAmountBeforeDiscount = Number(quote?.vat_amount_before_discount ?? vatAmount)
     const discountTotal = Number(quote?.discount_total ?? 0)
@@ -1187,13 +1227,13 @@ const Checkout = () => {
         || appliedCouponCode
         || ''
     ).trim()
-    const mixedVatRates = Boolean(quote?.mixed_vat_rates)
+    const mixedVatRates = Boolean(quote?.mixed_vat_rates ?? localPriceSummary.mixedVatRates)
     const vatLabel = mixedVatRates
         ? 'IVA aplicado'
         : `IVA (${vatRateValue.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`
 
     useEffect(() => {
-        if (deliveryMethod !== 'delivery' || !quoteShippingAddress || !quote) return
+        if (deliveryMethod !== 'delivery' || !quoteIncludesShipping || !quote) return
 
         const knownRules = ['free_radius', 'standard_delivery', 'km_flat_rate', 'km_per_km_rate']
         const quoteShippingRule = typeof quote.shipping_rule === 'string' ? quote.shipping_rule : ''
@@ -1209,14 +1249,14 @@ const Checkout = () => {
             storeLongitude: shippingRates.storeLongitude,
             freeShippingRadiusKm: shippingRates.freeShippingRadiusKm,
         }))
-    }, [deliveryMethod, quoteShippingAddress, quote, shippingRates.storeLatitude, shippingRates.storeLongitude, shippingRates.freeShippingRadiusKm])
+    }, [deliveryMethod, quote, quoteIncludesShipping, shippingRates.storeLatitude, shippingRates.storeLongitude, shippingRates.freeShippingRadiusKm])
 
     useEffect(() => {
         if (orderCompletionInProgress) return
-        if (normalizedCart.length === 0) {
+        if (isCartHydrated && normalizedCart.length === 0) {
             router.push('/cart')
         }
-    }, [normalizedCart, orderCompletionInProgress, router])
+    }, [normalizedCart, orderCompletionInProgress, router, isCartHydrated])
 
     useEffect(() => {
         if (paymentMethod !== 'transfer') {
@@ -1695,9 +1735,11 @@ const Checkout = () => {
                                                 <span className="mt-1 text-sm text-[#6b7280]">
                                                     {deliveryMethod === 'delivery' && !hasSelectedShippingLocation
                                                         ? 'Selecciona tu ubicación'
-                                                        : deliveryMethod === 'delivery' && quoteShippingAddress && !quote
+                                                        : deliveryMethod === 'delivery' && quoteShippingAddress && quoteLoading
                                                             ? 'Calculando envío...'
-                                                        : `$${deliveryFeeLabel.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                        : deliveryMethod === 'delivery' && quoteShippingAddress && !quoteIncludesShipping
+                                                            ? 'Envío pendiente'
+                                                            : `$${deliveryFeeLabel.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                                 </span>
                                             </button>
                                             <button
@@ -2319,10 +2361,14 @@ const Checkout = () => {
                                         <span className="text-[#111827] text-right tabular-nums">
                                             {deliveryMethod === 'delivery' && !quoteShippingAddress
                                                 ? 'Selecciona ubicación'
-                                                : (shipping === 0 ? 'Gratis' : `$${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}
+                                                : deliveryMethod === 'delivery' && quoteLoading
+                                                    ? 'Calculando...'
+                                                    : deliveryMethod === 'delivery' && !quoteIncludesShipping
+                                                        ? 'No calculado'
+                                                        : (shipping === 0 ? 'Gratis' : `$${shipping.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)}
                                         </span>
                                         </div>
-                                        {deliveryMethod === 'delivery' && quoteShippingAddress && quote && (
+                                        {deliveryMethod === 'delivery' && quoteShippingAddress && quoteIncludesShipping && quote && (
                                             <div className="grid grid-cols-[1fr_auto] items-center gap-4 text-xs">
                                                 <span className="text-[#6b7280]">
                                                     {shippingRule === 'free_radius' ? 'Radio gratis aplicado' :
@@ -2342,7 +2388,11 @@ const Checkout = () => {
                                             <span className="text-lg font-semibold text-[#111827] text-right tabular-nums">
                                                 {deliveryMethod === 'delivery' && !quoteShippingAddress
                                                     ? 'Pendiente'
-                                                    : `$${total.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                                                    : deliveryMethod === 'delivery' && quoteLoading
+                                                        ? 'Calculando...'
+                                                        : deliveryMethod === 'delivery' && !quoteIncludesShipping
+                                                            ? 'Pendiente'
+                                                            : `$${total.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                                             </span>
                                         </div>
                                     </div>

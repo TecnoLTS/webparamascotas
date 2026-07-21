@@ -28,6 +28,7 @@ type CartAction =
 
 interface CartContextProps {
     cartState: CartState;
+    isHydrated: boolean;
     addToCart: (item: ProductType) => void;
     removeFromCart: (itemId: string) => void;
     updateCart: (itemId: string, quantity: number, selectedSize: string, selectedColor: string) => void;
@@ -37,6 +38,7 @@ interface CartContextProps {
 const CartContext = createContext<CartContextProps | undefined>(undefined);
 const emptyCartContext: CartContextProps = {
     cartState: { cartArray: [] },
+    isHydrated: false,
     addToCart: () => {},
     removeFromCart: () => {},
     updateCart: () => {},
@@ -196,7 +198,7 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     return (
-        <CartContext.Provider value={{ cartState, addToCart, removeFromCart, updateCart, clearCart }}>
+        <CartContext.Provider value={{ cartState, isHydrated: hydrated, addToCart, removeFromCart, updateCart, clearCart }}>
             {children}
         </CartContext.Provider>
     );

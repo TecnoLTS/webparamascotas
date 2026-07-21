@@ -37,15 +37,30 @@ export const getQuote = async (data: {
     coupon_code?: string | null,
     discount_code?: string | null,
     shipping_address?: Record<string, unknown> | null,
-}) => {
-    const res = await fetch(apiEndpoints.internal.quote, {
-        method: 'POST',
-        cache: 'no-store',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-    })
+}, options: { timeoutMs?: number } = {}) => {
+    const controller = new AbortController()
+    const timeoutMs = Math.max(1_000, options.timeoutMs ?? 15_000)
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    let res: Response
+
+    try {
+        res = await fetch(apiEndpoints.internal.quote, {
+            method: 'POST',
+            cache: 'no-store',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data),
+            signal: controller.signal,
+        })
+    } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+            throw new Error('El cálculo tardó demasiado. Intenta nuevamente.')
+        }
+        throw error
+    } finally {
+        clearTimeout(timeoutId)
+    }
 
     const body = await res.json().catch(() => null)
     if (!res.ok) {
