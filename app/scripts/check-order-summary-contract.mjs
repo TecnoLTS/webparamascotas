@@ -8,12 +8,13 @@ const appRoot = path.resolve(__dirname, '..')
 const read = (relativePath) => readFile(path.join(appRoot, relativePath), 'utf8')
 
 const main = async () => {
-  const [controller, customerDashboard, customerOrders, adminOrders, types] = await Promise.all([
+  const [controller, customerDashboard, customerOrders, adminOrders, types, checkout] = await Promise.all([
     read('src/app/my-account/MyAccountController.tsx'),
     read('src/app/my-account/components/CustomerDashboardTab.tsx'),
     read('src/app/my-account/components/CustomerOrdersPanel.tsx'),
     read('src/app/my-account/components/AdminOrdersPanel.tsx'),
     read('src/app/my-account/types.ts'),
+    read('src/app/checkout/CheckoutClient.tsx'),
   ])
 
   const failures = []
@@ -34,6 +35,18 @@ const main = async () => {
   check(!/order\.order_notes/.test(adminOrders), 'la tabla admin consume notas desde la lista')
   check(/items_count\?: number;/.test(types), 'el tipo Order no declara items_count')
   check(/units_count\?: number;/.test(types), 'el tipo Order no declara units_count')
+  check(
+    /const quoteDeliveryMethod = deliveryMethod === 'delivery' && !quoteShippingAddress\s*\? 'pickup'\s*:\s*deliveryMethod/.test(checkout),
+    'checkout no cotiza los productos mientras la ubicación de entrega está pendiente',
+  )
+  check(
+    /delivery_method: quoteDeliveryMethod/.test(checkout),
+    'checkout no usa la cotización independiente de productos',
+  )
+  check(
+    !/deliveryMethod === 'delivery' && !quoteShippingAddress\) \{\s*setQuote\(null\)\s*return/.test(checkout),
+    'checkout vuelve a borrar precios e IVA cuando falta la ubicación de entrega',
+  )
 
   if (failures.length > 0) {
     console.error('[order-summary-contract] FAIL')

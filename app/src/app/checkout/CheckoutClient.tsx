@@ -1082,12 +1082,10 @@ const Checkout = () => {
     }, [hasSavedAddressOverride])
 
     useEffect(() => {
+        let cancelled = false
+
         const updateQuote = async () => {
             if (normalizedCart.length === 0) return;
-            if (deliveryMethod === 'delivery' && !quoteShippingAddress) {
-                setQuote(null)
-                return
-            }
             if (availableProductsMap) {
                 const syncResult = syncCartWithLiveAvailability(availableProductsMap)
                 if (syncResult.changed) {
@@ -1095,12 +1093,20 @@ const Checkout = () => {
                 }
             }
             try {
+                // Product pricing does not depend on the delivery coordinates. Until the
+                // customer selects a location, quote the items as pickup so the backend can
+                // still return its authoritative prices, VAT and discounts. Shipping and the
+                // grand total remain explicitly pending in the UI.
+                const quoteDeliveryMethod = deliveryMethod === 'delivery' && !quoteShippingAddress
+                    ? 'pickup'
+                    : deliveryMethod
                 const res = await getQuote({
                     items: normalizedCart.map(i => ({ product_id: i.id, quantity: i.quantity })),
-                    delivery_method: deliveryMethod,
+                    delivery_method: quoteDeliveryMethod,
                     coupon_code: appliedCouponCode,
                     shipping_address: quoteShippingAddress,
                 });
+                if (cancelled) return
                 if (res?.storeDisabled) {
                     setQuote(null)
                     setMessage({
@@ -1111,6 +1117,7 @@ const Checkout = () => {
                 }
                 setQuote(res);
             } catch (err) {
+                if (cancelled) return
                 const backendMessage = err instanceof Error ? err.message.trim() : ''
                 if (backendMessage.includes('Producto no encontrado')) {
                     const missingId = backendMessage.split(':').pop()?.trim()
@@ -1147,6 +1154,10 @@ const Checkout = () => {
             }
         };
         updateQuote();
+
+        return () => {
+            cancelled = true
+        }
     }, [normalizedCart, deliveryMethod, appliedCouponCode, availableProductsMap, syncCartWithLiveAvailability, quoteShippingAddress]);
 
     const items = normalizedCart
@@ -1182,7 +1193,7 @@ const Checkout = () => {
         : `IVA (${vatRateValue.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)`
 
     useEffect(() => {
-        if (deliveryMethod !== 'delivery' || !quote) return
+        if (deliveryMethod !== 'delivery' || !quoteShippingAddress || !quote) return
 
         const knownRules = ['free_radius', 'standard_delivery', 'km_flat_rate', 'km_per_km_rate']
         const quoteShippingRule = typeof quote.shipping_rule === 'string' ? quote.shipping_rule : ''
@@ -1198,7 +1209,7 @@ const Checkout = () => {
             storeLongitude: shippingRates.storeLongitude,
             freeShippingRadiusKm: shippingRates.freeShippingRadiusKm,
         }))
-    }, [deliveryMethod, quote, shippingRates.storeLatitude, shippingRates.storeLongitude, shippingRates.freeShippingRadiusKm])
+    }, [deliveryMethod, quoteShippingAddress, quote, shippingRates.storeLatitude, shippingRates.storeLongitude, shippingRates.freeShippingRadiusKm])
 
     useEffect(() => {
         if (orderCompletionInProgress) return
